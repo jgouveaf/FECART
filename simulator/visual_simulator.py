@@ -226,12 +226,16 @@ class VisualSimulator:
         cv2.circle(frame, (cx, cy), 450, (15, 45, 65), 1)
 
     def _draw_robot(self, frame: np.ndarray) -> None:
-        """Draw the 2D Robot entity with orientation vector and status glow."""
+        """Draw the 2D Robot entity with orientation vector, compass ring, and status glow."""
         rx, ry = int(self.robot_x), int(self.robot_y)
         w, h = self.robot_width, self.robot_height
 
         if cv2 is None:
             return
+
+        # Outer Radar Ring around Robot
+        cv2.circle(frame, (rx, ry), 50, (0, 120, 160), 1, cv2.LINE_AA)
+        cv2.circle(frame, (rx, ry), 52, (0, 229, 255), 1, cv2.LINE_AA)
 
         # Create rotated rect for robot chassi
         angle_rad = math.radians(self.robot_heading)
@@ -254,20 +258,21 @@ class VisualSimulator:
         pts_array = np.array(rotated_pts, np.int32).reshape((-1, 1, 2))
 
         # Fill Robot Body
-        cv2.fillPoly(frame, [pts_array], (0, 160, 220))
-        cv2.polylines(frame, [pts_array], True, (0, 229, 255), 2)
+        cv2.fillPoly(frame, [pts_array], (0, 140, 200))
+        cv2.polylines(frame, [pts_array], True, (0, 229, 255), 2, cv2.LINE_AA)
 
         # Direction Heading Arrow
-        arrow_len = 55
+        arrow_len = 65
         heading_rad = math.radians(self.robot_heading - 90)
         ax = int(rx + arrow_len * math.cos(heading_rad))
         ay = int(ry + arrow_len * math.sin(heading_rad))
-        cv2.arrowedLine(frame, (rx, ry), (ax, ay), (0, 255, 255), 3, tipLength=0.3)
+        cv2.arrowedLine(frame, (rx, ry), (ax, ay), (0, 255, 255), 3, tipLength=0.28)
 
         # Robot Tag
         cmd_str = self.current_command.value if isinstance(self.current_command, RobotCommand) else str(self.current_command)
-        cv2.putText(frame, "ROBO [ESP32]", (rx - 45, ry + h // 2 + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 229, 255), 1)
-        cv2.putText(frame, f"CMD: {cmd_str}", (rx - 45, ry + h // 2 + 32), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (180, 220, 255), 1)
+        cv2.putText(frame, "ROBO [ESP32]", (rx - 45, ry + h // 2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 229, 255), 1, cv2.LINE_AA)
+        cv2.putText(frame, f"CMD: {cmd_str}", (rx - 45, ry + h // 2 + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (180, 220, 255), 1, cv2.LINE_AA)
+
 
     def _draw_visible_target(self, frame: np.ndarray, target: SimTarget) -> None:
         """Draw visible target bounding box, heading vector, and specs."""

@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quantum Tracker — Sistema Avançado de Rastreamento &amp; IA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #030710;
+      --panel-bg: rgba(8, 18, 32, 0.75);
+      --border-cyan: #00e5ff;
+      --border-dim: #10344d;
+      --accent-green: #00ff88;
+      --accent-orange: #ff9800;
+      --text-main: #c8ecff;
+      --text-dim: #7ab8d4;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 18px;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+    /* Ambient Glow */
+    .glow-bg {
+      position: fixed;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80vw;
+      height: 60vh;
+      background: radial-gradient(circle, rgba(0, 229, 255, 0.12) 0%, rgba(0, 0, 0, 0) 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+    header {
+      position: relative;
+      z-index: 10;
+      text-align: center;
+      padding: 60px 20px 40px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 6px 16px;
+      border: 1px solid var(--border-cyan);
+      border-radius: 20px;
+      color: var(--border-cyan);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 14px;
+      letter-spacing: 2px;
+      margin-bottom: 20px;
+      background: rgba(0, 229, 255, 0.05);
+    }
+    h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 3.5rem;
+      font-weight: 900;
+      color: #ffffff;
+      text-shadow: 0 0 20px rgba(0, 229, 255, 0.4);
+      letter-spacing: 4px;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: var(--text-dim);
+      font-size: 1.3rem;
+      max-width: 750px;
+      margin: 0 auto 30px;
+    }
+    .credits-bar {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--accent-green);
+      font-size: 15px;
+      letter-spacing: 1px;
+    }
+
+    /* Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px 80px;
+      position: relative;
+      z-index: 10;
+    }
+
+    /* Grid Features */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 24px;
+      margin-bottom: 60px;
+    }
+    .card {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-dim);
+      border-top: 3px solid var(--border-cyan);
+      border-radius: 12px;
+      padding: 30px;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s ease;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+      border-color: var(--border-cyan);
+      box-shadow: 0 10px 30px rgba(0, 229, 255, 0.15);
+    }
+    .card-icon {
+      font-size: 2rem;
+      margin-bottom: 15px;
+      color: var(--border-cyan);
+    }
+    .card h3 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.3rem;
+      color: #ffffff;
+      margin-bottom: 12px;
+    }
+    .card p {
+      color: var(--text-dim);
+      font-size: 1rem;
+    }
+
+    /* Canvas Demo Box */
+    .sim-box {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-cyan);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 0 40px rgba(0, 229, 255, 0.1);
+      margin-bottom: 60px;
+      text-align: center;
+    }
+    .sim-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-dim);
+    }
+    .sim-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.2rem;
+      color: var(--border-cyan);
+    }
+    canvas {
+      width: 100%;
+      max-width: 1000px;
+      height: 480px;
+      background: #02060e;
+      border: 1px solid var(--border-dim);
+      border-radius: 8px;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 40px;
+      border-top: 1px solid var(--border-dim);
+      color: var(--text-dim);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="glow-bg"></div>
+
+  <header>
+    <div class="badge">PROJETO FECART // 2026</div>
+    <h1>QUANTUM TRACKER</h1>
+    <p class="subtitle">Plataforma de Visão Computacional, Rastreamento Multialvo, Filtro de Kalman, Ghost Mode e Controle de Robô Móvel.</p>
+    <div class="credits-bar">FEITO POR: JOÃO · GUSTAVO · RENATO</div>
+  </header>
+
+  <div class="container">
+    
+    <!-- Arena Interactive Canvas Demo -->
+    <div class="sim-box">
+      <div class="sim-header">
+        <span class="sim-title">⚡ SIMULADOR VISUAL 2D — DEMO INTERATIVA</span>
+        <span style="font-family:'Share Tech Mono'; color:var(--accent-green); font-size:14px;">[STATUS: ONLINE]</span>
+      </div>
+      <canvas id="arenaCanvas" width="1000" height="480"></canvas>
+    </div>
+
+    <!-- Feature Grid -->
+    <div class="grid">
+      <div class="card">
+        <div class="card-icon">🎯</div>
+        <h3>Rastreamento Kalman &amp; YOLO</h3>
+        <p>Associação de instâncias em tempo real com ByteTrack, preditor de estado contínuo e detecção otimizada de pessoas.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">👻</div>
+        <h3>Ghost Mode Predictor</h3>
+        <p>Quando o alvo é oculta por objetos ou sai de vista, o sistema renderiza caixas tracejadas preditivas baseadas na velocidade.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">👤</div>
+        <h3>Re-ID &amp; Reconhecimento Facial</h3>
+        <p>Identificação biométrica com InsightFace e verificação rápida via histogramas de cor HSV para manter IDs estáveis.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🤖</div>
+        <h3>Controle de Robótica ESP32</h3>
+        <p>Comunicação sem fio com robôs móveis para perseguição autônoma de alvos primários com desvio de obstáculos.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🎯</div>
+        <h3>Treinador Teachable Gestures</h3>
+        <p>Gravação de amostras de mão pela câmera e treinamento de modelos de IA direto na interface para controle por gestos.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🧠</div>
+        <h3>Assistente Quantum AI</h3>
+        <p>Integração nativa com a API Google Gemini para análise situacional de campo, relatórios e síntese de voz tática.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    QUANTUM TRACKER &copy; 2026 FECART · TODOS OS DIREITOS RESERVADOS
+  </footer>
+
+  <script>
+    // Visual Simulator Canvas Script
+    const canvas = document.getElementById('arenaCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let robot = { x: 500, y: 380, heading: 0, vx: 2, vy: 0 };
+    let targets = [
+      { id: 1, name: "Joao", x: 250, y: 150, vx: 1.5, vy: 0.8, color: "#00e5ff", occluded: false },
+      { id: 2, name: "Gustavo", x: 750, y: 220, vx: -1.2, vy: 1.0, color: "#ff9800", occluded: true, lastX: 720, lastY: 200 },
+      { id: 3, name: "Renato", x: 480, y: 120, vx: 1.0, vy: -1.2, color: "#00ff88", occluded: false }
+    ];
+
+    let lastOcclusionSwap = Date.now();
+
+    function update() {
+      // Move targets
+      targets.forEach(t => {
+        t.x += t.vx;
+        t.y += t.vy;
+        if (t.x < 50 || t.x > canvas.width - 50) t.vx *= -1;
+        if (t.y < 50 || t.y > canvas.height - 50) t.vy *= -1;
+
+        if (!t.occluded) {
+          t.lastX = t.x;
+          t.lastY = t.y;
+        }
+      });
+
+      // Toggle occlusion every 4 seconds
+      if (Date.now() - lastOcclusionSwap > 4000) {
+        targets[1].occluded = !targets[1].occluded;
+        lastOcclusionSwap = Date.now();
+      }
+
+      // Rotate robot slowly
+      robot.heading += 0.5;
+    }
+
+    function draw() {
+      ctx.fillStyle = "#02060e";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Grid
+      ctx.strokeStyle = "#10283c";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 40) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 40) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+      }
+
+      // Targets
+      targets.forEach(t => {
+        if (!t.occluded) {
+          ctx.strokeStyle = t.color;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(t.x - 30, t.y - 40, 60, 80);
+
+          ctx.fillStyle = t.color;
+          ctx.font = "14px 'Share Tech Mono'";
+          ctx.fillText(`ID:${t.id} ${t.name}`, t.x - 30, t.y - 48);
+
+          // Line to robot
+          ctx.beginPath();
+          ctx.moveTo(robot.x, robot.y);
+          ctx.lineTo(t.x, t.y);
+          ctx.strokeStyle = "rgba(0,229,255,0.2)";
+          ctx.stroke();
+        } else {
+          // Ghost Mode dashed box
+          ctx.setLineDash([6, 6]);
+          ctx.strokeStyle = "#ff9800";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(t.x - 30, t.y - 40, 60, 80);
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = "#ff9800";
+          ctx.font = "12px 'Share Tech Mono'";
+          ctx.fillText(`GHOST PREDICTOR (ID:${t.id})`, t.x - 45, t.y - 48);
+        }
+      });
+
+      // Robot Body
+      ctx.save();
+      ctx.translate(robot.x, robot.y);
+      ctx.rotate(robot.heading * Math.PI / 180);
+
+      ctx.fillStyle = "#00a8c5";
+      ctx.fillRect(-25, -35, 50, 70);
+      ctx.strokeStyle = "#00e5ff";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-25, -35, 50, 70);
+
+      // Heading arrow
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -45);
+      ctx.strokeStyle = "#ffff00";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>

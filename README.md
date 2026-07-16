@@ -16,7 +16,27 @@
     <i>Desenvolvido por <b>João</b> · <b>Gustavo</b> · <b>Renato</b> para a <b>FECART</b>.</i>
   </p>
 
+  <p align="center">
+    <a href="#-estrutura-do-projeto"><b>Estrutura de Código</b></a> •
+    <a href="#-como-rodar-desenvolvimento"><b>Como Rodar</b></a> •
+    <a href="#-como-gerar-o-exe-port%C3%A1til"><b>Gerar .EXE</b></a> •
+    <a href="#-como-colaborar"><b>Como Colaborar</b></a> •
+    <a href="#-arquitetura-do-sistema"><b>Arquitetura</b></a>
+  </p>
+
 </div>
+
+---
+
+## 📌 Sumário Navegável
+
+1. [🎯 Destaques do Sistema](#-destaques-do-sistema)
+2. [📁 Estrutura do Projeto (Árvore Completa)](#-estrutura-do-projeto)
+3. [🚀 Como Rodar (Desenvolvimento Passo a Passo)](#-como-rodar-desenvolvimento)
+4. [📦 Como Gerar o Executável Portátil (.exe)](#-como-gerar-o-exe-port%C3%A1til)
+5. [🤝 Como Colaborar (Comandos Git)](#-como-colaborar)
+6. [🏛️ Arquitetura e Fluxo de Dados](#-arquitetura-do-sistema)
+7. [🛠️ Módulos e Responsabilidades](#%EF%B8%8F-m%C3%B3dulos-e-estrutura-dos-componentes)
 
 ---
 
@@ -57,26 +77,146 @@
 
 ---
 
-## 💻 Visual da Aplicação & HUD Tático
+## 📁 Estrutura do Projeto
 
-> [!NOTE]
-> O Quantum Tracker possui uma interface futurista escura com HUD militar tático sobreposto em tempo real à câmera, fornecendo vetores de trajetória, indicador de distância em metros e badges de estado iluminados.
+Aqui está a árvore completa de diretórios e código do projeto:
 
+```text
+FECART/
+├── main.py                  # Ponto de entrada do app
+├── requirements.txt         # Dependências Python
+├── build_exe.py             # Gera o executável .exe portátil
+├── yolov8n.pt               # Modelo YOLOv8 nano
+│
+├── app/                     # Interface gráfica (PySide6)
+│   ├── quantum_app.py       # Janela principal e loop do sistema
+│   └── splash_screen.py     # Tela de abertura animada (3s)
+│
+├── tracker/                 # Rastreamento de alvos
+│   ├── tracker_wrapper.py   # ByteTrack + Re-ID por histograma (Stable IDs)
+│   ├── track_manager.py     # Gerenciamento de estados dos alvos
+│   ├── yolo_tracker.py      # Detector YOLOv8 otimizado (threading + FP16)
+│   └── kalman_tracker.py    # Filtro de Kalman para predição
+│
+├── core/                    # Modelos de dados centrais
+│   └── models.py
+│
+├── hud/                     # HUD tático sobreposto ao vídeo
+│   └── tactical_hud.py
+│
+├── recognition/             # Reconhecimento facial (InsightFace)
+│   ├── insightface_service.py
+│   └── identity_resolver.py
+│
+├── biometrics/              # Cadastro e leitura de faces
+│   └── face_recognition.py
+│
+├── brain/                   # IA (Gemini), voz e comandos por fala
+│   ├── quantum_brain.py
+│   ├── tactical_voice.py
+│   ├── speech_listener.py
+│   └── gemini_assistant.py
+│
+├── vision/                  # Reconhecimento de gestos das mãos
+│   ├── gesture_recognizer.py
+│   └── gesture_trainer.py
+│
+├── robot/                   # Controle do robô (ESP32 / simulador)
+│   ├── robot_controller.py
+│   ├── robot_state_machine.py
+│   └── esp32_adapter.py
+│
+├── simulator/               # Simulador visual 2D
+│   ├── visual_simulator.py  # Arena 2D com robô e predição Ghost Mode
+│   └── synthetic_world.py   # Conector do ambiente sintético
+│
+├── database/                # Banco de dados SQLite local
+│   └── database_manager.py
+│
+├── utils/                   # Configuração e utilitários
+│   └── config.py
+│
+├── assets/                  # Ícones, logos, modelos InsightFace
+├── docs/                    # Documentação técnica
+├── scripts/                 # Scripts de instalação e execução (.bat)
+└── data/                    # Dados do usuário (gerado ao rodar)
+    ├── faces/               # Fotos cadastradas
+    ├── database/            # Banco SQLite
+    └── logs/
 ```
-+-------------------------------------------------------------------------------+
-|  QUANTUM TRACKER                                  SYS STATUS: OPTIMAL [CAM]   |
-+-------------------+-----------------------------------------+-----------------+
-| 📊 Monitoramento  | 🤖 Controle Robô  | 👤 Cadastro Facial | 🧠 Quantum AI   |
-+-------------------+-----------------------------------------+-----------------+
-|                                                                               |
-|  [ HUD TÁTICO SOBRE A CÂMERA ]                               | SIDEBAR INTEL   |
-|  • BRQUETES DE CANTO NAS BOUNDING BOXES                      | =============== |
-|  • TARGET ID #1: VISÍVEL (EMERALD BADGE)                     | ALVO PRIMÁRIO:  |
-|  • GHOST PREDICTOR: CAIXA TRACEJADA (ORANGE)                 | ID: 01 - JOÃO   |
-|  • VETOR DE VELOCIDADE (PX/S) & DISTÂNCIA (METROS)           | CONF: 98%       |
-|                                                              | DIST: 2.4m      |
-|                                                              | GHOST: ATIVO    |
-+--------------------------------------------------------------+-----------------+
+
+---
+
+## 🚀 Como Rodar (Desenvolvimento)
+
+> [!IMPORTANT]
+> Requer **Python 3.10 ou superior**.
+
+### Opção A: Executar via Scripts Automáticos (Windows)
+1. Dê um duplo clique em `1_INSTALAR.bat` para instalar o ambiente virtual e as dependências.
+2. Dê um duplo clique em `2_ABRIR.bat` para iniciar o aplicativo.
+
+---
+
+### Opção B: Comandos no Terminal
+
+```bash
+# 1. Clonar o repositório
+git clone https://github.com/jgouveaf/FECART.git
+cd FECART
+
+# 2. Criar ambiente virtual
+python -m venv .venv
+
+# 3. Ativar o ambiente virtual
+# No Windows:
+.venv\Scripts\activate
+# No Linux/Mac:
+source .venv/bin/activate
+
+# 4. Instalar todas as dependências
+pip install -r requirements.txt
+
+# 5. Executar a aplicação
+python main.py
+```
+
+---
+
+## 📦 Como Gerar o .exe Portátil
+
+Para compilar todo o código e gerar um pacote portátil único com modelos inclusos:
+
+```bash
+# 1. Certifique-se de ter o PyInstaller instalado
+pip install pyinstaller
+
+# 2. Executar o script automatizado de build
+python build_exe.py
+```
+
+> [!TIP]
+> O executável será gerado em `dist/QuantumTracker_Portable.zip`.
+> Dentro do ZIP haverá o arquivo `QuantumTracker.exe` e o `README.txt` com as instruções: *"Extraia e execute QuantumTracker.exe"*.
+
+---
+
+## 🤝 Como Colaborar
+
+Siga os comandos de Git abaixo para sincronizar seu trabalho com a equipe:
+
+```bash
+# 1. Baixar atualizações do repositório
+git pull origin main
+
+# 2. Após modificar seus arquivos no projeto:
+git add .
+
+# 3. Criar o commit descrevendo o que você fez
+git commit -m "Minha contribuição no módulo X"
+
+# 4. Enviar as alterações para o GitHub
+git push origin main
 ```
 
 ---
@@ -112,51 +252,6 @@ flowchart TD
 | **`biometrics/`**| `face_recognition.py`, `identity_resolver.py` | Extração de vetores faciais (embeddings) e resolução de banco de identidades. |
 | **`robot/`** | `robot_controller.py`, `esp32_adapter.py` | Máquina de estados de perseguição do robô e envio de dados via serial/Wi-Fi. |
 | **`brain/`** | `quantum_brain.py`, `gemini_assistant.py` | Assistente inteligente Gemini, processamento de síntese de voz e relatórios. |
-
----
-
-## 🚀 Como Executar (Desenvolvimento)
-
-> [!IMPORTANT]
-> Certifique-se de utilizar o **Python 3.10 ou superior**. 
-
-### 1. Clonar o Repositório
-```bash
-git clone https://github.com/jgouveaf/FECART.git
-cd FECART
-```
-
-### 2. Atalho Rápido para Instalação (Windows)
-Dê um duplo clique no arquivo:
-```cmd
-1_INSTALAR.bat
-```
-
-Ou execute via terminal:
-```bash
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### 3. Iniciar o Aplicativo
-Dê um duplo clique em `2_ABRIR.bat` ou rode:
-```bash
-python main.py
-```
-
----
-
-## 📦 Gerar o Executável Portátil `.exe`
-
-Para empacotar a aplicação em um arquivo `.exe` **totalmente portátil** com todos os modelos inclusos e compressão automática `.zip`:
-
-```bash
-python build_exe.py
-```
-
-> [!TIP]
-> O resultado será gerado na pasta `dist/QuantumTracker_Portable.zip` contendo o `QuantumTracker.exe` e o `README.txt` com instruções de uso imediato sem necessidade de instalação.
 
 ---
 

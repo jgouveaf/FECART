@@ -68,19 +68,20 @@ class QuantumApp:
         if Path(icon_path).exists():
             self.qt_app.setWindowIcon(QIcon(icon_path))
 
-        # ── Animated Splash screen ───────────────────────────────────
+        # ── Animated Splash screen (3.0 seconds transition) ───────────
         self._splash = QuantumSplash()
         self._splash.show()
         self.qt_app.processEvents()
 
-        # Simulate loading progress while building main window
-        self._splash.set_progress(0.15)
-        self.qt_app.processEvents()
-
+        t0 = time.time()
+        # Build main window while rendering smooth progress over 3s
         self.window = QuantumMainWindow()
 
-        self._splash.set_progress(1.0)
-        self.qt_app.processEvents()
+        while time.time() - t0 < 3.0:
+            pct = min(1.0, (time.time() - t0) / 3.0)
+            self._splash.set_progress(pct)
+            self.qt_app.processEvents()
+            time.sleep(0.015)
 
     def run(self) -> None:
         self.window.show()
@@ -1345,6 +1346,8 @@ class QuantumMainWindow(QMainWindow):
         self._append_robot_log("Robo parado por comando manual.")
 
     def robot_manual_command(self, command: RobotCommand) -> None:
+        if self.mode == "simulator" or not self.running:
+            self.world.send_robot_command(command)
         telemetry = self.robot_controller.manual_command(command)
         self.current_robot_telemetry = telemetry
         self._update_robot_dashboard(telemetry)

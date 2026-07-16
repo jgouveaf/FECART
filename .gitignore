@@ -1,0 +1,44 @@
+# Ambiente virtual - cada PC instala o próprio
+.venv/
+venv/
+env/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Build do PyInstaller
+dist/
+build/
+*.spec.bak
+
+# Banco de dados local (cada PC tem o seu)
+data/
+logs/
+*.sqlite3
+*.db
+
+# Modelos InsightFace (muito grandes, cada PC baixa automaticamente)
+assets/insightface_models/
+
+# Arquivos temporários do sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Chaves e segredos
+.env
+*.key
+*.pem
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs
+*.log

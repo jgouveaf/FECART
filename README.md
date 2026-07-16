@@ -1,68 +1,106 @@
-# QUANTUM TRACKER
+# FECART — Quantum Tracker
 
-Aplicativo Python para monitoramento inteligente com camera real e simulador.
+Sistema de rastreamento de pessoas com Inteligência Artificial, desenvolvido para a FECART.
 
-## Recursos
+**Autores:** João · Gustavo · Renato
 
-- App desktop PySide6 com abas Monitoramento, Cadastro, Fotos, Logs, IA e Configuracoes.
-- Monitoramento com camera real ou simulador.
-- Deteccao de pessoas via YOLOv8 + ByteTrack quando Ultralytics estiver instalado.
-- Fallback HOG/OpenCV para tentar detectar pessoas quando YOLO ainda nao estiver disponivel.
-- Simulador para testar tracking, HUD, logs, estados LOST/GHOST e relatorios sem carrinho fisico.
-- HUD futurista desenhada com OpenCV.
-- IDs persistentes, filtro de Kalman e estimativa de incerteza.
-- Reconhecimento facial com DeepFace usando `assets/faces/`.
-- Cadastro de pessoas com foto, nome, ID e data.
-- Aba Fotos com todos os cadastrados.
-- Gestos com MediaPipe Hands.
-- SQLite para historico de eventos.
-- QuantumBrain com Gemini API opcional e fallback local.
-- TacticalVoice em thread separada com fila.
+---
 
-## Instalar
+## Estrutura do Projeto
+
+```
+FECART/
+├── main.py                  # Ponto de entrada do app
+├── requirements.txt         # Dependências Python
+├── build_exe.py             # Gera o executável .exe portátil
+├── yolov8n.pt               # Modelo YOLOv8 nano
+│
+├── app/                     # Interface gráfica (PySide6)
+│   ├── quantum_app.py       # Janela principal e loop do sistema
+│   └── splash_screen.py     # Tela de abertura animada
+│
+├── tracker/                 # Rastreamento de alvos
+│   ├── tracker_wrapper.py   # ByteTrack + Re-ID por histograma (Stable IDs)
+│   ├── track_manager.py     # Gerenciamento de estados dos alvos
+│   ├── yolo_tracker.py      # Detector YOLOv8 otimizado (threading + FP16)
+│   └── kalman_tracker.py    # Filtro de Kalman para predição
+│
+├── core/                    # Modelos de dados centrais
+│   └── models.py
+│
+├── hud/                     # HUD tático sobreposto ao vídeo
+│   └── tactical_hud.py
+│
+├── recognition/             # Reconhecimento facial (InsightFace)
+│   ├── insightface_service.py
+│   └── identity_resolver.py
+│
+├── biometrics/              # Cadastro e leitura de faces
+│   └── face_recognition.py
+│
+├── brain/                   # IA (Gemini), voz e comandos por fala
+│   ├── quantum_brain.py
+│   ├── tactical_voice.py
+│   └── speech_listener.py
+│
+├── vision/                  # Reconhecimento de gestos das mãos
+│   ├── gesture_recognizer.py
+│   └── gesture_trainer.py
+│
+├── robot/                   # Controle do robô (ESP32 / simulador)
+│   ├── robot_controller.py
+│   ├── robot_state_machine.py
+│   └── esp32_adapter.py
+│
+├── simulator/               # Simulador visual (sem hardware)
+│   └── synthetic_world.py
+│
+├── database/                # Banco de dados SQLite local
+│   └── database_manager.py
+│
+├── utils/                   # Configuração e utilitários
+│   └── config.py
+│
+├── assets/                  # Ícones, logos, modelos InsightFace
+├── docs/                    # Documentação técnica
+├── scripts/                 # Scripts de instalação e execução (.bat)
+└── data/                    # Dados do usuário (gerado ao rodar)
+    ├── faces/               # Fotos cadastradas
+    ├── database/            # Banco SQLite
+    └── logs/
+```
+
+---
+
+## Como Rodar (Desenvolvimento)
 
 ```bash
+# 1. Clonar
+git clone https://github.com/jgouveaf/FECART.git
+cd FECART
+
+# 2. Instalar dependências
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
+.venv\Scripts\pip install -r requirements.txt
 
-Opcional:
-
-```bash
-set GEMINI_API_KEY=sua_chave
-```
-
-## Executar
-
-```bash
+# 3. Abrir o app
 python main.py
 ```
 
-Use a aba `Simulador` para demonstrar o sistema sem webcam ou carrinho.
-
-## Registrar identidade
+## Como Gerar o .exe Portátil
 
 ```bash
-python -m biometrics.register_identity "Joao"
+.venv\Scripts\pip install pyinstaller
+python build_exe.py
+# Resultado: dist/QuantumTracker_Portatil.zip
 ```
 
-As imagens ficam em `assets/faces/<nome>/`.
-
-## Recriar embeddings faciais
-
-Depois de instalar InsightFace, cadastros antigos podem ganhar embeddings com:
+## Como Colaborar
 
 ```bash
-python -m tools.rebuild_face_embeddings
+git pull                          # pegar mudanças do colega
+# ... faz suas mudanças ...
+git add .
+git commit -m "o que eu fiz"
+git push
 ```
-
-Tambem existe o botao `Recriar Base Facial` na aba `Configuracoes`.
-
-## Galeria
-
-Na aba `Fotos`:
-
-- pesquise por nome ou ID;
-- clique em `Historico` para ver identificacoes da pessoa;
-- clique em `Excluir` para remover o cadastro, a foto e os embeddings faciais.

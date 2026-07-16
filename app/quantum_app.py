@@ -61,7 +61,7 @@ class QuantumApp:
         self.qt_app = QApplication.instance() or QApplication([])
 
         # ── App icon ─────────────────────────────────────────────────
-        _logo_path = str(Path(__file__).resolve().parents[1] / "assets" / "quantum_tracker_v5.ico")
+        _logo_path = str(Path(__file__).resolve().parents[1] / "assets" / "quantum_tracker.ico")
         _logo_png  = str(Path(__file__).resolve().parents[1] / "assets" / "logo.png")
         icon_path  = _logo_path if Path(_logo_path).exists() else _logo_png
         if Path(icon_path).exists():

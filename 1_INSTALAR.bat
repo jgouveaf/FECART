@@ -34,8 +34,7 @@ if not exist ".venv\Scripts\python.exe" (
 
 call ".venv\Scripts\activate.bat"
 python -m pip install --upgrade pip
-pip install -r requirements-basic.txt
-pip install ultralytics lap
+pip install -r requirements.txt
 
 echo.
 echo Instalacao concluida.

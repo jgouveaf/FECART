@@ -54,6 +54,7 @@ from utils.logger import setup_logger
 from vision.gesture_recognizer import GestureRecognizer
 from vision.gesture_trainer import GestureTrainer
 from app.splash_screen import QuantumSplash
+from brain.gemini_assistant import GeminiAssistant
 
 
 class QuantumApp:
@@ -98,6 +99,7 @@ class QuantumMainWindow(QMainWindow):
         self.db = DatabaseManager(self.config.database_path)
         self.voice = TacticalVoice(enabled=self.config.voice_enabled)
         self.brain = QuantumBrain(self.config)
+        self.gemini = GeminiAssistant(self.config)
         self.hud = TacticalHUD()
         self.tracker = TrackerWrapper(self.config)
         self.detector = self.tracker.detector
@@ -400,24 +402,92 @@ class QuantumMainWindow(QMainWindow):
     def _build_ai_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
-        self.brain_output = QTextEdit()
-        self.brain_output.setObjectName("PanelText")
-        self.brain_output.setText("QuantumBrain pronto. Fallback local ativo se a API nao estiver configurada.")
-        layout.addWidget(self.brain_output, 1)
-        row = QHBoxLayout()
-        self.question_input = QLineEdit()
-        self.question_input.setPlaceholderText("Pergunte: quantas pessoas existem na area?")
-        ask_btn = QPushButton("Perguntar")
-        ask_btn.clicked.connect(self.ask_brain)
-        listen_btn = QPushButton("Ouvir Microfone")
-        listen_btn.clicked.connect(self.listen_microphone)
-        report_btn = QPushButton("Gerar Relatorio")
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        # Header
+        header = QHBoxLayout()
+        lbl_title = QLabel("QUANTUM AI  ─  Assistente Inteligente")
+        lbl_title.setObjectName("CardHeader")
+        lbl_title.setStyleSheet("color:#00e5ff; font-size:14px; font-weight:700; letter-spacing:2px;")
+        self.ai_status_label = QLabel("Verificando conexao...")
+        self.ai_status_label.setStyleSheet("color:#ffaa00; font-size:11px; font-family:Consolas;")
+        header.addWidget(lbl_title)
+        header.addStretch()
+        header.addWidget(self.ai_status_label)
+        layout.addLayout(header)
+
+        # API Key config bar
+        key_row = QHBoxLayout()
+        key_lbl = QLabel("API Key Gemini:")
+        key_lbl.setFixedWidth(110)
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setPlaceholderText("Cole sua API Key do Google AI Studio aqui...")
+        self.api_key_input.setEchoMode(QLineEdit.Password)
+        self.api_key_input.setText(self.config.gemini_api_key)
+        connect_btn = QPushButton("Conectar")
+        connect_btn.setFixedWidth(100)
+        connect_btn.clicked.connect(self._connect_gemini)
+        new_chat_btn = QPushButton("Nova Conversa")
+        new_chat_btn.setFixedWidth(120)
+        new_chat_btn.clicked.connect(self._reset_ai_chat)
+        key_row.addWidget(key_lbl)
+        key_row.addWidget(self.api_key_input, 1)
+        key_row.addWidget(connect_btn)
+        key_row.addWidget(new_chat_btn)
+        layout.addLayout(key_row)
+
+        # Chat history display
+        self.chat_display = QTextEdit()
+        self.chat_display.setReadOnly(True)
+        self.chat_display.setObjectName("PanelText")
+        self.chat_display.setStyleSheet("""
+            QTextEdit {
+                background: #040b14;
+                border: 1px solid #0d3550;
+                border-radius: 8px;
+                padding: 10px;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 13px;
+                color: #c8ecff;
+            }
+        """)
+        welcome = (
+            "<div style='color:#00e5ff; font-weight:bold;'>QUANTUM AI inicializado.</div>"
+            "<div style='color:#7ab8d4; font-size:12px;'>Pergunte qualquer coisa sobre o rastreamento, "
+            "os alvos detectados, o ghost mode ou peca uma analise da situacao atual.</div>"
+            "<br><div style='color:#4a7a8a; font-size:11px;'>Dicas: \"Quantos alvos tem na tela?\", "
+            "\"O ghost mode ta ativo?\", \"Analise a situacao atual\"</div>"
+        )
+        self.chat_display.setHtml(welcome)
+        layout.addWidget(self.chat_display, 1)
+
+        # Input area
+        input_row = QHBoxLayout()
+        self.ai_input = QLineEdit()
+        self.ai_input.setPlaceholderText("Digite sua pergunta para o QUANTUM AI...")
+        self.ai_input.setMinimumHeight(38)
+        self.ai_input.returnPressed.connect(self._send_ai_message)
+        send_btn = QPushButton("Enviar")
+        send_btn.setMinimumHeight(38)
+        send_btn.setFixedWidth(90)
+        send_btn.clicked.connect(self._send_ai_message)
+        mic_btn = QPushButton("Microfone")
+        mic_btn.setMinimumHeight(38)
+        mic_btn.setFixedWidth(100)
+        mic_btn.clicked.connect(self.listen_microphone)
+        report_btn = QPushButton("Relatorio IA")
+        report_btn.setMinimumHeight(38)
+        report_btn.setFixedWidth(110)
         report_btn.clicked.connect(self.generate_report)
-        row.addWidget(self.question_input, 1)
-        row.addWidget(ask_btn)
-        row.addWidget(listen_btn)
-        row.addWidget(report_btn)
-        layout.addLayout(row)
+        input_row.addWidget(self.ai_input, 1)
+        input_row.addWidget(send_btn)
+        input_row.addWidget(mic_btn)
+        input_row.addWidget(report_btn)
+        layout.addLayout(input_row)
+
+        # Update status label after a moment
+        QTimer.singleShot(1500, self._update_ai_status)
         return page
 
     # ──────────────────────────────────────────────────────────────────
@@ -1310,15 +1380,105 @@ class QuantumMainWindow(QMainWindow):
         stamp = time.strftime("%H:%M:%S")
         self.robot_logs.append(f"{stamp} | {message}")
 
-    def ask_brain(self) -> None:
-        question = self.question_input.text().strip()
+    def _connect_gemini(self) -> None:
+        key = self.api_key_input.text().strip()
+        if not key:
+            self._append_chat("sistema", "Digite uma API Key valida para conectar.")
+            return
+        self.ai_status_label.setText("Conectando...")
+        self.ai_status_label.setStyleSheet("color:#ffaa00;")
+
+        def do_connect():
+            ok = self.gemini.configure(key)
+            # Update UI from main thread
+            QTimer.singleShot(0, lambda: self._on_gemini_connected(ok))
+
+        threading.Thread(target=do_connect, daemon=True).start()
+
+    def _on_gemini_connected(self, ok: bool) -> None:
+        if ok:
+            self.ai_status_label.setText("QUANTUM AI conectado")
+            self.ai_status_label.setStyleSheet("color:#00ff88; font-weight:bold;")
+            self._append_chat("ai", "Conexao estabelecida com sucesso! Estou pronto para analisar o campo de rastreamento. Como posso ajudar?")
+        else:
+            self.ai_status_label.setText(f"Erro: {self.gemini.error_message[:50]}")
+            self.ai_status_label.setStyleSheet("color:#ff4444;")
+            self._append_chat("sistema", f"Falha na conexao: {self.gemini.error_message}")
+
+    def _update_ai_status(self) -> None:
+        if self.gemini.available:
+            self.ai_status_label.setText("QUANTUM AI conectado")
+            self.ai_status_label.setStyleSheet("color:#00ff88; font-weight:bold;")
+        else:
+            self.ai_status_label.setText("Offline — configure a API Key")
+            self.ai_status_label.setStyleSheet("color:#ff6644;")
+
+    def _reset_ai_chat(self) -> None:
+        self.gemini.reset_chat()
+        self.chat_display.clear()
+        self._append_chat("sistema", "Nova conversa iniciada. Contexto resetado.")
+
+    def _send_ai_message(self) -> None:
+        question = self.ai_input.text().strip()
         if not question:
             return
-        answer = self.brain.ask(question)
-        self.brain_output.append(f"\nOPERADOR: {question}\nQUANTUM: {answer}")
-        self.voice.say(answer)
-        self.db.log_event(SystemEvent(EventType.VOICE_COMMAND, None, None, 1.0, "VOICE", question))
-        self.question_input.clear()
+        self.ai_input.clear()
+        self._append_chat("user", question)
+        self._append_chat("thinking", "QUANTUM AI esta pensando...")
+
+        targets = self.current_targets or []
+        fps = self.fps
+        mode = self.mode
+
+        def on_answer(answer: str):
+            # Remove "thinking" and add real answer
+            QTimer.singleShot(0, lambda: self._replace_thinking(answer))
+
+        self.gemini.ask(
+            question=question,
+            targets=targets,
+            fps=fps,
+            mode=mode,
+            on_done=on_answer,
+        )
+
+    def _append_chat(self, role: str, text: str) -> None:
+        colors = {
+            "user":     ("#003d5c", "#c8ecff", "OPERADOR"),
+            "ai":       ("#003320", "#00ff88", "QUANTUM AI"),
+            "sistema":  ("#1a1a00", "#ffcc00", "SISTEMA"),
+            "thinking": ("#0a0a0a", "#555555", "..."),
+        }
+        bg, color, label = colors.get(role, ("#111", "#aaa", role.upper()))
+        html = (
+            f'<div style="background:{bg}; border-radius:6px; padding:8px 12px; margin:4px 0;">'
+            f'<span style="color:{color}; font-weight:bold; font-size:11px;">{label}</span><br>'
+            f'<span style="color:#c8ecff; font-size:13px;">{text}</span>'
+            f'</div>'
+        )
+        self.chat_display.append(html)
+        self.chat_display.verticalScrollBar().setValue(
+            self.chat_display.verticalScrollBar().maximum()
+        )
+
+    def _replace_thinking(self, answer: str) -> None:
+        """Replace the 'thinking' placeholder with the real answer."""
+        cursor = self.chat_display.textCursor()
+        html = self.chat_display.toHtml()
+        # Remove last thinking block and re-render
+        if "QUANTUM AI esta pensando" in html:
+            self.chat_display.undo()  # remove thinking message
+        self._append_chat("ai", answer)
+        self.voice.say(answer[:200])  # speak first 200 chars
+
+    def ask_brain(self) -> None:
+        """Legacy method kept for compatibility (speech listener uses it)."""
+        question = self.ai_input.text().strip() or getattr(self, 'question_input', None) and self.question_input.text().strip()
+        if not question:
+            return
+        if hasattr(self, 'ai_input'):
+            self.ai_input.setText(question)
+        self._send_ai_message()
 
     def listen_microphone(self) -> None:
         self.brain_output.append("\nQUANTUM: Ouvindo microfone...")

@@ -184,7 +184,7 @@ class QuantumMainWindow(QMainWindow):
         self.tabs.addTab(self._build_register_tab(), "👤 Cadastro Facial")
         self.tabs.addTab(self._build_photos_tab(), "🖼️ Galeria")
         self.tabs.addTab(self._build_logs_tab(), "📜 Eventos & Logs")
-        self.tabs.addTab(self._build_ai_tab(), "🧠 Quantum AI")
+        self.tabs.addTab(self._build_ai_tab(), "📊 Análise Tática")
         self.tabs.addTab(self._build_gesture_trainer_tab(), "🎯 Treinar Gestos")
         self.tabs.addTab(self._build_config_tab(), "⚙️ Configurações")
 
@@ -408,11 +408,11 @@ class QuantumMainWindow(QMainWindow):
 
         # Header
         header = QHBoxLayout()
-        lbl_title = QLabel("QUANTUM AI  ─  Assistente Inteligente")
+        lbl_title = QLabel("MÓDULO DE ANÁLISE TÁTICA E TELEMETRIA")
         lbl_title.setObjectName("CardHeader")
-        lbl_title.setStyleSheet("color:#00e5ff; font-size:14px; font-weight:700; letter-spacing:2px;")
+        lbl_title.setStyleSheet("color:#ffffff; font-size:14px; font-weight:700; letter-spacing:2px;")
         self.ai_status_label = QLabel("Verificando conexao...")
-        self.ai_status_label.setStyleSheet("color:#ffaa00; font-size:11px; font-family:Consolas;")
+        self.ai_status_label.setStyleSheet("color:#aaaaaa; font-size:11px; font-family:Consolas;")
         header.addWidget(lbl_title)
         header.addStretch()
         header.addWidget(self.ai_status_label)
@@ -444,21 +444,21 @@ class QuantumMainWindow(QMainWindow):
         self.chat_display.setObjectName("PanelText")
         self.chat_display.setStyleSheet("""
             QTextEdit {
-                background: #040b14;
-                border: 1px solid #0d3550;
+                background: #121212;
+                border: 1px solid #2d2d2d;
                 border-radius: 8px;
                 padding: 10px;
-                font-family: 'Segoe UI', sans-serif;
+                font-family: 'Consolas', sans-serif;
                 font-size: 13px;
-                color: #c8ecff;
+                color: #e0e0e0;
             }
         """)
         welcome = (
-            "<div style='color:#00e5ff; font-weight:bold;'>QUANTUM AI inicializado.</div>"
-            "<div style='color:#7ab8d4; font-size:12px;'>Pergunte qualquer coisa sobre o rastreamento, "
-            "os alvos detectados, o ghost mode ou peca uma analise da situacao atual.</div>"
-            "<br><div style='color:#4a7a8a; font-size:11px;'>Dicas: \"Quantos alvos tem na tela?\", "
-            "\"O ghost mode ta ativo?\", \"Analise a situacao atual\"</div>"
+            "<div style='color:#ffffff; font-weight:bold;'>ANÁLISE QUANTUM ATIVA.</div>"
+            "<div style='color:#aaaaaa; font-size:12px;'>Envie consultas sobre a telemetria do sistema, "
+            "coordenadas de alvos ou relatórios de rastreamento.</div>"
+            "<br><div style='color:#777777; font-size:11px;'>Exemplos: \"Quantos alvos estao ativos?\", "
+            "\"O robo esta em movimento?\", \"Resumo da operacao\"</div>"
         )
         self.chat_display.setHtml(welcome)
         layout.addWidget(self.chat_display, 1)
@@ -466,7 +466,7 @@ class QuantumMainWindow(QMainWindow):
         # Input area
         input_row = QHBoxLayout()
         self.ai_input = QLineEdit()
-        self.ai_input.setPlaceholderText("Digite sua pergunta para o QUANTUM AI...")
+        self.ai_input.setPlaceholderText("Consultar telemetria ou log do processador...")
         self.ai_input.setMinimumHeight(38)
         self.ai_input.returnPressed.connect(self._send_ai_message)
         send_btn = QPushButton("Enviar")
@@ -804,168 +804,168 @@ class QuantumMainWindow(QMainWindow):
         self.setStyleSheet(
             """
             QMainWindow, QWidget {
-                background-color: #040810;
-                color: #c8ecff;
-                font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
+                background-color: #0b0b0b;
+                color: #e0e0e0;
+                font-family: 'Consolas', 'Courier New', 'Segoe UI', Arial, sans-serif;
                 font-size: 13px;
             }
             #Title {
-                color: #00e5ff;
+                color: #ffffff;
                 font-size: 24px;
                 font-weight: 900;
-                letter-spacing: 4px;
+                letter-spacing: 5px;
                 padding: 4px 0;
             }
             #Status {
-                color: #00e5ff;
+                color: #ffffff;
                 font-family: Consolas, monospace;
                 font-size: 12px;
                 font-weight: bold;
                 padding: 5px 14px;
-                border: 1px solid #144f6e;
-                border-radius: 6px;
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #091a29, stop:1 #06121d);
+                border: 1px solid #444444;
+                border-radius: 4px;
+                background: #141414;
             }
             QTabWidget::pane {
-                border: 1px solid #133a54;
-                border-radius: 8px;
-                background: #08111c;
+                border: 1px solid #2d2d2d;
+                border-radius: 6px;
+                background: #111111;
                 margin-top: -1px;
             }
             QTabBar::tab {
-                background: #091624;
-                color: #70b0d0;
+                background: #161616;
+                color: #888888;
                 padding: 10px 18px;
-                border: 1px solid #133a54;
+                border: 1px solid #2d2d2d;
                 border-bottom: none;
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
                 margin-right: 3px;
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 700;
                 letter-spacing: 1px;
             }
             QTabBar::tab:selected {
-                background: #08111c;
-                color: #00e5ff;
-                border-top: 3px solid #00e5ff;
-                border-bottom: 1px solid #08111c;
+                background: #111111;
+                color: #ffffff;
+                border-top: 3px solid #ffffff;
+                border-bottom: 1px solid #111111;
             }
             QTabBar::tab:hover:!selected {
-                background: #102436;
-                color: #b8e6ff;
+                background: #1d1d1d;
+                color: #cccccc;
             }
             QPushButton {
-                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #103b57,stop:1 #092336);
-                color: #00e5ff;
-                border: 1px solid #1c5e82;
-                border-radius: 6px;
+                background: #1a1a1a;
+                color: #ffffff;
+                border: 1px solid #444444;
+                border-radius: 4px;
                 padding: 8px 18px;
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 700;
                 letter-spacing: 1px;
             }
             QPushButton:hover {
-                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #1a567d,stop:1 #103b58);
-                border-color: #00e5ff;
+                background: #2a2a2a;
+                border-color: #ffffff;
                 color: #ffffff;
             }
             QPushButton:pressed {
-                background: #061928;
-                border-color: #00b8d4;
+                background: #0d0d0d;
+                border-color: #cccccc;
             }
             QPushButton:disabled {
-                background: #08121a;
-                color: #264656;
-                border-color: #101c26;
+                background: #101010;
+                color: #444444;
+                border-color: #222222;
             }
             #DangerButton {
-                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #4a1525,stop:1 #280b14);
-                border-color: #d32f2f;
-                color: #ff8a80;
+                background: #2d1111;
+                border-color: #883333;
+                color: #ff9999;
             }
             #DangerButton:hover {
-                background: #6b1d34;
-                border-color: #ff5252;
+                background: #441a1a;
+                border-color: #ff3333;
                 color: #ffffff;
             }
             QLineEdit {
-                background: #050c16;
-                border: 1px solid #133a54;
-                border-radius: 6px;
-                color: #c8ecff;
+                background: #141414;
+                border: 1px solid #2d2d2d;
+                border-radius: 4px;
+                color: #ffffff;
                 padding: 8px 12px;
                 font-size: 13px;
-                selection-background-color: #1a5c7a;
+                selection-background-color: #444444;
             }
             QLineEdit:focus {
-                border-color: #00e5ff;
+                border-color: #ffffff;
             }
             QTextEdit, QPlainTextEdit {
-                background: #040b14;
-                border: 1px solid #133a54;
+                background: #141414;
+                border: 1px solid #2d2d2d;
                 border-radius: 6px;
-                color: #b0e0f8;
+                color: #e0e0e0;
                 padding: 10px;
                 font-family: Consolas, 'Courier New', monospace;
                 font-size: 12px;
-                selection-background-color: #1a5c7a;
+                selection-background-color: #444444;
             }
             QScrollBar:vertical {
-                background: #040a12;
+                background: #101010;
                 width: 9px;
                 margin: 0;
             }
             QScrollBar::handle:vertical {
-                background: #143e5a;
+                background: #333333;
                 border-radius: 4px;
                 min-height: 30px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #00e5ff;
+                background: #888888;
             }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                 height: 0;
             }
             QScrollBar:horizontal {
-                background: #040a12;
+                background: #101010;
                 height: 9px;
             }
             QScrollBar::handle:horizontal {
-                background: #143e5a;
+                background: #333333;
                 border-radius: 4px;
                 min-width: 30px;
             }
             QScrollBar::handle:horizontal:hover {
-                background: #00e5ff;
+                background: #888888;
             }
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
                 width: 0;
             }
             QLabel {
-                color: #7ab8d4;
-                font-size: 12px;
+                color: #aaaaaa;
+                font-size: 11px;
                 font-weight: 600;
                 letter-spacing: 1px;
             }
             #Video {
-                background: #02050b;
-                border: 1px solid #133a54;
+                background: #000000;
+                border: 1px solid #2d2d2d;
                 border-radius: 8px;
-                color: #00e5ff;
+                color: #ffffff;
                 font-size: 14px;
             }
             #PanelText {
                 font-family: Consolas, monospace;
                 font-size: 11px;
-                color: #70b0d0;
-                background: #030810;
-                border: 1px solid #0f2a40;
+                color: #cccccc;
+                background: #121212;
+                border: 1px solid #262626;
                 border-radius: 6px;
             }
             QFrame {
-                background: #08111c;
-                border: 1px solid #133a54;
+                background: #111111;
+                border: 1px solid #2d2d2d;
                 border-radius: 6px;
             }
             QScrollArea {
@@ -973,22 +973,22 @@ class QuantumMainWindow(QMainWindow):
                 background: transparent;
             }
             #SideCard {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #071322, stop:1 #040a14);
-                border: 1px solid #113652;
+                background: #141414;
+                border: 1px solid #2d2d2d;
                 border-radius: 8px;
                 margin-bottom: 4px;
             }
             #CardHeader {
-                color: #00e5ff;
-                font-size: 11px;
+                color: #ffffff;
+                font-size: 10px;
                 font-weight: 800;
                 letter-spacing: 2px;
                 padding-bottom: 4px;
-                border-bottom: 1px solid #113652;
+                border-bottom: 1px solid #2d2d2d;
                 margin-bottom: 6px;
             }
             #InfoValue {
-                color: #c8ecff;
+                color: #cccccc;
                 font-family: Consolas, monospace;
                 font-size: 12px;
                 font-weight: 500;

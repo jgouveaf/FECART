@@ -44,6 +44,7 @@ class YoloPersonTracker:
         self._lock = threading.Lock()
         self._latest_detections: List[Detection] = []
         self._inference_frame: Optional[np.ndarray] = None
+        self._orig_shape: Optional[tuple] = None
         self._busy = False                       # True while a thread is running
         self._thread: Optional[threading.Thread] = None
 
@@ -93,6 +94,7 @@ class YoloPersonTracker:
             if self._busy:
                 return                           # previous inference still running, skip
             self._busy = True
+            self._orig_shape = frame.shape       # Salva a resolucao original
             self._inference_frame = self._preprocess(frame)
 
         self._thread = threading.Thread(target=self._infer, daemon=True)
@@ -102,7 +104,8 @@ class YoloPersonTracker:
         """Run YOLO inference in background thread and cache results."""
         try:
             frame = self._inference_frame
-            if frame is None:
+            orig_shape = self._orig_shape
+            if frame is None or orig_shape is None:
                 return
 
             results = self.model.track(
@@ -116,7 +119,7 @@ class YoloPersonTracker:
                 verbose=False,
             )
 
-            detections = self._parse_results(results, frame.shape)
+            detections = self._parse_results(results, orig_shape)
             with self._lock:
                 self._latest_detections = detections
         except Exception as exc:

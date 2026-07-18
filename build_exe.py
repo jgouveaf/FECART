@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 
 def build_portable_exe() -> None:
     print("==========================================================")
-    print("🚀 INICIANDO BUILD PORTÁTIL DO QUANTUM TRACKER")
+    print("INICIANDO BUILD PORTATIL DO QUANTUM TRACKER")
     print("==========================================================")
 
     # 1. Mapeamento de arquivos de dados (Assets e Modelos IA)
@@ -31,15 +31,15 @@ def build_portable_exe() -> None:
     yolo_model = PROJECT_ROOT / "yolov8n.pt"
     if yolo_model.exists():
         datas.append((str(yolo_model), "."))
-        print(f"✓ Modelo YOLOv8 encontrado e incluído: {yolo_model.name}")
+        print(f"[OK] Modelo YOLOv8 encontrado e incluido: {yolo_model.name}")
     else:
-        print("⚠️ Aviso: yolov8n.pt não encontrado na raiz. O modelo será baixado no primeiro uso se necessário.")
+        print("[AVISO] Aviso: yolov8n.pt nao encontrado na raiz. O modelo sera baixado no primeiro uso se necessario.")
 
     # Modelos faciais se houver pasta assets/insightface_models
     insight_dir = PROJECT_ROOT / "assets" / "insightface_models"
     if insight_dir.exists():
         datas.append((str(insight_dir), "assets/insightface_models"))
-        print(f"✓ Modelos InsightFace incluídos: {insight_dir}")
+        print(f"[OK] Modelos InsightFace incluidos: {insight_dir}")
 
     binaries = []
     hiddenimports = [
@@ -61,9 +61,9 @@ def build_portable_exe() -> None:
             datas.extend(tmp_datas)
             binaries.extend(tmp_binaries)
             hiddenimports.extend(tmp_hiddenimports)
-            print(f"✓ Coletadas dependências estáticas do pacote: {pkg}")
+            print(f"[OK] Coletadas dependencias estaticas do pacote: {pkg}")
         except Exception as err:
-            print(f"⚠️ Instabilidade ao coletar hook para {pkg}: {err}")
+            print(f"[AVISO] Instabilidade ao coletar hook para {pkg}: {err}")
 
     # Icone do aplicativo
     icon_ico = PROJECT_ROOT / "assets" / "quantum_tracker.ico"
@@ -88,7 +88,7 @@ def build_portable_exe() -> None:
     for imp in set(hiddenimports):
         cmd_args.append(f"--hidden-import={imp}")
 
-    print("\n📦 Compilando via PyInstaller...")
+    print("\n[COMPILANDO] Compilando via PyInstaller...")
     PyInstaller.__main__.run(cmd_args)
 
     # 4. Preparação da pasta portátil e criação do README.txt
@@ -110,11 +110,11 @@ def build_portable_exe() -> None:
 
     with open(readme_path, "w", encoding="utf-8") as f:
         f.write(readme_content)
-    print("✓ README.txt gerado na pasta de distribuição.")
+    print("[OK] README.txt gerado na pasta de distribuicao.")
 
     # 5. Gerar arquivo ZIP final portátil
     zip_output = PROJECT_ROOT / "dist" / "QuantumTracker_Portable.zip"
-    print(f"\n🤐 Compactando pasta em '{zip_output.name}'...")
+    print(f"\n[ZIP] Compactando pasta em '{zip_output.name}'...")
 
     with zipfile.ZipFile(zip_output, "w", zipfile.ZIP_DEFLATED) as zipf:
         for file in dist_dir.rglob("*"):
@@ -122,9 +122,9 @@ def build_portable_exe() -> None:
             zipf.write(file, arcname)
 
     print("==========================================================")
-    print(f"🎉 BUILD CONCLUÍDO COM SUCESSO!")
-    print(f"📂 Executável gerado em: {dist_dir}")
-    print(f"📦 Arquivo ZIP final: {zip_output}")
+    print(f"[SUCESSO] BUILD CONCLUIDO COM SUCESSO!")
+    print(f"[OK] Executavel gerado em: {dist_dir}")
+    print(f"[OK] Arquivo ZIP final: {zip_output}")
     print("==========================================================")
 
 

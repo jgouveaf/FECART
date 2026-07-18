@@ -1228,7 +1228,9 @@ class QuantumMainWindow(QMainWindow):
         if self.register_frame is None:
             self._message("Nenhuma imagem disponivel. Abra a camera de cadastro primeiro.")
             return
-        self.register_status.append("Foto capturada. Agora clique em Salvar Cadastro.")
+        if self.register_timer.isActive():
+            self.register_timer.stop()
+        self.register_status.append("Foto capturada e congelada. Clique em Salvar Cadastro ou em Abrir Camera de Cadastro para tirar outra.")
 
     def save_registration(self) -> None:
         name = self.name_input.text().strip()
@@ -1249,8 +1251,15 @@ class QuantumMainWindow(QMainWindow):
                 self.register_status.append(f"Reconhecimento facial indisponivel: {self.faces.last_error}")
             self.voice.say(f"{name} cadastrado.")
             self.refresh_people()
+            
+            # Limpa campos e reinicia o preview para o próximo cadastro
+            self.name_input.clear()
+            self.register_frame = None
+            if not self.register_timer.isActive():
+                self.register_timer.start(40)
         except Exception as exc:
             self._message(f"Erro ao salvar cadastro: {exc}")
+
 
     def refresh_people(self) -> None:
         if not hasattr(self, "people_grid"):

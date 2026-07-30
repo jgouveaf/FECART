@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quantum Store — Apps & Jogos</title>
+  <meta name="description" content="Quantum Store — Descubra e baixe os melhores aplicativos para seu dispositivo." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- TOP NAVIGATION -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="topbar-left">
+      <button class="hamburger" onclick="toggleSidebar()" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </button>
+      <a href="index.html" class="brand">
+        <svg class="brand-icon" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="8" fill="#4285f4"/>
+          <polygon points="16,6 28,26 4,26" fill="white" opacity="0.9"/>
+          <circle cx="16" cy="20" r="3" fill="#4285f4"/>
+        </svg>
+        <span>Quantum Store</span>
+      </a>
+    </div>
+    <div class="topbar-center">
+      <div class="search-bar">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <input type="text" placeholder="Pesquisar apps e jogos" id="search-input" onkeydown="handleSearch(event)" />
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="avatar" title="Conta">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- SIDEBAR -->
+<nav class="sidebar" id="sidebar">
+  <a href="index.html" class="sidebar-item active">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+    <span>Início</span>
+  </a>
+  <a href="#" class="sidebar-item">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    <span>Atualizações</span>
+  </a>
+  <div class="sidebar-divider"></div>
+  <span class="sidebar-label">Categorias</span>
+  <a href="#" class="sidebar-item">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+    <span>Segurança</span>
+  </a>
+  <a href="#" class="sidebar-item">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2.05v2.02c3.95.49 7 3.85 7 7.93 0 3.21-1.81 6-4.72 7.72L13 17v5l5-3-1.22-1.22C19.91 15.69 22 12.45 22 12c0-5.18-3.95-9.45-9-9.95zM11 2.05C5.95 2.55 2 6.82 2 12c0 3.44 1.72 6.48 4.22 8.78L5 22l5-3v-5l-2.28 2.72C6.81 15 6 13.58 6 12c0-4.08 3.05-7.44 7-7.93V2.05z"/></svg>
+    <span>Inteligência Artificial</span>
+  </a>
+  <a href="#" class="sidebar-item">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 6.5l-4-4-9.5 9.5-2 4.5 4.5-2L21 6.5z"/></svg>
+    <span>Robótica</span>
+  </a>
+</nav>
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+<!-- MAIN CONTENT -->
+<main class="main-content" id="main">
+
+  <!-- HERO BANNER -->
+  <section class="hero-banner" onclick="location.href='app.html'" style="cursor:pointer">
+    <div class="hero-inner">
+      <div class="hero-badge">Em destaque</div>
+      <div class="hero-content">
+        <div class="hero-icon">
+          <img src="assets/icon.jpg" alt="Quantum Tracker" />
+        </div>
+        <div class="hero-text">
+          <h1 class="hero-title">Quantum Tracker</h1>
+          <p class="hero-subtitle">Sistema de rastreamento com IA — visão computacional, biometria facial e controle robótico em tempo real.</p>
+          <div class="hero-tags">
+            <span class="hero-tag">IA</span>
+            <span class="hero-tag">Robótica</span>
+            <span class="hero-tag">Biometria</span>
+            <span class="hero-tag">Open Source</span>
+          </div>
+        </div>
+        <button class="hero-btn" onclick="event.stopPropagation(); location.href='app.html'">Ver app</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- CATEGORY TABS -->
+  <div class="category-tabs">
+    <button class="tab active" onclick="filterApps('all',this)">Todos</button>
+    <button class="tab" onclick="filterApps('ia',this)">IA &amp; ML</button>
+    <button class="tab" onclick="filterApps('seguranca',this)">Segurança</button>
+    <button class="tab" onclick="filterApps('robotica',this)">Robótica</button>
+  </div>
+
+  <!-- APP GRID -->
+  <section class="section">
+    <h2 class="section-title">Apps em destaque</h2>
+    <div class="app-grid" id="app-grid">
+
+      <a href="app.html" class="app-card" data-tags="ia seguranca robotica">
+        <div class="app-card-icon">
+          <img src="assets/icon.jpg" alt="Quantum Tracker" />
+        </div>
+        <div class="app-card-info">
+          <span class="app-card-name">Quantum Tracker</span>
+          <span class="app-card-dev">FECART Labs</span>
+          <div class="app-card-meta">
+            <div class="stars">★★★★★</div>
+            <span class="app-card-rating">5.0</span>
+          </div>
+          <span class="app-card-badge">Gratuito</span>
+        </div>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- EDITORS PICK -->
+  <section class="section">
+    <h2 class="section-title">🏆 Escolha dos editores</h2>
+    <div class="editors-pick" onclick="location.href='app.html'" style="cursor:pointer">
+      <div class="ep-icon">
+        <img src="assets/icon.jpg" alt="Quantum Tracker" />
+      </div>
+      <div class="ep-text">
+        <span class="ep-badge">ESCOLHA DOS EDITORES</span>
+        <h3>Quantum Tracker</h3>
+        <p>O sistema de rastreamento mais avançado: combine visão computacional, IA generativa (Gemini), biometria facial e controle de robô em uma única plataforma open-source.</p>
+        <div class="ep-tags">
+          <span>YOLOv8</span>
+          <span>MediaPipe</span>
+          <span>Gemini AI</span>
+          <span>InsightFace</span>
+          <span>ESP32</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-links">
+    <a href="#">Privacidade</a>
+    <a href="#">Termos</a>
+    <a href="#">Sobre</a>
+    <a href="#">Desenvolvedores</a>
+  </div>
+  <p>© 2026 FECART Labs · Quantum Store</p>
+</footer>
+
+<script src="js/app.js"></script>
+</body>
+</html>

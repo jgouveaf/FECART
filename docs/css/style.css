@@ -196,15 +196,19 @@ ul { list-style: none; }
 .hero-subtitle { color: var(--text-muted); font-size: 1rem; margin-bottom: 14px; }
 .hero-tags { display: flex; gap: 8px; flex-wrap: wrap; }
 .hero-tag { background: rgba(255,255,255,.1); color: var(--text); padding: 4px 10px; border-radius: 20px; font-size: .8rem; }
+.hero-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .hero-btn {
+  display: inline-flex; align-items: center; justify-content: center;
   background: var(--accent); color: white;
   padding: 12px 28px; border-radius: 24px;
   font-size: .95rem; font-weight: 600;
   white-space: nowrap; flex-shrink: 0;
-  transition: background var(--transition), transform var(--transition);
+  transition: background var(--transition), transform var(--transition); text-decoration: none;
   box-shadow: 0 4px 16px rgba(66,133,244,.4);
 }
 .hero-btn:hover { background: var(--accent-hover); transform: translateY(-2px); }
+.hero-btn-secondary { background: rgba(255,255,255,.12); }
+.hero-btn-secondary:hover { background: rgba(255,255,255,.2); }
 
 /* ─── CATEGORY TABS ──────────────────────────────── */
 .category-tabs {
@@ -291,5 +295,6 @@ ul { list-style: none; }
   .section { padding: 20px; }
   .category-tabs { padding: 12px 20px 0; }
   .hero-content { flex-wrap: wrap; }
-  .hero-btn { width: 100%; text-align: center; }
+  .hero-actions { width: 100%; }
+  .hero-btn { flex: 1; text-align: center; }
 }

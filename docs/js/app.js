@@ -85,6 +85,7 @@ function confirmInstall() {
     if (i >= steps.length) {
       setTimeout(() => {
         closeModal();
+        downloadExe();
         showTab('instalacao', document.getElementById('tab-instalacao'));
         actions.style.display = '';
         progressWrap.style.display = 'none';
@@ -101,10 +102,26 @@ function confirmInstall() {
   advance();
 }
 
-// ─── DOWNLOAD APP ─────────────────────────────────────────
-function downloadApp() {
-  window.open('https://github.com/jgouveaf/FECART/archive/refs/heads/main.zip', '_blank');
+// ─── DOWNLOAD FUNCTIONS ───────────────────────────────────
+const EXE_URL = 'https://github.com/jgouveaf/FECART/releases/latest/download/QuantumTracker_Portable.zip';
+const ZIP_URL = 'https://github.com/jgouveaf/FECART/archive/refs/heads/main.zip';
+
+function downloadExe() {
+  showToast('📥 Iniciando download do QuantumTracker.exe...');
+  const a = document.createElement('a');
+  a.href = EXE_URL;
+  a.download = 'QuantumTracker_Portable.zip';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
+
+function downloadZip() {
+  window.open(ZIP_URL, '_blank');
+}
+
+// Legacy alias
+function downloadApp() { downloadExe(); }
 
 // ─── WISHLIST ─────────────────────────────────────────────
 function toggleWishlist(btn) {

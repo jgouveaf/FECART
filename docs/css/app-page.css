@@ -217,14 +217,22 @@
 }
 .copy-btn:hover { opacity: .7; }
 .btn-download {
-  display: inline-flex; align-items: center; gap: 8px; margin-top: 10px;
+  display: inline-flex; align-items: center; gap: 12px; margin-top: 10px;
   background: var(--green); color: white;
-  padding: 10px 22px; border-radius: 24px;
-  font-size: .9rem; font-weight: 600;
+  padding: 12px 22px; border-radius: 12px;
+  font-size: .9rem; font-weight: 600; text-align: left; width: 100%;
   transition: background .15s, transform .15s;
   box-shadow: 0 4px 14px rgba(52,168,83,.35);
 }
 .btn-download:hover { background: #2d9147; transform: translateY(-1px); }
+.btn-download.secondary {
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); box-shadow: none;
+}
+.btn-download.secondary:hover { background: #2d2d2d; transform: translateY(-1px); }
+.btn-download div { display: flex; flex-direction: column; gap: 2px; }
+.btn-download small { font-size: .75rem; opacity: .75; font-weight: 400; }
+.download-options { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .install-note {
   display: flex; gap: 10px; align-items: flex-start;
   background: rgba(66,133,244,.08); border: 1px solid rgba(66,133,244,.2);

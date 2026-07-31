@@ -103,7 +103,7 @@ function confirmInstall() {
 }
 
 // ─── DOWNLOAD FUNCTIONS ───────────────────────────────────
-const EXE_URL = 'https://github.com/jgouveaf/FECART/releases/latest/download/QuantumTracker_Portable.zip';
+const EXE_URL = 'https://github.com/jgouveaf/FECART/releases/tag/v2.0.0';
 const ZIP_URL = 'https://github.com/jgouveaf/FECART/archive/refs/heads/main.zip';
 
 function downloadExe() {

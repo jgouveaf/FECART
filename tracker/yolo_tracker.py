@@ -80,9 +80,15 @@ class YoloPersonTracker:
             return list(self._latest_detections)
 
     def shutdown(self) -> None:
-        """Wait for any running inference thread to finish."""
+        """Wait for any running inference thread to finish and reset state."""
         if self._thread is not None:
             self._thread.join(timeout=2.0)
+        with self._lock:
+            self._latest_detections = []
+            self._busy = False
+            self._frame_counter = 0
+            self._inference_frame = None
+            self._orig_shape = None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -164,6 +170,16 @@ class YoloPersonTracker:
         detections: List[Detection] = []
         for coords, conf, track_id in zip(xyxy, confs, ids):
             x1, y1, x2, y2 = (float(v) * scale for v in coords)
+            w_box = max(1.0, x2 - x1)
+            h_box = max(1.0, y2 - y1)
+            aspect_ratio = w_box / h_box
+
+            # Filter out false-positive hand/arm detections (close-up hands usually have wide ratio > 1.35 or low conf < 0.52)
+            if aspect_ratio > 1.35 and float(conf) < 0.52:
+                continue
+            if h_box < 50.0 and float(conf) < 0.48:
+                continue
+
             detections.append(Detection(BoundingBox(x1, y1, x2, y2), float(conf), track_id))
         return detections
 

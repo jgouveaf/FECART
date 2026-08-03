@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 import math
 import time
+from collections import deque
 from datetime import datetime
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 
@@ -32,6 +31,8 @@ class TacticalHUD:
         self._gesture_anim = 0.0
         self._gesture_ts = 0.0
         self._last_gesture: Optional[str] = None
+        self._vignette_cache: Optional[np.ndarray] = None  # precomputed per frame size
+        self._breadcrumbs: Dict[int, deque[Tuple[int, int]]] = {}
 
     def draw(self, frame: np.ndarray, snapshot: SystemSnapshot) -> np.ndarray:
         if cv2 is None or frame is None:
@@ -73,6 +74,11 @@ class TacticalHUD:
             self._text(canvas, display_line, (w - 330, 52 + idx * 24), 0.40, (200, 200, 200))
 
         # ── Target Bounding Boxes ──
+        active_ids = {target.track_id for target in snapshot.targets}
+        for tid in list(self._breadcrumbs.keys()):
+            if tid not in active_ids:
+                del self._breadcrumbs[tid]
+
         for target in snapshot.targets:
             self._target(canvas, target)
 
@@ -190,6 +196,23 @@ class TacticalHUD:
                 cv2.line(canvas, (px, py), (px, py + dy * seg), color, thick, cv2.LINE_AA)
 
         cx, cy = map(int, target.bbox.center)
+
+        # Update and render motion trajectory breadcrumbs trail
+        if target.track_id not in self._breadcrumbs:
+            self._breadcrumbs[target.track_id] = deque(maxlen=16)
+        trail = self._breadcrumbs[target.track_id]
+        if not trail or math.hypot(cx - trail[-1][0], cy - trail[-1][1]) > 2.0:
+            trail.append((cx, cy))
+
+        # Render trajectory trail
+        pts = list(trail)
+        for i in range(len(pts) - 1):
+            alpha = (i + 1) / len(pts)
+            c_val = int(255 * alpha)
+            pt_color = (c_val, c_val, c_val) if target.state != TargetState.GHOST else (0, int(165 * alpha), int(255 * alpha))
+            thick = 1 if i < len(pts) - 4 else 2
+            cv2.line(canvas, pts[i], pts[i + 1], pt_color, thick, cv2.LINE_AA)
+
         cv2.circle(canvas, (cx, cy), 3, color, -1, cv2.LINE_AA)
 
         if target.state == TargetState.GHOST:
@@ -199,16 +222,12 @@ class TacticalHUD:
         lbl_state = target.state.value
         head_tag = f"ID:{target.track_id} | {name} [{lbl_state}]"
         
-        # Text background badge
+        # Text background badge — use simple filled rectangle, no copy needed
         badge_y = max(24, y1 - 12)
         font = cv2.FONT_HERSHEY_SIMPLEX
         ts, _ = cv2.getTextSize(head_tag, font, 0.40, 1)
-        
-        overlay = canvas.copy()
-        cv2.rectangle(overlay, (x1, badge_y - ts[1] - 4), (x1 + ts[0] + 10, badge_y + 4), (10, 10, 10), -1)
-        cv2.addWeighted(overlay, 0.85, canvas, 0.15, 0, canvas)
+        cv2.rectangle(canvas, (x1, badge_y - ts[1] - 4), (x1 + ts[0] + 10, badge_y + 4), (10, 10, 10), -1)
         cv2.rectangle(canvas, (x1, badge_y - ts[1] - 4), (x1 + ts[0] + 10, badge_y + 4), color, 1, cv2.LINE_AA)
-        
         cv2.putText(canvas, head_tag, (x1 + 5, badge_y), font, 0.40, color, 1, cv2.LINE_AA)
         
         sub_tag = f"CONF: {target.confidence:.0%}  |  DIST: {target.distance_estimate:.1f}m  |  VEL: {target.speed:.1f}px/f"
@@ -260,11 +279,19 @@ class TacticalHUD:
 
     def _vignette(self, canvas: np.ndarray) -> None:
         h, w = canvas.shape[:2]
-        overlay = np.zeros_like(canvas)
-        for i in range(50):
-            alpha = int(70 * (1 - i / 50))
-            cv2.rectangle(overlay, (i, i), (w - i, h - i), (0, 0, 0), 1)
-        cv2.addWeighted(overlay, 0.45, canvas, 1.0, 0, canvas)
+        # Recompute cache only if frame size changed (e.g. first call or window resize)
+        if self._vignette_cache is None or self._vignette_cache.shape[:2] != (h, w):
+            mask = np.zeros((h, w), dtype=np.float32)
+            cy, cx = h / 2, w / 2
+            Y, X = np.ogrid[:h, :w]
+            # Normalized distance from center (0=center, 1=corner)
+            dist = np.sqrt(((X - cx) / cx) ** 2 + ((Y - cy) / cy) ** 2)
+            # Vignette strength: 0 at center, up to 0.55 at corners
+            vignette = np.clip(dist * 0.55, 0.0, 0.55).astype(np.float32)
+            self._vignette_cache = vignette[:, :, np.newaxis]  # (H, W, 1) for broadcasting
+        canvas[:] = np.clip(
+            canvas.astype(np.float32) * (1.0 - self._vignette_cache), 0, 255
+        ).astype(np.uint8)
 
     def _text(
         self,

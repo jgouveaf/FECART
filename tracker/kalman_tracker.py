@@ -35,7 +35,8 @@ class KalmanTracker:
         z = np.array([[center[0]], [center[1]]], dtype=float)
         y = z - self.H @ self.state
         S = self.H @ self.P @ self.H.T + self.R
-        K = self.P @ self.H.T @ np.linalg.inv(S)
+        # Use solve instead of inv for numerical stability (avoids singular matrix crashes)
+        K = np.linalg.solve(S.T, (self.P @ self.H.T).T).T
         self.state = self.state + K @ y
         self.P = (np.eye(4) - K @ self.H) @ self.P
         return self.predict()

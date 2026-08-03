@@ -124,11 +124,13 @@ class DatabaseManager:
             self.connection.commit()
 
     def log_event(self, event: SystemEvent) -> None:
+        ts_str = event.timestamp.isoformat(timespec="seconds")
+        today = event.timestamp.strftime("%Y-%m-%d")
         with self.lock:
             self.connection.execute(
                 "INSERT INTO events(timestamp, name, track_id, confidence, event, state) VALUES (?, ?, ?, ?, ?, ?)",
                 (
-                    event.timestamp.isoformat(timespec="seconds"),
+                    ts_str,
                     event.name,
                     event.track_id,
                     event.confidence,
@@ -136,6 +138,23 @@ class DatabaseManager:
                     event.state,
                 ),
             )
+            evt_type = event.event_type.value
+            det_inc = 1 if evt_type == "TARGET_CREATED" else 0
+            ident_inc = 1 if evt_type == "TARGET_IDENTIFIED" else 0
+            ghost_inc = 1 if evt_type == "GHOST_ACTIVATED" else 0
+            if det_inc or ident_inc or ghost_inc:
+                self.connection.execute(
+                    """
+                    INSERT INTO daily_stats(day, detected_count, identified_count, ghost_count, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(day) DO UPDATE SET
+                        detected_count = detected_count + excluded.detected_count,
+                        identified_count = identified_count + excluded.identified_count,
+                        ghost_count = ghost_count + excluded.ghost_count,
+                        updated_at = excluded.updated_at
+                    """,
+                    (today, det_inc, ident_inc, ghost_inc, ts_str),
+                )
             self.connection.commit()
 
     def recent_events(self, limit: int = 20) -> List[EventRecord]:
@@ -340,16 +359,29 @@ class DatabaseManager:
         return [EventRecord(str(row[0]), row[1], row[2], float(row[3] or 0.0), str(row[4]), str(row[5])) for row in rows]
 
     def stats_summary(self) -> dict[str, int]:
+        today = datetime.now().strftime("%Y-%m-%d")
         with self.lock:
             people_count = self.connection.execute("SELECT COUNT(*) FROM people").fetchone()[0]
             identity_count = self.connection.execute("SELECT COUNT(*) FROM identity_events").fetchone()[0]
             ghost_count = self.connection.execute("SELECT COUNT(*) FROM events WHERE event = 'GHOST_ACTIVATED'").fetchone()[0]
             session_count = self.connection.execute("SELECT COUNT(*) FROM track_sessions").fetchone()[0]
+            today_row = self.connection.execute(
+                "SELECT detected_count, identified_count, ghost_count FROM daily_stats WHERE day = ?",
+                (today,),
+            ).fetchone()
+
+        today_detected = int(today_row[0]) if today_row else 0
+        today_identified = int(today_row[1]) if today_row else 0
+        today_ghost = int(today_row[2]) if today_row else 0
+
         return {
             "people": int(people_count),
             "identity_events": int(identity_count),
             "ghost_events": int(ghost_count),
             "track_sessions": int(session_count),
+            "today_detected": today_detected,
+            "today_identified": today_identified,
+            "today_ghost": today_ghost,
         }
 
     def close(self) -> None:

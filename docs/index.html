@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quantum Store — Apps & Jogos</title>
-  <meta name="description" content="Quantum Store — Descubra e baixe os melhores aplicativos para seu dispositivo." />
+  <title>Quantum Tracker — Quantum Store</title>
+  <meta name="description" content="Quantum Tracker: sistema de rastreamento inteligente com IA, visão computacional, biometria facial e controle robótico." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/app-page.css" />
 </head>
 <body>
 
@@ -30,11 +31,11 @@
     <div class="topbar-center">
       <div class="search-bar">
         <svg class="search-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-        <input type="text" placeholder="Pesquisar apps e jogos" id="search-input" onkeydown="handleSearch(event)" />
+        <input type="text" placeholder="Pesquisar apps e jogos" id="search-input" />
       </div>
     </div>
     <div class="topbar-right">
-      <div class="avatar" title="Conta">
+      <div class="avatar">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
       </div>
     </div>
@@ -43,7 +44,7 @@
 
 <!-- SIDEBAR -->
 <nav class="sidebar" id="sidebar">
-  <a href="index.html" class="sidebar-item active">
+  <a href="index.html" class="sidebar-item">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
     <span>Início</span>
   </a>
@@ -54,103 +55,349 @@
   <div class="sidebar-divider"></div>
   <span class="sidebar-label">Categorias</span>
   <a href="#" class="sidebar-item">
-    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
     <span>Segurança</span>
   </a>
   <a href="#" class="sidebar-item">
-    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2.05v2.02c3.95.49 7 3.85 7 7.93 0 3.21-1.81 6-4.72 7.72L13 17v5l5-3-1.22-1.22C19.91 15.69 22 12.45 22 12c0-5.18-3.95-9.45-9-9.95zM11 2.05C5.95 2.55 2 6.82 2 12c0 3.44 1.72 6.48 4.22 8.78L5 22l5-3v-5l-2.28 2.72C6.81 15 6 13.58 6 12c0-4.08 3.05-7.44 7-7.93V2.05z"/></svg>
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2.05v2.02c3.95.49 7 3.85 7 7.93 0 3.21-1.81 6-4.72 7.72L13 17v5l5-3-1.22-1.22C19.91 15.69 22 12.45 22 12c0-5.18-3.95-9.45-9-9.95z"/></svg>
     <span>Inteligência Artificial</span>
-  </a>
-  <a href="#" class="sidebar-item">
-    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 6.5l-4-4-9.5 9.5-2 4.5 4.5-2L21 6.5z"/></svg>
-    <span>Robótica</span>
   </a>
 </nav>
 <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
 
-<!-- MAIN CONTENT -->
-<main class="main-content" id="main">
+<!-- APP DETAIL PAGE -->
+<main class="main-content app-page" id="main">
 
-  <!-- HERO BANNER -->
-  <section class="hero-banner" onclick="location.href='app.html'" style="cursor:pointer">
-    <div class="hero-inner">
-      <div class="hero-badge">Em destaque</div>
-      <div class="hero-content">
-        <div class="hero-icon">
-          <img src="assets/icon.jpg" alt="Quantum Tracker" />
+  <!-- BREADCRUMB -->
+  <nav class="breadcrumb">
+    <a href="index.html">Início</a>
+    <svg viewBox="0 0 24 24" fill="currentColor" width="14"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+    <a href="index.html">Utilitários</a>
+    <svg viewBox="0 0 24 24" fill="currentColor" width="14"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+    <span>Quantum Tracker</span>
+  </nav>
+
+  <!-- APP HEADER -->
+  <section class="app-header">
+    <div class="app-header-icon">
+      <img src="assets/icon.jpg" alt="Quantum Tracker" id="app-icon" />
+    </div>
+    <div class="app-header-info">
+      <h1 class="app-name">Quantum Tracker</h1>
+      <a href="#" class="app-dev-link">FECART Labs</a>
+      <div class="app-header-meta">
+        <div class="rating-pill">
+          <span class="rating-num">5,0</span>
+          <svg viewBox="0 0 24 24" fill="#f9ab00" width="14"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
         </div>
-        <div class="hero-text">
-          <h1 class="hero-title">Quantum Tracker</h1>
-          <p class="hero-subtitle">Sistema de rastreamento com IA — visão computacional, biometria facial e controle robótico em tempo real.</p>
-          <div class="hero-tags">
-            <span class="hero-tag">IA</span>
-            <span class="hero-tag">Robótica</span>
-            <span class="hero-tag">Biometria</span>
-            <span class="hero-tag">Open Source</span>
-          </div>
-        </div>
-        <div class="hero-actions" onclick="event.stopPropagation()">
-          <a class="hero-btn hero-btn-primary" href="app.html#instalacao">Instalar</a>
-          <a class="hero-btn hero-btn-secondary" href="app.html">Ver app</a>
-        </div>
+        <span class="meta-divider"></span>
+        <span class="app-downloads">10K+ downloads</span>
+        <span class="meta-divider"></span>
+        <span class="app-age">Livre</span>
+        <span class="meta-divider"></span>
+        <span class="app-category">IA &amp; Segurança</span>
+      </div>
+      <div class="app-actions">
+        <button class="btn-install" id="install-btn" onclick="startInstall()">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Instalar
+        </button>
+        <button class="btn-wishlist" onclick="toggleWishlist(this)" title="Adicionar à lista de desejos">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        </button>
+        <button class="btn-share" onclick="shareApp()" title="Compartilhar">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="20"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
+        </button>
       </div>
     </div>
   </section>
 
-  <!-- CATEGORY TABS -->
-  <div class="category-tabs">
-    <button class="tab active" onclick="filterApps('all',this)">Todos</button>
-    <button class="tab" onclick="filterApps('ia',this)">IA &amp; ML</button>
-    <button class="tab" onclick="filterApps('seguranca',this)">Segurança</button>
-    <button class="tab" onclick="filterApps('robotica',this)">Robótica</button>
+  <!-- STATS STRIP -->
+  <div class="stats-strip">
+    <div class="stat-item">
+      <span class="stat-val">5,0</span>
+      <div class="stat-stars">★★★★★</div>
+      <span class="stat-label">Avaliações</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item">
+      <span class="stat-val">10K+</span>
+      <span class="stat-label">Downloads</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item">
+      <span class="stat-val">Livre</span>
+      <span class="stat-label">Classificação</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-item">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
+      <span class="stat-label">Verificado</span>
+    </div>
   </div>
 
-  <!-- APP GRID -->
-  <section class="section">
-    <h2 class="section-title">Apps em destaque</h2>
-    <div class="app-grid" id="app-grid">
-
-      <a href="app.html" class="app-card" data-tags="ia seguranca robotica">
-        <div class="app-card-icon">
-          <img src="assets/icon.jpg" alt="Quantum Tracker" />
+  <!-- SCREENSHOTS CAROUSEL -->
+  <section class="screenshots-section">
+    <h2>Screenshots</h2>
+    <div class="screenshots-wrap">
+      <button class="scroll-btn left" onclick="scrollScreenshots(-1)">&#8249;</button>
+      <div class="screenshots-track" id="screenshots-track">
+        <!-- Screenshots rendered via canvas in JS -->
+        <div class="screenshot-slide" id="ss1">
+          <canvas id="canvas-tracking" width="360" height="220"></canvas>
+          <span>Rastreamento em tempo real</span>
         </div>
-        <div class="app-card-info">
-          <span class="app-card-name">Quantum Tracker</span>
-          <span class="app-card-dev">FECART Labs</span>
-          <div class="app-card-meta">
-            <div class="stars">★★★★★</div>
-            <span class="app-card-rating">5.0</span>
-          </div>
-          <span class="app-card-badge">Gratuito</span>
+        <div class="screenshot-slide" id="ss2">
+          <canvas id="canvas-gestures" width="360" height="220"></canvas>
+          <span>Reconhecimento de gestos</span>
         </div>
-      </a>
-
+        <div class="screenshot-slide" id="ss3">
+          <canvas id="canvas-biometrics" width="360" height="220"></canvas>
+          <span>Biometria facial</span>
+        </div>
+        <div class="screenshot-slide" id="ss4">
+          <canvas id="canvas-robot" width="360" height="220"></canvas>
+          <span>Painel de controle robótico</span>
+        </div>
+        <div class="screenshot-slide" id="ss5">
+          <canvas id="canvas-ai" width="360" height="220"></canvas>
+          <span>Assistente Gemini AI</span>
+        </div>
+      </div>
+      <button class="scroll-btn right" onclick="scrollScreenshots(1)">&#8250;</button>
     </div>
   </section>
 
-  <!-- EDITORS PICK -->
-  <section class="section">
-    <h2 class="section-title">🏆 Escolha dos editores</h2>
-    <div class="editors-pick" onclick="location.href='app.html'" style="cursor:pointer">
-      <div class="ep-icon">
-        <img src="assets/icon.jpg" alt="Quantum Tracker" />
+  <!-- TABS -->
+  <div class="detail-tabs">
+    <button class="dtab active" onclick="showTab('sobre', this)" id="tab-sobre">Sobre</button>
+    <button class="dtab" onclick="showTab('reviews', this)" id="tab-reviews">Avaliações</button>
+    <button class="dtab" onclick="showTab('privacidade', this)" id="tab-privacidade">Privacidade</button>
+    <button class="dtab" onclick="showTab('instalacao', this)" id="tab-instalacao">Instalação</button>
+  </div>
+
+  <!-- TAB: SOBRE -->
+  <section class="tab-content active" id="tab-content-sobre">
+    <div class="about-text">
+      <p><strong>Quantum Tracker</strong> é uma plataforma completa de rastreamento inteligente desenvolvida pela FECART Labs, projetada para aplicações em segurança, pesquisa e robótica.</p>
+
+      <h3>✨ Principais recursos</h3>
+      <ul>
+        <li>🎯 <strong>Detecção de pessoas em tempo real</strong> — YOLOv8 + ByteTrack com IDs estáveis por Re-ID visual</li>
+        <li>👁️ <strong>Reconhecimento facial</strong> — InsightFace para identificação biométrica persistente com banco de dados</li>
+        <li>🤖 <strong>Controle robótico</strong> — Integração com ESP32/robôs reais via serial ou Wi-Fi (modo simulador também disponível)</li>
+        <li>🖐️ <strong>Gestos manuais</strong> — MediaPipe Hands com classificador SVM treinável pelo próprio usuário</li>
+        <li>🧠 <strong>IA conversacional</strong> — Chat integrado com Google Gemini para análise de cenas e eventos</li>
+        <li>🗣️ <strong>Reconhecimento de voz</strong> — Comandos de voz em tempo real para controle do sistema</li>
+        <li>📊 <strong>HUD tático</strong> — Overlay monochromático estilo militar com trilha de trajetória e histórico</li>
+        <li>💾 <strong>Banco de dados SQLite</strong> — Histórico completo de sessões, eventos e identidades</li>
+      </ul>
+
+      <h3>🔧 Tecnologias</h3>
+      <div class="tech-chips">
+        <span class="chip">Python 3.11+</span>
+        <span class="chip">PySide6 / Qt</span>
+        <span class="chip">YOLOv8</span>
+        <span class="chip">ByteTrack</span>
+        <span class="chip">InsightFace</span>
+        <span class="chip">MediaPipe</span>
+        <span class="chip">Google Gemini</span>
+        <span class="chip">OpenCV</span>
+        <span class="chip">NumPy</span>
+        <span class="chip">SQLite</span>
+        <span class="chip">ESP32</span>
       </div>
-      <div class="ep-text">
-        <span class="ep-badge">ESCOLHA DOS EDITORES</span>
-        <h3>Quantum Tracker</h3>
-        <p>O sistema de rastreamento mais avançado: combine visão computacional, IA generativa (Gemini), biometria facial e controle de robô em uma única plataforma open-source.</p>
-        <div class="ep-tags">
-          <span>YOLOv8</span>
-          <span>MediaPipe</span>
-          <span>Gemini AI</span>
-          <span>InsightFace</span>
-          <span>ESP32</span>
+    </div>
+
+    <div class="app-info-grid">
+      <div class="info-item"><span>Versão</span><strong>2.0.0</strong></div>
+      <div class="info-item"><span>Atualizado em</span><strong>Julho 2026</strong></div>
+      <div class="info-item"><span>Tamanho</span><strong>~250 MB</strong></div>
+      <div class="info-item"><span>Requisitos</span><strong>Windows 10/11 + Python 3.11</strong></div>
+      <div class="info-item"><span>Idioma</span><strong>Português (BR)</strong></div>
+      <div class="info-item"><span>Desenvolvedor</span><strong>FECART Labs</strong></div>
+    </div>
+  </section>
+
+  <!-- TAB: REVIEWS -->
+  <section class="tab-content" id="tab-content-reviews">
+    <div class="rating-summary">
+      <div class="rating-big">
+        <span class="rating-big-num">5,0</span>
+        <div class="rating-big-stars">★★★★★</div>
+        <span class="rating-big-count">de 5</span>
+      </div>
+      <div class="rating-bars">
+        <div class="rbar"><span>5</span><div class="rbar-track"><div class="rbar-fill" style="width:92%"></div></div><span>92%</span></div>
+        <div class="rbar"><span>4</span><div class="rbar-track"><div class="rbar-fill" style="width:6%"></div></div><span>6%</span></div>
+        <div class="rbar"><span>3</span><div class="rbar-track"><div class="rbar-fill" style="width:2%"></div></div><span>2%</span></div>
+        <div class="rbar"><span>2</span><div class="rbar-track"><div class="rbar-fill" style="width:0%"></div></div><span>0%</span></div>
+        <div class="rbar"><span>1</span><div class="rbar-track"><div class="rbar-fill" style="width:0%"></div></div><span>0%</span></div>
+      </div>
+    </div>
+
+    <div class="reviews-list">
+      <div class="review-card">
+        <div class="review-header">
+          <div class="review-avatar">M</div>
+          <div><strong>Marcos A.</strong><div class="rev-stars">★★★★★</div></div>
+          <span class="rev-date">23 Jul 2026</span>
         </div>
+        <p>Sistema impressionante! A integração entre rastreamento, IA e robótica funcionou perfeita com meu ESP32.</p>
+      </div>
+      <div class="review-card">
+        <div class="review-header">
+          <div class="review-avatar">J</div>
+          <div><strong>João G.</strong><div class="rev-stars">★★★★★</div></div>
+          <span class="rev-date">20 Jul 2026</span>
+        </div>
+        <p>O reconhecimento de gestos é incrível. Consegui treinar minhas próprias classes em minutos.</p>
+      </div>
+      <div class="review-card">
+        <div class="review-header">
+          <div class="review-avatar">L</div>
+          <div><strong>Laura S.</strong><div class="rev-stars">★★★★★</div></div>
+          <span class="rev-date">18 Jul 2026</span>
+        </div>
+        <p>HUD tático surreal. Parece saído de um filme de ficção científica. Altamente recomendo!</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB: PRIVACIDADE -->
+  <section class="tab-content" id="tab-content-privacidade">
+    <div class="privacy-section">
+      <div class="privacy-badge">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="32"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+        <span>Dados seguros</span>
+      </div>
+      <p>O Quantum Tracker é um aplicativo <strong>local e offline-first</strong>. Todos os dados de rastreamento, reconhecimento facial e histórico são armazenados exclusivamente no dispositivo do usuário em um banco de dados SQLite local.</p>
+      <h3>Dados coletados</h3>
+      <ul>
+        <li>📷 Imagens de câmera — processadas localmente, nunca enviadas</li>
+        <li>🗃️ Embeddings faciais — armazenados localmente em formato criptografado</li>
+        <li>🤖 Comandos de voz — processados localmente via SpeechRecognition</li>
+        <li>🧠 Prompts do Gemini — enviados para a API Google apenas quando o chat IA está ativo</li>
+      </ul>
+      <p class="privacy-note">Nenhum dado é compartilhado com terceiros. A chave de API do Gemini é armazenada localmente e nunca transmitida para nossos servidores.</p>
+    </div>
+  </section>
+
+  <!-- TAB: INSTALAÇÃO -->
+  <section class="tab-content" id="tab-content-instalacao">
+    <div class="install-guide">
+      <h3>📦 Requisitos do Sistema</h3>
+      <div class="requirements-grid">
+        <div class="req-item">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="24"><rect x="2" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <div><strong>Windows 10/11</strong><span>64-bit, x86</span></div>
+        </div>
+        <div class="req-item">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+          <div><strong>Python 3.11+</strong><span>Obrigatório</span></div>
+        </div>
+        <div class="req-item">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM4 18V6h7v12H4zm9 0V6h7v12h-7z"/></svg>
+          <div><strong>4 GB RAM</strong><span>8 GB recomendado</span></div>
+        </div>
+        <div class="req-item">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="24"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/></svg>
+          <div><strong>Câmera USB/webcam</strong><span>Para rastreamento ao vivo</span></div>
+        </div>
+      </div>
+
+      <h3>🚀 Passo a passo</h3>
+      <ol class="install-steps">
+        <li>
+          <span class="step-num">1</span>
+          <div>
+            <strong>Baixe o Quantum Tracker</strong>
+            <p>Escolha a versão mais adequada para você:</p>
+            <div class="download-options">
+              <button class="btn-download primary" onclick="downloadExe()">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                <div>
+                  <span>Instalador portatil (8 partes)</span>
+                  <small>Windows &bull; 1.3 GB &bull; Baixe as partes e o montador</small>
+                </div>
+              </button>
+              <button class="btn-download secondary" onclick="downloadZip()">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="18"><path d="M20 6h-2.18c.07-.44.18-.88.18-1.35C18 2.54 15.46 0 12.35 0c-1.7 0-3.23.72-4.35 1.85C6.94 1.3 6.17 1 5.34 1 3.5 1 2 2.5 2 4.34c0 .72.21 1.39.54 1.97C1.01 6.97 0 8.37 0 10c0 2.21 1.79 4 4 4h3v2H5l3 3 3-3h-2v-2h8c2.21 0 4-1.79 4-4 0-1.63-1.01-3.03-2.52-3.66-.13-.32-.3-.63-.48-.91z M14 10h-2V8h-4v2H6l4 4 4-4z"/></svg>
+                <div>
+                  <span>Código-fonte (.zip)</span>
+                  <small>Requer Python 3.11+ &bull; Para desenvolvedores</small>
+                </div>
+              </button>
+            </div>
+          </div>
+        </li>
+        <li>
+          <span class="step-num">2</span>
+          <div>
+            <strong>Instale o Python 3.11+</strong>
+            <p>Acesse <a href="https://python.org" target="_blank">python.org</a> e instale a versão mais recente. Marque "Add Python to PATH" durante a instalação.</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-num">3</span>
+          <div>
+            <strong>Extraia e instale dependências</strong>
+            <p>Abra o terminal na pasta extraída e execute:</p>
+            <div class="code-block">
+              <code>pip install -r requirements.txt</code>
+              <button onclick="copyCode('pip install -r requirements.txt')" class="copy-btn">Copiar</button>
+            </div>
+          </div>
+        </li>
+        <li>
+          <span class="step-num">4</span>
+          <div>
+            <strong>Execute o aplicativo</strong>
+            <p>Inicie o Quantum Tracker com:</p>
+            <div class="code-block">
+              <code>python main.py</code>
+              <button onclick="copyCode('python main.py')" class="copy-btn">Copiar</button>
+            </div>
+          </div>
+        </li>
+        <li>
+          <span class="step-num">5</span>
+          <div>
+            <strong>Configure a API do Gemini (opcional)</strong>
+            <p>Para usar o chat IA, vá na aba "IA" e insira sua chave de API do <a href="https://aistudio.google.com" target="_blank">Google AI Studio</a>.</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="install-note">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="20"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+        <p>Para suporte técnico ou reportar bugs, acesse o repositório no GitHub.</p>
       </div>
     </div>
   </section>
 
 </main>
+
+<!-- INSTALL MODAL -->
+<div class="modal-overlay" id="install-modal" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-icon">
+      <img src="assets/icon.jpg" alt="Quantum Tracker" />
+    </div>
+    <h3>Instalar Quantum Tracker</h3>
+    <p>Você será redirecionado para as instruções completas de instalação.</p>
+    <div class="modal-progress" id="modal-progress" style="display:none">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <span id="progress-text">Preparando...</span>
+    </div>
+    <div class="modal-actions" id="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="btn-modal-ok" onclick="confirmInstall()">Continuar</button>
+    </div>
+  </div>
+</div>
 
 <!-- FOOTER -->
 <footer class="footer">
@@ -158,11 +405,11 @@
     <a href="#">Privacidade</a>
     <a href="#">Termos</a>
     <a href="#">Sobre</a>
-    <a href="#">Desenvolvedores</a>
   </div>
   <p>© 2026 FECART Labs · Quantum Store</p>
 </footer>
 
 <script src="js/app.js"></script>
+<script src="js/screenshots.js"></script>
 </body>
 </html>

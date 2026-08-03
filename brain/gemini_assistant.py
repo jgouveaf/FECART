@@ -90,7 +90,7 @@ class GeminiAssistant:
     def _init(self, api_key: str) -> bool:
         if not api_key or api_key.strip() == "":
             self.available = False
-            self.error_message = "API key nao configurada."
+            self.error_message = "API Key nao configurada."
             return False
         try:
             import google.generativeai as genai
@@ -100,14 +100,12 @@ class GeminiAssistant:
                 system_instruction=_SYSTEM_PROMPT,
             )
             chat = model.start_chat(history=[])
-            # Quick connectivity test
-            chat.send_message("Diga apenas: QUANTUM AI ativo.")
             with self._lock:
                 self._model = model
                 self._chat = chat
             self.available = True
             self.error_message = ""
-            logger.info("Gemini conectado com sucesso.")
+            logger.info("Gemini configurado com sucesso.")
             return True
         except Exception as exc:
             self.available = False

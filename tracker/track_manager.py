@@ -49,7 +49,6 @@ class TrackManager:
             previous.confidence = detection.confidence
             previous.frames_missing = 0
             previous.state = TargetState.VISIBLE
-            previous.uncertainty = 14.0
             if detection.identity_hint:
                 previous.name = detection.identity_hint
                 previous.identity_confidence = detection.confidence
@@ -90,10 +89,14 @@ class TrackManager:
                 target.state = TargetState.GHOST
                 if old_state != TargetState.GHOST:
                     events.append(SystemEvent(EventType.GHOST_ACTIVATED, track_id, target.name, target.confidence, target.state.value))
-            else:
+            elif target.frames_missing >= self.config.occluded_after_frames:
                 target.state = TargetState.OCCLUDED
-                if old_state != TargetState.OCCLUDED:
-                    events.append(SystemEvent(EventType.TARGET_LOST, track_id, target.name, target.confidence, target.state.value))
+                # OCCLUDED is a brief disappearance — do NOT emit TARGET_LOST here.
+                # TARGET_LOST is only for the LOST state (frames_missing >= lost_after_frames).
+            else:
+                # Fewer frames missing than occluded_after_frames threshold:
+                # treat as still VISIBLE to absorb single-frame YOLO detection gaps.
+                target.state = TargetState.VISIBLE
 
         active = [target for target in self.targets.values() if target.state != TargetState.REMOVED]
         return active, events

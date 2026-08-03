@@ -43,7 +43,8 @@ class FaceRecognizer:
         return file_path
 
     def register_embedding_for_person(self, person_id: int, name: str, photo_path: Path, created_at: str = "") -> Optional[Path]:
-        person = type("PersonProxy", (), {"person_id": person_id, "name": name, "photo_path": str(photo_path), "created_at": created_at})()
+        from core.models import PersonRecord
+        person = PersonRecord(person_id=person_id, name=name, photo_path=str(photo_path), created_at=created_at)
         embedding_path = self.insightface.register_person_embedding(person, photo_path)
         self.available = self.insightface.available
         self.last_error = self.insightface.last_error

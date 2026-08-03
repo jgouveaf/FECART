@@ -46,7 +46,7 @@ class RobotController:
             RobotCommand.LEFT: "VIRAR_ESQUERDA",
             RobotCommand.RIGHT: "VIRAR_DIREITA",
         }
-        return self.update([], (1, 1), gesture_map[command])
+        return self.update([], (640, 480), gesture_map[command])
 
     def update(self, targets: Iterable[TrackedTarget], frame_size: FrameSize, gesture_command: Optional[str] = None) -> RobotTelemetry:
         targets = list(targets)

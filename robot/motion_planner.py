@@ -50,9 +50,12 @@ class MotionPlanner:
         return MotionDecision(RobotCommand.STOP, "distancia segura atingida", 0.0, 0.0, horizontal_error, distance_estimate, target.state)
 
     def _ghost_decision(self, target: TrackedTarget, horizontal_error: float, distance_estimate: float) -> MotionDecision:
-        if target.direction_degrees > 200 and target.direction_degrees < 340:
+        direction = target.direction_degrees
+        # Moving left: 180–360 degrees (west/south-west/north-west)
+        if 200 < direction < 340:
             return MotionDecision(RobotCommand.LEFT, "ghost: direcao prevista para esquerda", 0.0, -0.25, horizontal_error, distance_estimate, target.state)
-        if target.direction_degrees < 160 and target.direction_degrees > 20:
+        # Moving right: 0–180 degrees (east/north-east/south-east)
+        if 20 < direction < 160:
             return MotionDecision(RobotCommand.RIGHT, "ghost: direcao prevista para direita", 0.0, 0.25, horizontal_error, distance_estimate, target.state)
         return MotionDecision(RobotCommand.STOP, "ghost: previsao incerta, parada segura", 0.0, 0.0, horizontal_error, distance_estimate, target.state)
 

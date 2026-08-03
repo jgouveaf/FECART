@@ -92,7 +92,7 @@ class GestureTrainer:
         if not cap.isOpened():
             return 0
 
-        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
+        total = max(1, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
         collected = 0
         frame_idx = 0
         skip = max(1, total // max_frames)

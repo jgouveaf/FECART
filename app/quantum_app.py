@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import queue
 import shutil
+import threading
 import time
 from pathlib import Path
 from typing import List, Optional
@@ -129,6 +130,9 @@ class QuantumMainWindow(QMainWindow):
         self.active_gesture_command: Optional[str] = None
         self.current_targets = []
         self.current_robot_telemetry: Optional[RobotTelemetry] = None
+        self._cached_recent_events: list = []
+        self._cached_stats: dict = {}
+        self._last_stats_time: float = 0.0
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._loop)
@@ -191,47 +195,76 @@ class QuantumMainWindow(QMainWindow):
         self.setCentralWidget(central)
 
     def _build_monitor_tab(self) -> QWidget:
+        """Main tactical video monitoring tab."""
         page = QWidget()
-        layout = QVBoxLayout(page)
-        toolbar = QHBoxLayout()
-        self.start_camera_btn = QPushButton("Iniciar Camera")
-        self.start_camera_btn.clicked.connect(self.start_camera)
-        self.start_sim_btn = QPushButton("Iniciar Simulador")
-        self.start_sim_btn.clicked.connect(self.start_simulator)
-        ghost_btn = QPushButton("Forcar Ghost")
-        ghost_btn.clicked.connect(self.world.force_occlusion)
-        stop_btn = QPushButton("Parar")
-        stop_btn.clicked.connect(self.stop)
-        toolbar.addWidget(self.start_camera_btn)
-        toolbar.addWidget(self.start_sim_btn)
-        toolbar.addWidget(ghost_btn)
-        toolbar.addStretch(1)
-        toolbar.addWidget(stop_btn)
-        layout.addLayout(toolbar)
+        outer = QVBoxLayout(page)
+        outer.setSpacing(0)
+        outer.setContentsMargins(0, 0, 0, 0)
 
+        # Toolbar
+        toolbar = QFrame()
+        toolbar.setStyleSheet("QFrame { background:#141414; border-bottom:1px solid #2d2d2d; border-radius:0; }")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(16, 10, 16, 10)
+
+        self.start_camera_btn = QPushButton("▶ INICIAR CÂMERA")
+        self.start_camera_btn.setFixedHeight(34)
+        self.start_camera_btn.clicked.connect(self.start_camera)
+
+        self.start_sim_btn = QPushButton("🎮 INICIAR SIMULADOR")
+        self.start_sim_btn.setFixedHeight(34)
+        self.start_sim_btn.clicked.connect(self.start_simulator)
+
+        ghost_btn = QPushButton("👻 FORÇAR GHOST")
+        ghost_btn.setFixedHeight(34)
+        ghost_btn.clicked.connect(self.world.force_occlusion)
+
+        stop_btn = QPushButton("■ PARAR SISTEMA")
+        stop_btn.setFixedHeight(34)
+        stop_btn.setStyleSheet(
+            "QPushButton { background:#2d1111; color:#ff9999; border:1px solid #663333; font-weight:800; }"
+            "QPushButton:hover { background:#441a1a; color:#ffffff; }"
+        )
+        stop_btn.clicked.connect(self.stop)
+
+        toolbar_layout.addWidget(self.start_camera_btn)
+        toolbar_layout.addSpacing(8)
+        toolbar_layout.addWidget(self.start_sim_btn)
+        toolbar_layout.addSpacing(8)
+        toolbar_layout.addWidget(ghost_btn)
+        toolbar_layout.addStretch(1)
+        toolbar_layout.addWidget(stop_btn)
+        outer.addWidget(toolbar)
+
+        # Body
         body = QHBoxLayout()
-        self.video_label = QLabel("Clique em Iniciar Camera ou Iniciar Simulador")
+        body.setContentsMargins(12, 12, 12, 12)
+        body.setSpacing(12)
+
+        self.video_label = QLabel("Clique em ▶ INICIAR CÂMERA ou 🎮 INICIAR SIMULADOR para iniciar a visão")
         self.video_label.setObjectName("Video")
         self.video_label.setAlignment(Qt.AlignCenter)
         self.video_label.setMinimumSize(860, 520)
         body.addWidget(self.video_label, 4)
 
         side = QVBoxLayout()
-        side.setSpacing(6)
+        side.setSpacing(8)
 
-        # ── Card: Target Info ────────────────────────────────────────
+        # Card: Target Info
         card_target = QFrame()
         card_target.setObjectName("SideCard")
         card_layout = QVBoxLayout(card_target)
-        card_layout.setContentsMargins(10, 8, 10, 8)
+        card_layout.setContentsMargins(12, 10, 12, 10)
         card_layout.setSpacing(4)
-        lbl_card = QLabel("ALVO PRIMARIO")
+
+        lbl_card = QLabel("ALVO PRIMÁRIO")
         lbl_card.setObjectName("CardHeader")
         card_layout.addWidget(lbl_card)
+
         self.lbl_target_id    = QLabel("ID: —")
         self.lbl_target_name  = QLabel("Nome: —")
-        self.lbl_target_conf  = QLabel("Confianca: —")
-        self.lbl_target_dist  = QLabel("Distancia: —")
+        self.lbl_target_conf  = QLabel("Confiança: —")
+        self.lbl_target_dist  = QLabel("Distância: —")
         self.lbl_target_state = QLabel("Estado: —")
         self.lbl_target_speed = QLabel("Velocidade: —")
         for lbl in (self.lbl_target_id, self.lbl_target_name, self.lbl_target_conf,
@@ -240,15 +273,17 @@ class QuantumMainWindow(QMainWindow):
             card_layout.addWidget(lbl)
         side.addWidget(card_target)
 
-        # ── Card: System ─────────────────────────────────────────────
+        # Card: System
         card_sys = QFrame()
         card_sys.setObjectName("SideCard")
         sys_layout = QVBoxLayout(card_sys)
-        sys_layout.setContentsMargins(10, 8, 10, 8)
+        sys_layout.setContentsMargins(12, 10, 12, 10)
         sys_layout.setSpacing(4)
+
         lbl_sys = QLabel("SISTEMA")
         lbl_sys.setObjectName("CardHeader")
         sys_layout.addWidget(lbl_sys)
+
         self.lbl_fps        = QLabel("FPS: —")
         self.lbl_mode       = QLabel("Modo: —")
         self.lbl_targets_n  = QLabel("Alvos: 0")
@@ -258,165 +293,520 @@ class QuantumMainWindow(QMainWindow):
             sys_layout.addWidget(lbl)
         side.addWidget(card_sys)
 
-        # ── Event Stream ─────────────────────────────────────────────
-        side.addWidget(QLabel("EVENTOS RECENTES"))
+        # Event Stream
+        lbl_events = QLabel("EVENTOS RECENTES")
+        lbl_events.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        side.addWidget(lbl_events)
+
         self.event_stream = QTextEdit()
         self.event_stream.setReadOnly(True)
         self.event_stream.setObjectName("PanelText")
+        self.event_stream.setStyleSheet(
+            "QTextEdit { background:#0a0a0a; border:1px solid #2d2d2d; border-radius:6px;"
+            "color:#aaaaaa; font-family:Consolas; font-size:11px; padding:6px; }"
+        )
         side.addWidget(self.event_stream, 1)
 
-        # ── Telemetria completa ───────────────────────────────────────
-        side.addWidget(QLabel("TELEMETRIA"))
+        # Telemetria completa
+        lbl_telem = QLabel("TELEMETRIA COMPLETA")
+        lbl_telem.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        side.addWidget(lbl_telem)
+
         self.monitor_info = QTextEdit()
         self.monitor_info.setReadOnly(True)
         self.monitor_info.setObjectName("PanelText")
+        self.monitor_info.setStyleSheet(
+            "QTextEdit { background:#0a0a0a; border:1px solid #2d2d2d; border-radius:6px;"
+            "color:#00ff88; font-family:Consolas; font-size:11px; padding:6px; }"
+        )
         side.addWidget(self.monitor_info, 1)
+
         body.addLayout(side, 1)
-        layout.addLayout(body, 1)
+        outer.addLayout(body, 1)
         return page
 
     def _build_robot_tab(self) -> QWidget:
+        """Robot control & telemetry tab with modern card-based layout."""
         page = QWidget()
-        layout = QVBoxLayout(page)
+        outer = QVBoxLayout(page)
+        outer.setSpacing(0)
+        outer.setContentsMargins(0, 0, 0, 0)
 
-        controls = QHBoxLayout()
-        self.target_id_input = QLineEdit()
-        self.target_id_input.setPlaceholderText("ID do alvo")
-        select_id_btn = QPushButton("Selecionar ID")
-        select_id_btn.clicked.connect(self.select_robot_target_by_id)
-        select_first_btn = QPushButton("Selecionar Primeiro Alvo")
-        select_first_btn.clicked.connect(self.select_first_robot_target)
-        follow_btn = QPushButton("Seguir")
-        follow_btn.clicked.connect(self.robot_follow)
-        stop_btn = QPushButton("Parar")
-        stop_btn.clicked.connect(self.robot_stop)
-        clear_btn = QPushButton("Liberar Alvo")
-        clear_btn.clicked.connect(self.clear_robot_target)
-        controls.addWidget(self.target_id_input)
-        controls.addWidget(select_id_btn)
-        controls.addWidget(select_first_btn)
-        controls.addWidget(follow_btn)
-        controls.addWidget(stop_btn)
-        controls.addWidget(clear_btn)
-        layout.addLayout(controls)
+        # ── Toolbar ──────────────────────────────────────────────────
+        toolbar = QFrame()
+        toolbar.setStyleSheet("QFrame { background:#141414; border-bottom:1px solid #2d2d2d; border-radius:0; }")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(16, 10, 16, 10)
 
-        manual = QHBoxLayout()
-        for label, command in (
-            ("Frente", RobotCommand.FORWARD),
-            ("Re", RobotCommand.REVERSE),
-            ("Esquerda", RobotCommand.LEFT),
-            ("Direita", RobotCommand.RIGHT),
-            ("Parar", RobotCommand.STOP),
-        ):
-            button = QPushButton(label)
-            button.clicked.connect(lambda checked=False, command=command: self.robot_manual_command(command))
-            manual.addWidget(button)
-        layout.addLayout(manual)
+        title_lbl = QLabel("CONTROLE E TELEMETRIA DO ROBÔ")
+        title_lbl.setStyleSheet("color:#ffffff; font-size:14px; font-weight:800; letter-spacing:3px;")
+        
+        self.robot_status_chip = QLabel("MODO: SIMULADOR")
+        self.robot_status_chip.setStyleSheet(
+            "color:#00e5ff; font-size:10px; font-weight:700; letter-spacing:1px;"
+            "background:#0a1e28; border:1px solid #1a3e50; border-radius:3px; padding:3px 8px;"
+        )
 
+        toolbar_layout.addWidget(title_lbl)
+        toolbar_layout.addSpacing(12)
+        toolbar_layout.addWidget(self.robot_status_chip)
+        toolbar_layout.addStretch()
+        outer.addWidget(toolbar)
+
+        # ── Body ─────────────────────────────────────────────────────
         body = QHBoxLayout()
+        body.setSpacing(0)
+        body.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(body, 1)
+
+        # Left Column: Controls & Target
+        left_frame = QFrame()
+        left_frame.setFixedWidth(360)
+        left_frame.setStyleSheet("QFrame { background:#0e0e0e; border-right:1px solid #2d2d2d; border-radius:0; }")
+        left_layout = QVBoxLayout(left_frame)
+        left_layout.setContentsMargins(16, 16, 16, 16)
+        left_layout.setSpacing(14)
+        body.addWidget(left_frame)
+
+        # Target Selection Section
+        target_lbl = QLabel("SELEÇÃO DE ALVO")
+        target_lbl.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        left_layout.addWidget(target_lbl)
+
+        target_row1 = QHBoxLayout()
+        self.target_id_input = QLineEdit()
+        self.target_id_input.setPlaceholderText("ID do alvo (ex: 1)")
+        self.target_id_input.setMinimumHeight(34)
+        
+        select_id_btn = QPushButton("SELECIONAR ID")
+        select_id_btn.setFixedHeight(34)
+        select_id_btn.clicked.connect(self.select_robot_target_by_id)
+        
+        target_row1.addWidget(self.target_id_input, 1)
+        target_row1.addWidget(select_id_btn)
+        left_layout.addLayout(target_row1)
+
+        target_row2 = QHBoxLayout()
+        select_first_btn = QPushButton("PRIMEIRO ALVO")
+        select_first_btn.setFixedHeight(34)
+        select_first_btn.clicked.connect(self.select_first_robot_target)
+
+        clear_btn = QPushButton("LIBERAR ALVO")
+        clear_btn.setFixedHeight(34)
+        clear_btn.setStyleSheet(
+            "QPushButton { background:#2d1111; color:#ff9999; border:1px solid #663333; }"
+            "QPushButton:hover { background:#441a1a; color:#ffffff; }"
+        )
+        clear_btn.clicked.connect(self.clear_robot_target)
+
+        target_row2.addWidget(select_first_btn, 1)
+        target_row2.addWidget(clear_btn, 1)
+        left_layout.addLayout(target_row2)
+
+        left_layout.addSpacing(6)
+
+        # Mode Action Buttons
+        mode_row = QHBoxLayout()
+        follow_btn = QPushButton("▶ SEGUIR ALVO")
+        follow_btn.setMinimumHeight(38)
+        follow_btn.setStyleSheet(
+            "QPushButton { background:#ffffff; color:#000000; border:none; font-weight:800; }"
+            "QPushButton:hover { background:#cccccc; }"
+        )
+        follow_btn.clicked.connect(self.robot_follow)
+
+        stop_btn = QPushButton("■ PARAR SEGUIMENTO")
+        stop_btn.setMinimumHeight(38)
+        stop_btn.clicked.connect(self.robot_stop)
+
+        mode_row.addWidget(follow_btn, 1)
+        mode_row.addWidget(stop_btn, 1)
+        left_layout.addLayout(mode_row)
+
+        left_layout.addSpacing(10)
+
+        # Manual D-PAD Controller
+        dpad_lbl = QLabel("PILOTAGEM MANUAL (D-PAD)")
+        dpad_lbl.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        left_layout.addWidget(dpad_lbl)
+
+        dpad_grid = QGridLayout()
+        dpad_grid.setSpacing(6)
+
+        btn_fwd = QPushButton("▲\nFRENTE")
+        btn_fwd.setFixedSize(90, 50)
+        btn_fwd.clicked.connect(lambda: self.robot_manual_command(RobotCommand.FORWARD))
+
+        btn_left = QPushButton("◄\nESQ")
+        btn_left.setFixedSize(90, 50)
+        btn_left.clicked.connect(lambda: self.robot_manual_command(RobotCommand.LEFT))
+
+        btn_stop = QPushButton("●\nPARAR")
+        btn_stop.setFixedSize(90, 50)
+        btn_stop.setStyleSheet(
+            "QPushButton { background:#2d1111; color:#ff9999; border:1px solid #663333; font-weight:800; }"
+            "QPushButton:hover { background:#441a1a; color:#ffffff; }"
+        )
+        btn_stop.clicked.connect(lambda: self.robot_manual_command(RobotCommand.STOP))
+
+        btn_right = QPushButton("►\nDIR")
+        btn_right.setFixedSize(90, 50)
+        btn_right.clicked.connect(lambda: self.robot_manual_command(RobotCommand.RIGHT))
+
+        btn_rev = QPushButton("▼\nRÉ")
+        btn_rev.setFixedSize(90, 50)
+        btn_rev.clicked.connect(lambda: self.robot_manual_command(RobotCommand.REVERSE))
+
+        dpad_grid.addWidget(btn_fwd, 0, 1)
+        dpad_grid.addWidget(btn_left, 1, 0)
+        dpad_grid.addWidget(btn_stop, 1, 1)
+        dpad_grid.addWidget(btn_right, 1, 2)
+        dpad_grid.addWidget(btn_rev, 2, 1)
+
+        dpad_container = QWidget()
+        dpad_container.setLayout(dpad_grid)
+        left_layout.addWidget(dpad_container, alignment=Qt.AlignCenter)
+        left_layout.addStretch(1)
+
+        # Right Column: Telemetry & Logs
+        right_frame = QFrame()
+        right_frame.setStyleSheet("QFrame { background:#111111; border:none; border-radius:0; }")
+        right_layout = QVBoxLayout(right_frame)
+        right_layout.setContentsMargins(20, 16, 20, 16)
+        right_layout.setSpacing(12)
+        body.addWidget(right_frame, 1)
+
+        # Telemetry Dashboard Title
+        dash_header = QLabel("DASHBOARD DE TELEMETRIA DO ROBÔ")
+        dash_header.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        right_layout.addWidget(dash_header)
+
         self.robot_dashboard = QTextEdit()
         self.robot_dashboard.setReadOnly(True)
         self.robot_dashboard.setObjectName("PanelText")
-        self.robot_dashboard.setText("Robo em modo simulador. Selecione um alvo no monitoramento.")
-        body.addWidget(self.robot_dashboard, 2)
+        self.robot_dashboard.setStyleSheet(
+            "QTextEdit { background:#0a0a0a; border:1px solid #2d2d2d; border-radius:6px;"
+            "color:#00ff88; font-family:Consolas; font-size:12px; padding:10px; }"
+        )
+        self.robot_dashboard.setText("Robô em modo simulador. Selecione um alvo no monitoramento.")
+        right_layout.addWidget(self.robot_dashboard, 1)
+
+        log_header = QLabel("LOGS DE COMANDO E EVENTOS DO ROBÔ")
+        log_header.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        right_layout.addWidget(log_header)
 
         self.robot_logs = QTextEdit()
         self.robot_logs.setReadOnly(True)
         self.robot_logs.setObjectName("PanelText")
-        self.robot_logs.setText("Logs do robo aparecerao aqui.")
-        body.addWidget(self.robot_logs, 1)
-        layout.addLayout(body, 1)
+        self.robot_logs.setStyleSheet(
+            "QTextEdit { background:#0a0a0a; border:1px solid #2d2d2d; border-radius:6px;"
+            "color:#aaaaaa; font-family:Consolas; font-size:11px; padding:8px; }"
+        )
+        self.robot_logs.setText("System: Módulo de robótica inicializado.")
+        right_layout.addWidget(self.robot_logs, 1)
+
         return page
 
     def _build_register_tab(self) -> QWidget:
+        """Facial registration tab with modern card-based layout."""
         page = QWidget()
-        layout = QHBoxLayout(page)
-        left = QVBoxLayout()
-        self.register_video = QLabel("Preview de cadastro")
+        outer = QVBoxLayout(page)
+        outer.setSpacing(0)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        # ── Toolbar ──────────────────────────────────────────────────
+        toolbar = QFrame()
+        toolbar.setStyleSheet("QFrame { background:#141414; border-bottom:1px solid #2d2d2d; border-radius:0; }")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(16, 10, 16, 10)
+
+        title_lbl = QLabel("CADASTRO FACIAL")
+        title_lbl.setStyleSheet("color:#ffffff; font-size:14px; font-weight:800; letter-spacing:3px;")
+        desc_lbl = QLabel("Registre novas pessoas no banco de reconhecimento")
+        desc_lbl.setStyleSheet("color:#555555; font-size:11px;")
+
+        toolbar_layout.addWidget(title_lbl)
+        toolbar_layout.addSpacing(12)
+        toolbar_layout.addWidget(desc_lbl)
+        toolbar_layout.addStretch()
+        outer.addWidget(toolbar)
+
+        # ── Body ─────────────────────────────────────────────────────
+        body = QHBoxLayout()
+        body.setSpacing(0)
+        body.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(body, 1)
+
+        # Left: camera preview
+        left_frame = QFrame()
+        left_frame.setStyleSheet("QFrame { background:#000000; border:none; border-radius:0; }")
+        left_layout = QVBoxLayout(left_frame)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+
+        self.register_video = QLabel()
         self.register_video.setObjectName("Video")
         self.register_video.setAlignment(Qt.AlignCenter)
-        self.register_video.setMinimumSize(720, 500)
-        left.addWidget(self.register_video)
-        layout.addLayout(left, 2)
+        self.register_video.setMinimumSize(640, 480)
+        self.register_video.setStyleSheet("background:#000000; color:#333333; font-size:14px;")
+        self.register_video.setText("CÂMERA INATIVA\nClique em INICIAR CÂMERA")
+        left_layout.addWidget(self.register_video, 1)
 
-        right = QVBoxLayout()
-        right.addWidget(QLabel("Nome da pessoa"))
-        self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Ex: Joao")
-        right.addWidget(self.name_input)
-        preview_btn = QPushButton("Abrir Camera de Cadastro")
+        # Camera control strip at bottom of preview
+        cam_strip = QFrame()
+        cam_strip.setFixedHeight(44)
+        cam_strip.setStyleSheet("QFrame { background:#141414; border-top:1px solid #2d2d2d; border-radius:0; }")
+        cam_strip_layout = QHBoxLayout(cam_strip)
+        cam_strip_layout.setContentsMargins(12, 6, 12, 6)
+
+        preview_btn = QPushButton("▶  INICIAR CÂMERA")
+        preview_btn.setFixedHeight(30)
+        preview_btn.setStyleSheet(
+            "QPushButton { background:#222222; color:#cccccc; border:1px solid #444444;"
+            "border-radius:4px; font-size:11px; font-weight:700; padding:0 12px; }"
+            "QPushButton:hover { background:#333333; border-color:#888888; color:#ffffff; }"
+        )
         preview_btn.clicked.connect(self.start_register_preview)
-        capture_btn = QPushButton("Capturar Foto")
+
+        self.register_live_chip = QLabel("● INATIVO")
+        self.register_live_chip.setStyleSheet("color:#555555; font-size:10px; font-weight:700; letter-spacing:1px;")
+
+        cam_strip_layout.addWidget(preview_btn)
+        cam_strip_layout.addSpacing(8)
+        cam_strip_layout.addWidget(self.register_live_chip)
+        cam_strip_layout.addStretch()
+        left_layout.addWidget(cam_strip)
+
+        body.addWidget(left_frame, 2)
+
+        # Right: registration controls
+        right_frame = QFrame()
+        right_frame.setFixedWidth(300)
+        right_frame.setStyleSheet("QFrame { background:#0e0e0e; border-left:1px solid #2d2d2d; border-radius:0; }")
+        right_layout = QVBoxLayout(right_frame)
+        right_layout.setContentsMargins(16, 16, 16, 16)
+        right_layout.setSpacing(12)
+        body.addWidget(right_frame)
+
+        # Name input section
+        name_lbl = QLabel("IDENTIFICAÇÃO")
+        name_lbl.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        right_layout.addWidget(name_lbl)
+
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("Nome completo da pessoa")
+        self.name_input.setMinimumHeight(38)
+        right_layout.addWidget(self.name_input)
+
+        right_layout.addSpacing(8)
+
+        # Capture section
+        capture_lbl = QLabel("CAPTURA")
+        capture_lbl.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        right_layout.addWidget(capture_lbl)
+
+        capture_btn = QPushButton("📷  CAPTURAR FOTO")
+        capture_btn.setMinimumHeight(48)
+        capture_btn.setStyleSheet(
+            "QPushButton { background:#1a1a1a; color:#ffffff; border:2px solid #555555;"
+            "border-radius:6px; font-size:12px; font-weight:800; letter-spacing:1px; }"
+            "QPushButton:hover { background:#2a2a2a; border-color:#ffffff; }"
+            "QPushButton:pressed { background:#111111; }"
+        )
         capture_btn.clicked.connect(self.capture_register_photo)
-        save_btn = QPushButton("Salvar Cadastro")
+        right_layout.addWidget(capture_btn)
+
+        # Captured photo preview thumbnail
+        self.register_thumb = QLabel("Nenhuma foto capturada")
+        self.register_thumb.setFixedHeight(120)
+        self.register_thumb.setAlignment(Qt.AlignCenter)
+        self.register_thumb.setStyleSheet(
+            "background:#111111; border:1px solid #333333; border-radius:6px;"
+            "color:#555555; font-size:11px;"
+        )
+        right_layout.addWidget(self.register_thumb)
+
+        right_layout.addSpacing(8)
+
+        # Save button
+        save_btn = QPushButton("SALVAR CADASTRO")
+        save_btn.setMinimumHeight(44)
+        save_btn.setStyleSheet(
+            "QPushButton { background:#ffffff; color:#000000; border:none;"
+            "border-radius:6px; font-size:12px; font-weight:800; letter-spacing:1px; }"
+            "QPushButton:hover { background:#cccccc; }"
+            "QPushButton:pressed { background:#aaaaaa; }"
+        )
         save_btn.clicked.connect(self.save_registration)
-        right.addWidget(preview_btn)
-        right.addWidget(capture_btn)
-        right.addWidget(save_btn)
+        right_layout.addWidget(save_btn)
+
+        right_layout.addSpacing(8)
+
+        # Status log
+        status_lbl = QLabel("LOG")
+        status_lbl.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        right_layout.addWidget(status_lbl)
+
         self.register_status = QTextEdit()
         self.register_status.setReadOnly(True)
         self.register_status.setObjectName("PanelText")
-        right.addWidget(self.register_status, 1)
-        right.addStretch(1)
-        layout.addLayout(right, 1)
+        self.register_status.setStyleSheet(
+            "QTextEdit { background:#0a0a0a; border:1px solid #2d2d2d; border-radius:6px;"
+            "color:#aaaaaa; font-family:Consolas; font-size:11px; padding:8px; }"
+        )
+        right_layout.addWidget(self.register_status, 1)
+
         return page
 
+
     def _build_photos_tab(self) -> QWidget:
+        """Gallery tab displaying registered faces and history."""
         page = QWidget()
-        layout = QVBoxLayout(page)
-        refresh = QPushButton("Atualizar Fotos")
-        refresh.clicked.connect(self.refresh_people)
-        search_row = QHBoxLayout()
+        outer = QVBoxLayout(page)
+        outer.setSpacing(0)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        # Toolbar
+        toolbar = QFrame()
+        toolbar.setStyleSheet("QFrame { background:#141414; border-bottom:1px solid #2d2d2d; border-radius:0; }")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(16, 10, 16, 10)
+
+        title_lbl = QLabel("GALERIA DE FACES CADASTRADAS")
+        title_lbl.setStyleSheet("color:#ffffff; font-size:14px; font-weight:800; letter-spacing:3px;")
+
         self.people_search = QLineEdit()
-        self.people_search.setPlaceholderText("Pesquisar por nome ou ID")
+        self.people_search.setPlaceholderText("🔍 Pesquisar por nome ou ID...")
+        self.people_search.setFixedWidth(240)
+        self.people_search.setFixedHeight(32)
         self.people_search.textChanged.connect(self.refresh_people)
-        search_row.addWidget(self.people_search, 1)
-        search_row.addWidget(refresh)
-        layout.addLayout(search_row)
+
+        refresh_btn = QPushButton("⟳ ATUALIZAR")
+        refresh_btn.setFixedHeight(32)
+        refresh_btn.clicked.connect(self.refresh_people)
+
+        toolbar_layout.addWidget(title_lbl)
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(self.people_search)
+        toolbar_layout.addSpacing(8)
+        toolbar_layout.addWidget(refresh_btn)
+        outer.addWidget(toolbar)
+
+        # Body Split
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 16, 16, 16)
+        body.setSpacing(12)
+        outer.addLayout(body, 1)
+
+        # Scroll grid container
         self.people_scroll = QScrollArea()
         self.people_scroll.setWidgetResizable(True)
+        self.people_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
         self.people_container = QWidget()
+        self.people_container.setStyleSheet("background: transparent;")
         self.people_grid = QGridLayout(self.people_container)
+        self.people_grid.setSpacing(12)
+        self.people_grid.setAlignment(Qt.AlignTop)
         self.people_scroll.setWidget(self.people_container)
-        layout.addWidget(self.people_scroll, 2)
+        body.addWidget(self.people_scroll, 2)
+
+        # History output panel
+        hist_lbl = QLabel("HISTÓRICO DE IDENTIFICAÇÃO DO ALVO SELECIONADO")
+        hist_lbl.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        body.addWidget(hist_lbl)
+
         self.person_history_output = QTextEdit()
         self.person_history_output.setReadOnly(True)
         self.person_history_output.setObjectName("PanelText")
-        self.person_history_output.setPlaceholderText("Selecione uma pessoa para ver o historico.")
-        layout.addWidget(self.person_history_output, 1)
+        self.person_history_output.setStyleSheet(
+            "QTextEdit { background:#0a0a0a; border:1px solid #2d2d2d; border-radius:6px;"
+            "color:#aaaaaa; font-family:Consolas; font-size:11px; padding:8px; }"
+        )
+        self.person_history_output.setPlaceholderText("Clique em 'Histórico' no card de uma pessoa acima para visualizar os registros de aparição.")
+        body.addWidget(self.person_history_output, 1)
+
         self.refresh_people()
         return page
 
     def _build_logs_tab(self) -> QWidget:
+        """System logs and audit event tab."""
         page = QWidget()
-        layout = QVBoxLayout(page)
-        refresh = QPushButton("Atualizar Logs")
+        outer = QVBoxLayout(page)
+        outer.setSpacing(0)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        # Toolbar
+        toolbar = QFrame()
+        toolbar.setStyleSheet("QFrame { background:#141414; border-bottom:1px solid #2d2d2d; border-radius:0; }")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(16, 10, 16, 10)
+
+        title_lbl = QLabel("CENTRAL DE LOGS E EVENTOS DO SISTEMA")
+        title_lbl.setStyleSheet("color:#ffffff; font-size:14px; font-weight:800; letter-spacing:3px;")
+
+        export_btn = QPushButton("💾 EXPORTAR LOGS (.CSV)")
+        export_btn.setFixedHeight(32)
+        export_btn.clicked.connect(self.export_logs_csv)
+
+        refresh = QPushButton("⟳ ATUALIZAR LOGS")
+        refresh.setFixedHeight(32)
         refresh.clicked.connect(self.refresh_logs)
-        layout.addWidget(refresh, alignment=Qt.AlignRight)
+
+        toolbar_layout.addWidget(title_lbl)
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(export_btn)
+        toolbar_layout.addSpacing(8)
+        toolbar_layout.addWidget(refresh)
+        outer.addWidget(toolbar)
+
+        # Body
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 16, 16, 16)
+        body.setSpacing(10)
+        outer.addLayout(body, 1)
+
         self.logs_output = QTextEdit()
         self.logs_output.setReadOnly(True)
         self.logs_output.setObjectName("PanelText")
-        layout.addWidget(self.logs_output, 1)
+        self.logs_output.setStyleSheet(
+            "QTextEdit { background:#0a0a0a; border:1px solid #2d2d2d; border-radius:6px;"
+            "color:#00e5ff; font-family:Consolas; font-size:11px; padding:10px; }"
+        )
+        body.addWidget(self.logs_output, 1)
+
         self.refresh_logs()
         return page
 
     def _build_ai_tab(self) -> QWidget:
+        """Conversational AI & tactical telemetry assistant tab."""
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        outer = QVBoxLayout(page)
+        outer.setSpacing(0)
+        outer.setContentsMargins(0, 0, 0, 0)
 
-        # Header
-        header = QHBoxLayout()
-        lbl_title = QLabel("MÓDULO DE ANÁLISE TÁTICA E TELEMETRIA")
-        lbl_title.setObjectName("CardHeader")
-        lbl_title.setStyleSheet("color:#ffffff; font-size:14px; font-weight:700; letter-spacing:2px;")
-        self.ai_status_label = QLabel("Verificando conexao...")
+        # Toolbar
+        toolbar = QFrame()
+        toolbar.setStyleSheet("QFrame { background:#141414; border-bottom:1px solid #2d2d2d; border-radius:0; }")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(16, 10, 16, 10)
+
+        lbl_title = QLabel("MÓDULO DE ANÁLISE TÁTICA E IA (GEMINI)")
+        lbl_title.setStyleSheet("color:#ffffff; font-size:14px; font-weight:800; letter-spacing:3px;")
+        
+        self.ai_status_label = QLabel("Verificando conexão...")
         self.ai_status_label.setStyleSheet("color:#aaaaaa; font-size:11px; font-family:Consolas;")
-        header.addWidget(lbl_title)
-        header.addStretch()
-        header.addWidget(self.ai_status_label)
-        layout.addLayout(header)
+
+        toolbar_layout.addWidget(lbl_title)
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(self.ai_status_label)
+        outer.addWidget(toolbar)
+
+        # Body
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 16, 16, 16)
+        body.setSpacing(10)
+        outer.addLayout(body, 1)
 
         # API Key config bar
         key_row = QHBoxLayout()
@@ -426,17 +816,20 @@ class QuantumMainWindow(QMainWindow):
         self.api_key_input.setPlaceholderText("Cole sua API Key do Google AI Studio aqui...")
         self.api_key_input.setEchoMode(QLineEdit.Password)
         self.api_key_input.setText(self.config.gemini_api_key)
-        connect_btn = QPushButton("Conectar")
-        connect_btn.setFixedWidth(100)
+
+        connect_btn = QPushButton("CONECTAR")
+        connect_btn.setFixedHeight(34)
         connect_btn.clicked.connect(self._connect_gemini)
-        new_chat_btn = QPushButton("Nova Conversa")
-        new_chat_btn.setFixedWidth(120)
+
+        new_chat_btn = QPushButton("NOVA CONVERSA")
+        new_chat_btn.setFixedHeight(34)
         new_chat_btn.clicked.connect(self._reset_ai_chat)
+
         key_row.addWidget(key_lbl)
         key_row.addWidget(self.api_key_input, 1)
         key_row.addWidget(connect_btn)
         key_row.addWidget(new_chat_btn)
-        layout.addLayout(key_row)
+        body.addLayout(key_row)
 
         # Chat history display
         self.chat_display = QTextEdit()
@@ -444,12 +837,12 @@ class QuantumMainWindow(QMainWindow):
         self.chat_display.setObjectName("PanelText")
         self.chat_display.setStyleSheet("""
             QTextEdit {
-                background: #121212;
+                background: #0a0a0a;
                 border: 1px solid #2d2d2d;
                 border-radius: 8px;
-                padding: 10px;
-                font-family: 'Consolas', sans-serif;
-                font-size: 13px;
+                padding: 12px;
+                font-family: 'Consolas', monospace;
+                font-size: 12px;
                 color: #e0e0e0;
             }
         """)
@@ -457,11 +850,11 @@ class QuantumMainWindow(QMainWindow):
             "<div style='color:#ffffff; font-weight:bold;'>ANÁLISE QUANTUM ATIVA.</div>"
             "<div style='color:#aaaaaa; font-size:12px;'>Envie consultas sobre a telemetria do sistema, "
             "coordenadas de alvos ou relatórios de rastreamento.</div>"
-            "<br><div style='color:#777777; font-size:11px;'>Exemplos: \"Quantos alvos estao ativos?\", "
-            "\"O robo esta em movimento?\", \"Resumo da operacao\"</div>"
+            "<br><div style='color:#777777; font-size:11px;'>Exemplos: \"Quantos alvos estão ativos?\", "
+            "\"O robô está em movimento?\", \"Resumo da operação\"</div>"
         )
         self.chat_display.setHtml(welcome)
-        layout.addWidget(self.chat_display, 1)
+        body.addWidget(self.chat_display, 1)
 
         # Input area
         input_row = QHBoxLayout()
@@ -469,26 +862,30 @@ class QuantumMainWindow(QMainWindow):
         self.ai_input.setPlaceholderText("Consultar telemetria ou log do processador...")
         self.ai_input.setMinimumHeight(38)
         self.ai_input.returnPressed.connect(self._send_ai_message)
-        send_btn = QPushButton("Enviar")
+
+        send_btn = QPushButton("ENVIAR")
         send_btn.setMinimumHeight(38)
-        send_btn.setFixedWidth(90)
+        send_btn.setStyleSheet(
+            "QPushButton { background:#ffffff; color:#000000; border:none; font-weight:800; }"
+            "QPushButton:hover { background:#cccccc; }"
+        )
         send_btn.clicked.connect(self._send_ai_message)
-        mic_btn = QPushButton("Microfone")
+
+        mic_btn = QPushButton("🎙 MICROFONE")
         mic_btn.setMinimumHeight(38)
-        mic_btn.setFixedWidth(100)
         mic_btn.clicked.connect(self.listen_microphone)
-        report_btn = QPushButton("Relatorio IA")
+
+        report_btn = QPushButton("📊 RELATÓRIO IA")
         report_btn.setMinimumHeight(38)
-        report_btn.setFixedWidth(110)
         report_btn.clicked.connect(self.generate_report)
+
         input_row.addWidget(self.ai_input, 1)
         input_row.addWidget(send_btn)
         input_row.addWidget(mic_btn)
         input_row.addWidget(report_btn)
-        layout.addLayout(input_row)
+        body.addLayout(input_row)
 
-        # Update status label after a moment
-        QTimer.singleShot(1500, self._update_ai_status)
+        QTimer.singleShot(1000, self._connect_gemini)
         return page
 
     # ──────────────────────────────────────────────────────────────────
@@ -496,141 +893,233 @@ class QuantumMainWindow(QMainWindow):
     # ──────────────────────────────────────────────────────────────────
 
     def _build_gesture_trainer_tab(self) -> QWidget:
+        """Gesture trainer with a modern card-based UI (Teachable Machine style)."""
         page = QWidget()
         outer = QVBoxLayout(page)
-        outer.setSpacing(12)
+        outer.setSpacing(0)
+        outer.setContentsMargins(0, 0, 0, 0)
 
-        # ── Header ────────────────────────────────────────────────────
-        title = QLabel("🧠  TREINAR GESTOS  —  Teachable Machine")
-        title.setObjectName("Title")
-        title.setStyleSheet("font-size:16px; font-weight:800; color:#00e5ff; letter-spacing:2px;")
-        outer.addWidget(title)
+        # ── Top toolbar ──────────────────────────────────────────────
+        toolbar = QFrame()
+        toolbar.setStyleSheet("QFrame { background:#141414; border-bottom:1px solid #2d2d2d; border-radius:0; }")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(16, 10, 16, 10)
 
-        sub = QLabel(
-            "Crie classes, grave amostras pela câmera (ou importe um vídeo) e treine a IA para reconhecer seus gestos."
+        title_lbl = QLabel("TREINAR GESTOS")
+        title_lbl.setStyleSheet("color:#ffffff; font-size:14px; font-weight:800; letter-spacing:3px;")
+        status_chip = QLabel("MODO: REGRA MANUAL")
+        status_chip.setObjectName("gt_mode_chip")
+        status_chip.setStyleSheet(
+            "color:#888888; font-size:10px; font-weight:700; letter-spacing:1px;"
+            "background:#222222; border:1px solid #444444; border-radius:3px; padding:3px 8px;"
         )
-        sub.setWordWrap(True)
-        sub.setStyleSheet("color:#7ab8d4; font-size:12px;")
-        outer.addWidget(sub)
+        self.gt_mode_chip = status_chip
 
+        train_btn = QPushButton("TREINAR MODELO")
+        train_btn.setFixedHeight(34)
+        train_btn.setFixedWidth(160)
+        train_btn.setStyleSheet(
+            "QPushButton { background:#ffffff; color:#000000; border:none; border-radius:4px;"
+            "font-size:11px; font-weight:800; letter-spacing:1px; }"
+            "QPushButton:hover { background:#cccccc; }"
+            "QPushButton:pressed { background:#aaaaaa; }"
+        )
+        train_btn.clicked.connect(self._gt_train)
+
+        reset_btn = QPushButton("RESETAR")
+        reset_btn.setFixedHeight(34)
+        reset_btn.setFixedWidth(90)
+        reset_btn.setStyleSheet(
+            "QPushButton { background:#2d1111; color:#ff9999; border:1px solid #663333;"
+            "border-radius:4px; font-size:11px; font-weight:700; }"
+            "QPushButton:hover { background:#441a1a; color:#ffffff; }"
+        )
+        reset_btn.clicked.connect(self._gt_reset)
+
+        toolbar_layout.addWidget(title_lbl)
+        toolbar_layout.addWidget(status_chip)
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(train_btn)
+        toolbar_layout.addSpacing(8)
+        toolbar_layout.addWidget(reset_btn)
+        outer.addWidget(toolbar)
+
+        # ── Progress bar (global) ─────────────────────────────────────
+        self.gt_progress = QProgressBar()
+        self.gt_progress.setValue(0)
+        self.gt_progress.setMaximumHeight(4)
+        self.gt_progress.setTextVisible(False)
+        self.gt_progress.setStyleSheet(
+            "QProgressBar { background:#1a1a1a; border:none; }"
+            "QProgressBar::chunk { background:#ffffff; }"
+        )
+        outer.addWidget(self.gt_progress)
+
+        # ── Body (classes panel + right panel) ────────────────────────
         body = QHBoxLayout()
+        body.setSpacing(0)
+        body.setContentsMargins(0, 0, 0, 0)
         outer.addLayout(body, 1)
 
-        # ── Left: class list + add ─────────────────────────────────────
-        left = QVBoxLayout()
-        body.addLayout(left, 1)
+        # ── Left: class cards ─────────────────────────────────────────
+        left_frame = QFrame()
+        left_frame.setStyleSheet("QFrame { background:#0e0e0e; border-right:1px solid #2d2d2d; border-radius:0; }")
+        left_frame.setFixedWidth(320)
+        left_layout = QVBoxLayout(left_frame)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+        left_layout.setSpacing(8)
+
+        # Add class row
+        add_lbl = QLabel("CLASSES DE GESTO")
+        add_lbl.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        left_layout.addWidget(add_lbl)
 
         add_row = QHBoxLayout()
         self.gt_class_input = QLineEdit()
-        self.gt_class_input.setPlaceholderText("Nome da classe (ex: DIREITA)")
-        add_btn = QPushButton("＋ Nova Classe")
+        self.gt_class_input.setPlaceholderText("Ex: DIREITA, PARAR, SEGUIR...")
+        self.gt_class_input.setMinimumHeight(34)
+        self.gt_class_input.returnPressed.connect(self._gt_add_class)
+        add_btn = QPushButton("+")
+        add_btn.setFixedSize(34, 34)
+        add_btn.setStyleSheet(
+            "QPushButton { background:#222222; color:#ffffff; border:1px solid #444444;"
+            "border-radius:4px; font-size:18px; font-weight:700; }"
+            "QPushButton:hover { background:#333333; border-color:#ffffff; }"
+        )
         add_btn.clicked.connect(self._gt_add_class)
         add_row.addWidget(self.gt_class_input, 1)
         add_row.addWidget(add_btn)
-        left.addLayout(add_row)
+        left_layout.addLayout(add_row)
 
-        self.gt_class_list = QTextEdit()
-        self.gt_class_list.setReadOnly(True)
-        self.gt_class_list.setObjectName("PanelText")
-        self.gt_class_list.setPlaceholderText("Nenhuma classe criada ainda...")
-        left.addWidget(QLabel("Classes e Amostras:"), 0)
-        left.addWidget(self.gt_class_list, 1)
+        # Scroll area for class cards
+        self.gt_cards_scroll = QScrollArea()
+        self.gt_cards_scroll.setWidgetResizable(True)
+        self.gt_cards_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self.gt_cards_container = QWidget()
+        self.gt_cards_container.setStyleSheet("background: transparent;")
+        self.gt_cards_layout = QVBoxLayout(self.gt_cards_container)
+        self.gt_cards_layout.setSpacing(6)
+        self.gt_cards_layout.setAlignment(Qt.AlignTop)
+        self.gt_cards_scroll.setWidget(self.gt_cards_container)
+        left_layout.addWidget(self.gt_cards_scroll, 1)
 
-        # Selected class
-        sel_row = QHBoxLayout()
-        self.gt_selected_label = QLabel("Classe selecionada: —")
-        self.gt_selected_label.setStyleSheet("color:#00e5ff; font-weight:bold;")
+        body.addWidget(left_frame)
+
+        # ── Right: recording controls + log ───────────────────────────
+        right_frame = QFrame()
+        right_frame.setStyleSheet("QFrame { background:#111111; border-radius:0; border:none; }")
+        right_layout = QVBoxLayout(right_frame)
+        right_layout.setContentsMargins(20, 16, 20, 16)
+        right_layout.setSpacing(12)
+        body.addWidget(right_frame, 1)
+
+        # Recording section
+        rec_header = QLabel("GRAVAR AMOSTRAS")
+        rec_header.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        right_layout.addWidget(rec_header)
+
+        # Selected class display
+        self.gt_selected_label = QLabel("Clique em uma classe para selecionar →")
+        self.gt_selected_label.setStyleSheet(
+            "color:#ffffff; font-size:15px; font-weight:700; padding:10px;"
+            "background:#1a1a1a; border:1px solid #333333; border-radius:6px;"
+        )
+        right_layout.addWidget(self.gt_selected_label)
         self.gt_selected_input = QLineEdit()
-        self.gt_selected_input.setPlaceholderText("Classe para gravar/importar")
-        sel_row.addWidget(self.gt_selected_input, 1)
-        left.addLayout(sel_row)
-        left.addWidget(self.gt_selected_label)
+        self.gt_selected_input.hide()  # Hidden — used internally by record logic
 
-        # ── Center: actions ───────────────────────────────────────────
-        center = QVBoxLayout()
-        body.addLayout(center, 1)
-
-        center.addWidget(QLabel("📷  Gravar pela Câmera:"))
+        # Duration row
+        dur_row = QHBoxLayout()
+        dur_lbl = QLabel("Duração:")
+        dur_lbl.setStyleSheet("color:#888888; font-size:12px;")
         self.gt_record_secs = QLineEdit("5")
-        self.gt_record_secs.setPlaceholderText("Segundos de gravação")
-        self.gt_record_secs.setFixedWidth(80)
-        rec_row = QHBoxLayout()
-        rec_row.addWidget(QLabel("Duração (s):"))
-        rec_row.addWidget(self.gt_record_secs)
-        rec_row.addStretch()
-        center.addLayout(rec_row)
+        self.gt_record_secs.setFixedWidth(60)
+        self.gt_record_secs.setFixedHeight(32)
+        sec_lbl = QLabel("segundos")
+        sec_lbl.setStyleSheet("color:#888888; font-size:12px;")
+        dur_row.addWidget(dur_lbl)
+        dur_row.addWidget(self.gt_record_secs)
+        dur_row.addWidget(sec_lbl)
+        dur_row.addStretch()
+        right_layout.addLayout(dur_row)
 
-        self.gt_record_btn = QPushButton("● GRAVAR GESTO")
+        # Record button
+        self.gt_record_btn = QPushButton("● GRAVAR PELA CÂMERA")
+        self.gt_record_btn.setMinimumHeight(50)
         self.gt_record_btn.setStyleSheet(
-            "background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #3d1420,stop:1 #7a0000);"
-            "color:#ff8a80; border:1px solid #c0392b; border-radius:6px; padding:10px; font-size:13px; font-weight:700;"
+            "QPushButton { background:#1a0000; color:#ff6666; border:2px solid #882222;"
+            "border-radius:6px; font-size:13px; font-weight:800; letter-spacing:1px; }"
+            "QPushButton:hover { background:#2d0000; border-color:#ff4444; color:#ff4444; }"
+            "QPushButton:pressed { background:#0a0000; }"
         )
         self.gt_record_btn.clicked.connect(self._gt_start_record)
-        center.addWidget(self.gt_record_btn)
+        right_layout.addWidget(self.gt_record_btn)
 
-        center.addSpacing(16)
-        center.addWidget(QLabel("🎬  Importar Vídeo (.mp4 / .avi):"))
-        import_btn = QPushButton("📁  Importar Vídeo")
+        # Import button
+        import_btn = QPushButton("↑  IMPORTAR VÍDEO  (.mp4 / .avi)")
+        import_btn.setMinimumHeight(40)
+        import_btn.setStyleSheet(
+            "QPushButton { background:#1a1a1a; color:#cccccc; border:1px solid #444444;"
+            "border-radius:6px; font-size:12px; font-weight:700; }"
+            "QPushButton:hover { background:#2a2a2a; border-color:#888888; color:#ffffff; }"
+        )
         import_btn.clicked.connect(self._gt_import_video)
-        center.addWidget(import_btn)
+        right_layout.addWidget(import_btn)
 
-        center.addSpacing(16)
-        center.addWidget(QLabel("🗑️  Gerenciar Classes:"))
-        del_btn = QPushButton("Remover Classe Selecionada")
-        del_btn.setObjectName("DangerButton")
+        right_layout.addSpacing(8)
+
+        # Delete class
+        del_btn = QPushButton("REMOVER CLASSE SELECIONADA")
+        del_btn.setMinimumHeight(34)
+        del_btn.setStyleSheet(
+            "QPushButton { background:transparent; color:#884444; border:1px solid #442222;"
+            "border-radius:4px; font-size:11px; font-weight:700; }"
+            "QPushButton:hover { background:#2d1111; color:#ff6666; border-color:#882222; }"
+        )
         del_btn.clicked.connect(self._gt_remove_class)
-        center.addWidget(del_btn)
+        right_layout.addWidget(del_btn)
 
-        reset_btn = QPushButton("⟳ Resetar Tudo")
-        reset_btn.setObjectName("DangerButton")
-        reset_btn.clicked.connect(self._gt_reset)
-        center.addWidget(reset_btn)
+        right_layout.addSpacing(12)
 
-        center.addStretch(1)
+        # Log
+        log_lbl = QLabel("LOG DO TREINAMENTO")
+        log_lbl.setStyleSheet("color:#888888; font-size:10px; font-weight:700; letter-spacing:2px;")
+        right_layout.addWidget(log_lbl)
 
-        # ── Right: train + status ─────────────────────────────────────
-        right = QVBoxLayout()
-        body.addLayout(right, 1)
-
-        right.addWidget(QLabel("🚀  Treinar Modelo:"))
-        train_btn = QPushButton("🧠  TREINAR IA")
-        train_btn.setStyleSheet(
-            "background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #0d3d14,stop:1 #07200a);"
-            "color:#69ff6a; border:1px solid #1e8c20; border-radius:6px; padding:12px; font-size:14px; font-weight:800;"
-        )
-        train_btn.clicked.connect(self._gt_train)
-        right.addWidget(train_btn)
-
-        self.gt_progress = QProgressBar()
-        self.gt_progress.setValue(0)
-        self.gt_progress.setStyleSheet(
-            "QProgressBar{background:#060f19;border:1px solid #1a3a52;border-radius:4px;height:18px;}"
-            "QProgressBar::chunk{background:qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #00a8c5,stop:1 #00e5ff);border-radius:4px;}"
-        )
-        right.addWidget(self.gt_progress)
-
-        right.addSpacing(10)
-        right.addWidget(QLabel("📋  Status / Log:"))
         self.gt_status = QTextEdit()
         self.gt_status.setReadOnly(True)
         self.gt_status.setObjectName("PanelText")
-        self.gt_status.setText(
-            "Nenhum modelo treinado ainda.\n"
-            "Modo atual: regras manuais (fallback).\n\n"
-            "Como usar:\n"
-            "1. Crie classes com os nomes dos gestos\n"
-            "2. Selecione uma classe no campo abaixo\n"
-            "3. Grave amostras ou importe um vídeo\n"
-            "4. Repita para cada gesto\n"
-            "5. Clique TREINAR IA\n"
+        self.gt_status.setStyleSheet(
+            "QTextEdit { background:#0a0a0a; border:1px solid #2d2d2d; border-radius:6px;"
+            "color:#aaaaaa; font-family:Consolas, monospace; font-size:11px; padding:10px; }"
         )
-        right.addWidget(self.gt_status, 1)
+        self.gt_status.setHtml(
+            "<div style='color:#ffffff; font-weight:bold; font-size:13px; margin-bottom:8px; letter-spacing:1px;'>📖 TUTORIAL E GUIA DE GESTOS DA IA</div>"
+            "<div style='color:#00ff88; font-weight:bold; font-size:12px; margin-bottom:4px;'>✋ Gestos Padrão Reconhecidos Automaticamente:</div>"
+            "<div style='color:#dddddd; margin-left:10px; margin-bottom:10px; line-height:1.4;'>"
+            "• <b>PARAR</b>: ✋ Mão aberta e estendida virada para a câmera<br>"
+            "• <b>SEGUIR</b>: ✊ Punho completamente fechado<br>"
+            "• <b>RÉ</b>: ✌️ Indicador e médio levantados (sinal de V)<br>"
+            "• <b>ESQUERDA</b>: 👈 Mão inclinada para a esquerda<br>"
+            "• <b>DIREITA</b>: 👉 Mão inclinada para a direita"
+            "</div>"
+            "<div style='color:#00e5ff; font-weight:bold; font-size:12px; margin-bottom:4px;'>🎯 Como Treinar um Gesto Personalizado:</div>"
+            "<div style='color:#bbbbbb; margin-left:10px; line-height:1.4;'>"
+            "<b>1.</b> Digite o nome da nova classe à esquerda (ex: <i>SOCAR</i>) e clique no botão <b>+</b><br>"
+            "<b>2.</b> Clique no card da classe criada para ativá-la<br>"
+            "<b>3.</b> Inicie a câmera na aba <b>📊 Monitoramento</b><br>"
+            "<b>4.</b> Clique em <b>● GRAVAR PELA CÂMERA</b> e segure a pose por 5 segundos<br>"
+            "<b>5.</b> Clique no botão no topo <b>TREINAR MODELO</b> para salvar os pesos da IA"
+            "</div>"
+        )
+        right_layout.addWidget(self.gt_status, 1)
 
-        # State
+        # ── Internal state ────────────────────────────────────────────
         self._gt_recording = False
         self._gt_record_timer: Optional[QTimer] = None
         self._gt_record_deadline = 0.0
         self._gt_recorded_class = ""
+        self._gt_selected_class = ""
 
         self._gt_refresh_list()
         return page
@@ -647,13 +1136,16 @@ class QuantumMainWindow(QMainWindow):
         self.gt_status.append(f"✓ Classe '{name}' criada.")
 
     def _gt_remove_class(self) -> None:
-        name = self.gt_selected_input.text().strip().upper()
+        name = self._gt_selected_class
         if not name:
-            self.gt_status.append("⚠ Digite o nome da classe no campo de seleção.")
+            self.gt_status.append("[AVISO] Selecione uma classe no painel esquerdo.")
             return
         self.gesture_trainer.remove_class(name)
+        self._gt_selected_class = ""
+        self.gt_selected_input.clear()
+        self.gt_selected_label.setText("Clique em uma classe para selecionar ->")
         self._gt_refresh_list()
-        self.gt_status.append(f"✗ Classe '{name}' removida.")
+        self.gt_status.append(f"[OK] Classe '{name}' removida.")
 
     def _gt_reset(self) -> None:
         answer = QMessageBox.question(
@@ -667,20 +1159,33 @@ class QuantumMainWindow(QMainWindow):
             self.gt_progress.setValue(0)
             self.gt_status.setText("Resetado. Modo: regras manuais (fallback).")
 
+    def _gt_select_class(self, name: str) -> None:
+        """Called when user clicks a class card."""
+        self._gt_selected_class = name
+        self.gt_selected_input.setText(name)
+        self.gt_selected_label.setText(f"Classe: {name}")
+        self._gt_refresh_list()  # refresh to highlight selected
+
     def _gt_start_record(self) -> None:
         if cv2 is None:
-            self.gt_status.append("⚠ OpenCV não instalado.")
+            self.gt_status.append("[AVISO] OpenCV nao instalado.")
             return
+
+        # Auto-start camera if not active
         if not self.running or self.mode != "camera":
-            self.gt_status.append("⚠ Inicie a câmera na aba Monitoramento primeiro!")
-            return
-        cls = self.gt_selected_input.text().strip().upper()
+            self.start_camera()
+            if not self.running or self.capture is None or not self.capture.isOpened():
+                self.gt_status.append("[ERRO] Nao foi possivel abrir a camera para gravar gestos.")
+                return
+
+        cls = self._gt_selected_class or self.gt_class_input.text().strip().upper()
         if not cls:
-            self.gt_status.append("⚠ Digite o nome da classe no campo de seleção.")
+            self.gt_status.append("[AVISO] Digite o nome de uma classe ou selecione um card no painel esquerdo.")
             return
+
         if cls not in self.gesture_trainer.classes():
             self.gesture_trainer.add_class(cls)
-            self._gt_refresh_list()
+            self._gt_select_class(cls)
 
         try:
             secs = float(self.gt_record_secs.text()) if self.gt_record_secs.text() else 5.0
@@ -690,9 +1195,10 @@ class QuantumMainWindow(QMainWindow):
         self._gt_recording = True
         self._gt_recorded_class = cls
         self._gt_record_deadline = time.time() + secs
+        self._gt_initial_sample_count = self.gesture_trainer.sample_count(cls)
         self.gt_record_btn.setText("● GRAVANDO...")
         self.gt_record_btn.setEnabled(False)
-        self.gt_status.append(f"● Gravando '{cls}' por {secs:.0f}s — Faça o gesto agora!")
+        self.gt_status.append(f"● Gravando '{cls}' por {secs:.0f}s — Mostre a mão para a câmera agora!")
 
         if self._gt_record_timer is None:
             self._gt_record_timer = QTimer(self)
@@ -708,22 +1214,28 @@ class QuantumMainWindow(QMainWindow):
             return
         if self.current_frame is not None:
             self.gesture_trainer.add_sample_from_frame(self.current_frame, self._gt_recorded_class)
-            self._gt_refresh_list()
+            count = self.gesture_trainer.sample_count(self._gt_recorded_class)
+            secs_left = max(0.0, self._gt_record_deadline - now)
+            self.gt_record_btn.setText(f"● GRAVANDO ({count} amostras | {secs_left:.1f}s)...")
 
     def _gt_stop_record(self) -> None:
         self._gt_recording = False
         if self._gt_record_timer:
             self._gt_record_timer.stop()
-        self.gt_record_btn.setText("● GRAVAR GESTO")
+        self.gt_record_btn.setText("● GRAVAR PELA CÂMERA")
         self.gt_record_btn.setEnabled(True)
         count = self.gesture_trainer.sample_count(self._gt_recorded_class)
-        self.gt_status.append(f"✓ Gravação concluída. '{self._gt_recorded_class}': {count} amostras.")
+        new_samples = count - getattr(self, "_gt_initial_sample_count", 0)
+        if new_samples > 0:
+            self.gt_status.append(f"[OK] Gravação concluída! '{self._gt_recorded_class}': {count} amostras no total (+{new_samples} novas).")
+        else:
+            self.gt_status.append(f"[AVISO] Nenhuma mão detectada durante a gravação. Certifique-se de posicionar a mão em frente à câmera.")
         self._gt_refresh_list()
 
     def _gt_import_video(self) -> None:
-        cls = self.gt_selected_input.text().strip().upper()
+        cls = self._gt_selected_class
         if not cls:
-            self.gt_status.append("⚠ Digite o nome da classe no campo de seleção.")
+            self.gt_status.append("[AVISO] Selecione uma classe antes de importar.")
             return
         path, _ = QFileDialog.getOpenFileName(
             self, "Selecionar Vídeo", "", "Vídeos (*.mp4 *.avi *.mov *.mkv *.webm)"
@@ -744,7 +1256,7 @@ class QuantumMainWindow(QMainWindow):
         self.gt_status.append(f"✓ Importado: {collected} amostras de '{cls}'.")
 
     def _gt_train(self) -> None:
-        self.gt_status.append("🧠 Treinando modelo...")
+        self.gt_status.append("[TREINANDO] Processando amostras...")
         self.gt_progress.setValue(0)
 
         def _progress(val: int) -> None:
@@ -753,51 +1265,152 @@ class QuantumMainWindow(QMainWindow):
         ok, msg = self.gesture_trainer.train(progress_cb=_progress)
         if ok:
             self.gestures.reload_model(self.config.assets_dir)
-            self.gt_status.append(f"✅ {msg}")
-            self.gt_status.append("Modo: MODELO TREINADO ativo. Testando ao vivo na aba Monitoramento!")
+            self.gt_mode_chip.setText("MODO: MODELO TREINADO")
+            self.gt_mode_chip.setStyleSheet(
+                "color:#00cc66; font-size:10px; font-weight:700; letter-spacing:1px;"
+                "background:#0a1f14; border:1px solid #1a5c38; border-radius:3px; padding:3px 8px;"
+            )
+            self.gt_status.append(f"[OK] {msg}")
+            self.gt_status.append("Modelo ativo! Teste ao vivo na aba Monitoramento.")
             self.voice.say("Modelo de gestos treinado com sucesso.")
         else:
-            self.gt_status.append(f"❌ {msg}")
+            self.gt_status.append(f"[ERRO] {msg}")
 
     def _gt_refresh_list(self) -> None:
-        if not hasattr(self, "gt_class_list"):
+        """Rebuild the visual class cards in the left panel."""
+        if not hasattr(self, "gt_cards_layout"):
             return
-        lines = []
-        for cls in self.gesture_trainer.classes():
+
+        # Clear existing cards
+        while self.gt_cards_layout.count():
+            item = self.gt_cards_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        classes = self.gesture_trainer.classes()
+        if not classes:
+            empty = QLabel("Nenhuma classe criada.\nClique em + para adicionar.")
+            empty.setStyleSheet("color:#555555; font-size:12px; padding:20px;")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setWordWrap(True)
+            self.gt_cards_layout.addWidget(empty)
+            return
+
+        for cls in classes:
             n = self.gesture_trainer.sample_count(cls)
-            bar = "█" * min(20, n // 5) + "░" * max(0, 20 - n // 5)
-            lines.append(f"  {cls:<20} {n:>4} amostras  [{bar}]")
-        if not lines:
-            lines = ["  Nenhuma classe ainda."]
-        total = self.gesture_trainer.total_samples()
-        lines.append(f"\n  Total: {total} amostras em {len(self.gesture_trainer.classes())} classe(s)")
-        self.gt_class_list.setText("\n".join(lines))
+            is_selected = cls == self._gt_selected_class
+
+            card = QFrame()
+            border_color = "#ffffff" if is_selected else "#333333"
+            bg_color = "#1e1e1e" if is_selected else "#161616"
+            card.setStyleSheet(
+                f"QFrame {{ background:{bg_color}; border:1px solid {border_color};"
+                f"border-radius:6px; }}"
+                f"QFrame:hover {{ background:#222222; border-color:#888888; }}"
+            )
+            card.setCursor(Qt.PointingHandCursor)
+            card.setFixedHeight(64)
+
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(12, 8, 12, 8)
+            card_layout.setSpacing(10)
+
+            # Class name
+            name_lbl = QLabel(cls)
+            name_color = "#ffffff" if is_selected else "#cccccc"
+            name_lbl.setStyleSheet(f"color:{name_color}; font-size:13px; font-weight:700; border:none; background:transparent;")
+
+            # Sample count + mini bar
+            MAX_GOOD = 100
+            filled = min(n, MAX_GOOD)
+            pct = int((filled / MAX_GOOD) * 10)
+            bar_str = "▮" * pct + "▯" * (10 - pct)
+            bar_color = "#888888" if not is_selected else "#ffffff"
+            count_lbl = QLabel(f"{n}  {bar_str}")
+            count_lbl.setStyleSheet(f"color:{bar_color}; font-size:10px; font-family:Consolas; border:none; background:transparent;")
+
+            card_layout.addWidget(name_lbl, 1)
+            card_layout.addWidget(count_lbl)
+
+            # Make clickable via mousePressEvent override
+            def make_handler(class_name):
+                def handler(event):
+                    self._gt_select_class(class_name)
+                return handler
+            card.mousePressEvent = make_handler(cls)
+
+            self.gt_cards_layout.addWidget(card)
 
     def _build_config_tab(self) -> QWidget:
-
+        """System configuration and diagnostic dashboard tab."""
         page = QWidget()
-        layout = QVBoxLayout(page)
-        info = QTextEdit()
-        info.setReadOnly(True)
-        info.setObjectName("PanelText")
-        info.setText(
-            "\n".join(
-                [
-                    f"Projeto: {self.config.project_root}",
-                    f"Banco: {self.config.database_path}",
-                    f"Faces: {self.config.faces_dir}",
-                    f"Detector: {self.detector.backend_name}",
-                    f"Modelo YOLO: {self.config.yolo_model}",
-                    f"InsightFace: {'ativo' if self.faces.available else self.faces.last_error or 'indisponivel'}",
-                    f"Gestos MediaPipe: {'ativo' if self.gestures.available else 'indisponivel'}",
-                    f"Gemini: {'configurado' if self.config.gemini_api_key else 'nao configurado'}",
-                ]
-            )
+        outer = QVBoxLayout(page)
+        outer.setSpacing(0)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        # Toolbar
+        toolbar = QFrame()
+        toolbar.setStyleSheet("QFrame { background:#141414; border-bottom:1px solid #2d2d2d; border-radius:0; }")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(16, 10, 16, 10)
+
+        title_lbl = QLabel("CONFIGURAÇÕES DO SISTEMA E DIAGNÓSTICO")
+        title_lbl.setStyleSheet("color:#ffffff; font-size:14px; font-weight:800; letter-spacing:3px;")
+
+        rebuild_btn = QPushButton("⚙ RECRIAR BASE FACIAL")
+        rebuild_btn.setFixedHeight(32)
+        rebuild_btn.setStyleSheet(
+            "QPushButton { background:#1a1a1a; color:#ffffff; border:1px solid #555555; font-weight:700; }"
+            "QPushButton:hover { background:#333333; border-color:#ffffff; }"
         )
-        layout.addWidget(info, 1)
-        rebuild_btn = QPushButton("Recriar Base Facial")
         rebuild_btn.clicked.connect(self.rebuild_face_embeddings)
-        layout.addWidget(rebuild_btn, alignment=Qt.AlignRight)
+
+        toolbar_layout.addWidget(title_lbl)
+        toolbar_layout.addStretch()
+        toolbar_layout.addWidget(rebuild_btn)
+        outer.addWidget(toolbar)
+
+        # Body
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 16, 16, 16)
+        body.setSpacing(12)
+        outer.addLayout(body, 1)
+
+        self.config_info = QTextEdit()
+        self.config_info.setReadOnly(True)
+        self.config_info.setObjectName("PanelText")
+        self.config_info.setStyleSheet(
+            "QTextEdit { background:#0a0a0a; border:1px solid #2d2d2d; border-radius:6px;"
+            "color:#00ff88; font-family:Consolas; font-size:12px; padding:12px; }"
+        )
+
+        insights_status = 'ATIVO' if self.faces.available else (self.faces.last_error or 'INDISPONÍVEL')
+        gestures_status = 'ATIVO' if self.gestures.available else 'INDISPONÍVEL'
+        gemini_status = 'CONFIGURADO' if self.config.gemini_api_key else 'NÃO CONFIGURADO'
+
+        info_lines = [
+            "================================================================================",
+            "                 QUANTUM TRACKER — DIAGNÓSTICO DO AMBIENTE                     ",
+            "================================================================================",
+            f" [DIRETÓRIOS E AMBIENTE]",
+            f"   • Projeto Root       : {self.config.project_root}",
+            f"   • Banco de Dados     : {self.config.database_path}",
+            f"   • Diretório de Faces : {self.config.faces_dir}",
+            "",
+            f" [VISÃO COMPUTACIONAL & DETECÇÃO]",
+            f"   • Backend Detector   : {self.detector.backend_name}",
+            f"   • Modelo YOLOv8      : {self.config.yolo_model}",
+            "",
+            f" [MÓDULOS BIOMÉTRICOS & IA]",
+            f"   • InsightFace        : {insights_status}",
+            f"   • MediaPipe Gestos   : {gestures_status}",
+            f"   • Google Gemini AI   : {gemini_status}",
+            "================================================================================",
+        ]
+        self.config_info.setText("\n".join(info_lines))
+        body.addWidget(self.config_info, 1)
+
         return page
 
     def _apply_style(self) -> None:
@@ -1060,16 +1673,30 @@ class QuantumMainWindow(QMainWindow):
         self.current_targets = targets
         self._update_robot_controller(targets, frame)
         active_g = self.active_gesture_command if time.time() - self.last_gesture_time <= 2.5 else None
-        snapshot = SystemSnapshot(self.fps, targets, self.db.recent_events(limit=6), self.mode.upper(), active_gesture=active_g)
+        # Reuse cached recent_events from monitor panel to avoid redundant DB query
+        snapshot = SystemSnapshot(self.fps, targets, self._cached_recent_events, self.mode.upper(), active_gesture=active_g)
         hud_frame = self.hud.draw(frame, snapshot)
         self._display_frame(hud_frame, self.video_label)
         self._update_monitor_panel(targets)
         if self.frame_counter % 5 == 0:
+            # Offload DB writes to a background thread to avoid blocking the UI timer
+            _targets_snapshot = list(targets)
+            threading.Thread(
+                target=self._db_write_observations,
+                args=(_targets_snapshot,),
+                daemon=True,
+            ).start()
+        for event in events:
+            self._handle_event(event)
+
+    def _db_write_observations(self, targets: list) -> None:
+        """Write track observations and session upserts in a background thread."""
+        try:
             self.db.log_track_observations(targets)
             for target in targets:
                 self.db.upsert_track_session(target)
-        for event in events:
-            self._handle_event(event)
+        except Exception as exc:
+            self.logger.warning(f"Erro ao escrever observacoes no DB: {exc}")
 
     def _process_frame(self, frame, detections: List[Detection]):
         now = time.perf_counter()
@@ -1114,7 +1741,7 @@ class QuantumMainWindow(QMainWindow):
 
     def _update_robot_controller(self, targets, frame) -> None:
         h, w = frame.shape[:2]
-        gesture = self.active_gesture_command if time.time() - self.last_gesture_time <= 1.4 else None
+        gesture = self.active_gesture_command if time.time() - self.last_gesture_time <= 2.5 else None
         if gesture is None:
             self.active_gesture_command = None
         telemetry = self.robot_controller.update(targets, (w, h), gesture)
@@ -1140,13 +1767,21 @@ class QuantumMainWindow(QMainWindow):
                 text = f"Conflito de identidade evitado para {event.name}."
             else:
                 text = self.brain.analyze_event(event)
-            self.brain_output.append(f"\nQUANTUM: {text}")
+            if hasattr(self, 'chat_display'):
+                self._append_chat("ai", text)
             self.voice.say(text)
-        self.refresh_logs()
+        # Invalidate cache so next monitor panel refresh picks up new events
+        self._last_stats_time = 0.0
 
     def _update_monitor_panel(self, targets) -> None:
         metrics = self.snapshot_service.build_metrics(targets)
-        stats = self.db.stats_summary()
+        # Throttle expensive DB queries: max once every 2 seconds
+        now_t = time.monotonic()
+        if not hasattr(self, '_last_stats_time') or now_t - self._last_stats_time > 2.0:
+            self._cached_stats = self.db.stats_summary()
+            self._cached_recent_events = self.db.recent_events(limit=10)
+            self._last_stats_time = now_t
+        stats = self._cached_stats
 
         # ── Cards do painel lateral ───────────────────────────────────
         primary = targets[0] if targets else None
@@ -1185,6 +1820,7 @@ class QuantumMainWindow(QMainWindow):
             f"Detector: {self.detector.backend_name}",
             f"Reconhec.: {'InsightFace OK' if self.faces.available else 'InsightFace N/D'}",
             f"DB: pessoas={stats['people']}  sessoes={stats['track_sessions']}",
+            f"Hoje: detec={stats.get('today_detected', 0)}  ident={stats.get('today_identified', 0)}  ghost={stats.get('today_ghost', 0)}",
             "",
         ]
         for target in targets:
@@ -1194,10 +1830,9 @@ class QuantumMainWindow(QMainWindow):
             )
         self.monitor_info.setText("\n".join(lines))
 
-        # ── Stream de eventos ─────────────────────────────────────────
-        logs = self.db.recent_events(limit=10)
+        # ── Stream de eventos (reuse cached to avoid extra DB query per frame) ──
         self.event_stream.setText("\n".join(
-            f"{log.timestamp[-8:]} | {log.event} | ID {log.track_id or '-'}" for log in logs
+            f"{log.timestamp[-8:]} | {log.event} | ID {log.track_id or '-'}" for log in self._cached_recent_events
         ))
 
 
@@ -1211,6 +1846,11 @@ class QuantumMainWindow(QMainWindow):
             self._message("Nao foi possivel abrir a webcam para cadastro.")
             return
         self.register_status.append("Camera de cadastro ativa.")
+        if hasattr(self, "register_live_chip"):
+            self.register_live_chip.setText("● AO VIVO")
+            self.register_live_chip.setStyleSheet(
+                "color:#00cc66; font-size:10px; font-weight:700; letter-spacing:1px;"
+            )
         self.register_timer.start(40)
 
     def _register_preview_loop(self) -> None:
@@ -1230,7 +1870,22 @@ class QuantumMainWindow(QMainWindow):
             return
         if self.register_timer.isActive():
             self.register_timer.stop()
-        self.register_status.append("Foto capturada e congelada. Clique em Salvar Cadastro ou em Abrir Camera de Cadastro para tirar outra.")
+            if hasattr(self, "register_live_chip"):
+                self.register_live_chip.setText("● CONGELADO")
+                self.register_live_chip.setStyleSheet(
+                    "color:#ffaa00; font-size:10px; font-weight:700; letter-spacing:1px;"
+                )
+        # Show thumbnail of captured frame
+        if hasattr(self, "register_thumb") and self.register_frame is not None:
+            rgb = cv2.cvtColor(self.register_frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb.shape
+            qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(qimg)
+            self.register_thumb.setPixmap(
+                pixmap.scaled(self.register_thumb.width(), self.register_thumb.height(),
+                              Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+        self.register_status.append("Foto capturada. Clique em SALVAR CADASTRO para confirmar.")
 
     def save_registration(self) -> None:
         name = self.name_input.text().strip()
@@ -1244,19 +1899,32 @@ class QuantumMainWindow(QMainWindow):
             photo_path = self.faces.register_face(name, self.register_frame)
             person_id = self.db.add_person(name, str(photo_path))
             embedding_path = self.faces.register_embedding_for_person(person_id, name, photo_path)
-            self.register_status.append(f"Cadastro salvo: ID {person_id} | {name}")
+            self.register_status.append(f"[OK] Cadastro salvo: ID {person_id} | {name}")
             if embedding_path:
-                self.register_status.append(f"Embedding facial salvo: {embedding_path.name}")
+                self.register_status.append(f"[OK] Embedding facial salvo: {embedding_path.name}")
             elif self.faces.last_error:
-                self.register_status.append(f"Reconhecimento facial indisponivel: {self.faces.last_error}")
+                self.register_status.append(f"[AVISO] Reconhecimento facial indisponivel: {self.faces.last_error}")
             self.voice.say(f"{name} cadastrado.")
             self.refresh_people()
-            
-            # Limpa campos e reinicia o preview para o próximo cadastro
+
+            # Clear and restart preview for next registration
             self.name_input.clear()
             self.register_frame = None
+            if hasattr(self, "register_thumb"):
+                self.register_thumb.clear()
+                self.register_thumb.setText("Nenhuma foto capturada")
+            if hasattr(self, "register_live_chip"):
+                self.register_live_chip.setText("● INATIVO")
+                self.register_live_chip.setStyleSheet(
+                    "color:#555555; font-size:10px; font-weight:700; letter-spacing:1px;"
+                )
             if not self.register_timer.isActive():
                 self.register_timer.start(40)
+                if hasattr(self, "register_live_chip"):
+                    self.register_live_chip.setText("● AO VIVO")
+                    self.register_live_chip.setStyleSheet(
+                        "color:#00cc66; font-size:10px; font-weight:700; letter-spacing:1px;"
+                    )
         except Exception as exc:
             self._message(f"Erro ao salvar cadastro: {exc}")
 
@@ -1343,6 +2011,24 @@ class QuantumMainWindow(QMainWindow):
             return
         rows = self.db.recent_events(limit=120)
         self.logs_output.setText("\n".join(f"{r.timestamp} | ID {r.track_id or '-'} | {r.name or 'UNKNOWN'} | {r.state} | {r.event}" for r in rows))
+
+    def export_logs_csv(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar Logs de Eventos", "quantum_tracker_logs.csv", "Arquivo CSV (*.csv)"
+        )
+        if not path:
+            return
+        try:
+            import csv
+            rows = self.db.recent_events(limit=1000)
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Timestamp", "Track_ID", "Nome", "Confianca", "Evento", "Estado"])
+                for r in rows:
+                    writer.writerow([r.timestamp, r.track_id or "", r.name or "", f"{r.confidence:.2f}", r.event, r.state])
+            self._message(f"Logs exportados com sucesso para:\n{path}")
+        except Exception as exc:
+            self._message(f"Erro ao exportar logs: {exc}")
 
     def select_first_robot_target(self) -> None:
         if not self.current_targets:
@@ -1510,7 +2196,9 @@ class QuantumMainWindow(QMainWindow):
 
     def ask_brain(self) -> None:
         """Legacy method kept for compatibility (speech listener uses it)."""
-        question = self.ai_input.text().strip() or getattr(self, 'question_input', None) and self.question_input.text().strip()
+        question = self.ai_input.text().strip()
+        if not question and hasattr(self, 'question_input'):
+            question = self.question_input.text().strip()
         if not question:
             return
         if hasattr(self, 'ai_input'):
@@ -1518,20 +2206,25 @@ class QuantumMainWindow(QMainWindow):
         self._send_ai_message()
 
     def listen_microphone(self) -> None:
-        self.brain_output.append("\nQUANTUM: Ouvindo microfone...")
+        if hasattr(self, 'chat_display'):
+            self._append_chat("sistema", "Ouvindo microfone...")
         self.speech.listen_once()
 
     def _poll_speech(self) -> None:
         while not self.speech_queue.empty():
             text = self.speech_queue.get()
-            self.question_input.setText(text)
+            if hasattr(self, 'ai_input'):
+                self.ai_input.setText(text)
             self.ask_brain()
         while not self.speech.errors.empty():
-            self.brain_output.append(f"\nQUANTUM: {self.speech.errors.get()}")
+            err = self.speech.errors.get()
+            if hasattr(self, 'chat_display'):
+                self._append_chat("sistema", err)
 
     def generate_report(self) -> None:
         report = self.brain.generate_report(self.db.recent_events(limit=50))
-        self.brain_output.setText(report)
+        if hasattr(self, 'chat_display'):
+            self._append_chat("ai", report)
         self.voice.say("Relatorio gerado.")
 
     def rebuild_face_embeddings(self) -> None:

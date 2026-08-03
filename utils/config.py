@@ -50,7 +50,7 @@ class AppConfig:
     yolo_half_precision: bool = False
 
     # Rastreamento
-    detection_confidence: float = 0.35
+    detection_confidence: float = 0.42
     face_recognition_interval: int = 12
     face_confidence_threshold: float = 0.42
     occluded_after_frames: int = 2

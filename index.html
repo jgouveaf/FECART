@@ -19,6 +19,8 @@
       <nav>
         <a class="nav-link active" href="#visao-geral" data-section="visao-geral"><span>⌁</span> Visão geral</a>
         <a class="nav-link" href="#simulador" data-section="simulador"><span>◇</span> Simulador</a>
+        <a class="nav-link" href="#camera-gestos" data-section="camera-gestos"><span>◉</span> Câmera &amp; gestos</a>
+        <a class="nav-link" href="#codigos" data-section="codigos"><span>⌘</span> Códigos</a>
         <a class="nav-link" href="#identidades" data-section="identidades"><span>◎</span> Identidades</a>
         <a class="nav-link" href="#etapas" data-section="etapas"><span>✓</span> Etapas</a>
         <a class="nav-link" href="#sistema" data-section="sistema"><span>⚙</span> Sistema</a>
@@ -68,7 +70,7 @@
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>71 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>76 aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⊘</span><div><small>Arduino</small><strong>Etapa 10</strong></div></article>
@@ -98,6 +100,67 @@
             </dl>
             <div class="safety-box"><span>Escudo lógico</span><strong id="safetyValue">MONITORANDO</strong><small>Distância de parada: 44 px virtuais</small></div>
           </aside>
+        </div>
+      </section>
+
+      <section id="camera-gestos" class="page-section panel camera-panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Teste no navegador</span><h2>Câmera &amp; gestos</h2><p>Confira a imagem, os pontos da mão e o comando reconhecido sem enviar nada ao robô.</p></div>
+          <div class="controls">
+            <button class="secondary-button" id="stopCamera" disabled>Desligar</button>
+            <button class="primary-button compact" id="startCamera">Iniciar câmera</button>
+          </div>
+        </div>
+        <div class="camera-layout">
+          <div class="camera-stage" id="cameraStage">
+            <video id="cameraVideo" playsinline muted aria-label="Prévia da câmera"></video>
+            <canvas id="gestureCanvas" aria-hidden="true"></canvas>
+            <div class="camera-placeholder" id="cameraPlaceholder">
+              <span>◉</span>
+              <strong>Câmera desligada</strong>
+              <small>Clique em “Iniciar câmera” e permita o acesso.</small>
+            </div>
+            <span class="canvas-badge"><span class="status-dot idle" id="cameraDot"></span><span id="cameraStatus">AGUARDANDO</span></span>
+          </div>
+          <aside class="gesture-console" aria-live="polite">
+            <span class="section-tag">Leitura atual</span>
+            <div class="gesture-result" id="gestureResult">
+              <small>Comando detectado</small>
+              <strong id="gestureCommand">NENHUM</strong>
+              <span id="fingerCount">Mostre uma mão aberta para começar</span>
+            </div>
+            <div class="gesture-map" aria-label="Mapa de comandos por dedos">
+              <div data-fingers="1"><b>1</b><span>Frente</span></div>
+              <div data-fingers="2"><b>2</b><span>Direita</span></div>
+              <div data-fingers="3"><b>3</b><span>Esquerda</span></div>
+              <div data-fingers="4"><b>4</b><span>Parar</span></div>
+              <div data-fingers="5"><b>5</b><span>Girar</span></div>
+            </div>
+            <p class="privacy-note">Processamento local no navegador. Nenhuma imagem é enviada ao Quantum Tracker ou salva no site.</p>
+          </aside>
+        </div>
+        <p class="notice">Este é um teste visual. Mesmo quando um comando aparece, a página não abre porta USB e não movimenta o Arduino.</p>
+      </section>
+
+      <section id="codigos" class="page-section panel code-panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Arduino UNO</span><h2>Códigos do robô</h2><p>Abra, copie ou baixe os sketches usados no Arduino IDE.</p></div>
+          <div class="code-actions">
+            <button class="secondary-button" id="copyCode">Copiar código</button>
+            <a class="primary-button compact" id="downloadCode" download>Baixar .ino</a>
+          </div>
+        </div>
+        <div class="pin-strip">
+          <span><b>D7</b> IN1</span><span><b>D6</b> IN2</span><span><b>D5</b> IN3</span><span><b>D4</b> IN4</span><span><b>D3</b> TRIG</span><span><b>D2</b> ECHO</span>
+        </div>
+        <div class="code-tabs" role="tablist" aria-label="Sketches disponíveis">
+          <button class="code-tab active" role="tab" aria-selected="true" data-code-source="firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino" data-filename="quantum_tracker_arduino.ino">Código principal</button>
+          <button class="code-tab" role="tab" aria-selected="false" data-code-source="firmware/teste_motores/teste_motores.ino" data-filename="teste_motores.ino">Teste dos motores</button>
+          <button class="code-tab" role="tab" aria-selected="false" data-code-source="firmware/teste_sensor_hcsr04/teste_sensor_hcsr04.ino" data-filename="teste_sensor_hcsr04.ino">Teste do sensor</button>
+        </div>
+        <div class="code-window">
+          <div class="code-titlebar"><span></span><span></span><span></span><strong id="codeFilename">quantum_tracker_arduino.ino</strong><em id="codeStatus">CARREGANDO</em></div>
+          <pre tabindex="0"><code id="arduinoCode">Carregando código…</code></pre>
         </div>
       </section>
 
@@ -145,5 +208,6 @@
     </main>
   </div>
   <script src="web/app.js" defer></script>
+  <script type="module" src="web/camera-gestures.js"></script>
 </body>
 </html>

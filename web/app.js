@@ -131,6 +131,58 @@
     document.querySelectorAll(".nav-link").forEach((item) => item.classList.remove("active"));
     link.classList.add("active"); sidebar.classList.remove("open"); menuButton.setAttribute("aria-expanded", "false");
   }));
+
+  const codeElement = document.getElementById("arduinoCode");
+  const codeFilename = document.getElementById("codeFilename");
+  const codeStatus = document.getElementById("codeStatus");
+  const copyCode = document.getElementById("copyCode");
+  const downloadCode = document.getElementById("downloadCode");
+  let loadedCode = "";
+
+  async function loadArduinoCode(tab) {
+    const source = tab.dataset.codeSource;
+    const filename = tab.dataset.filename;
+    document.querySelectorAll(".code-tab").forEach((item) => {
+      const selected = item === tab;
+      item.classList.toggle("active", selected);
+      item.setAttribute("aria-selected", String(selected));
+    });
+    codeFilename.textContent = filename;
+    codeStatus.textContent = "CARREGANDO";
+    codeElement.textContent = "Carregando código…";
+    downloadCode.href = source;
+    downloadCode.setAttribute("download", filename);
+    try {
+      const response = await fetch(new URL(source, document.baseURI));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      loadedCode = await response.text();
+      codeElement.textContent = loadedCode;
+      codeStatus.textContent = "PRONTO";
+    } catch (error) {
+      loadedCode = "";
+      codeElement.textContent = `Não foi possível carregar ${filename}. Abra o site publicado ou tente novamente.\n\nDetalhe: ${error.message}`;
+      codeStatus.textContent = "ERRO";
+    }
+  }
+
+  document.querySelectorAll(".code-tab").forEach((tab) => tab.addEventListener("click", () => loadArduinoCode(tab)));
+  copyCode.addEventListener("click", async () => {
+    if (!loadedCode) return;
+    try {
+      await navigator.clipboard.writeText(loadedCode);
+      copyCode.textContent = "Copiado!";
+      setTimeout(() => { copyCode.textContent = "Copiar código"; }, 1600);
+    } catch {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(codeElement);
+      selection.removeAllRanges(); selection.addRange(range);
+      copyCode.textContent = "Código selecionado";
+    }
+  });
+
   window.addEventListener("resize", resizeCanvas);
+  const firstCodeTab = document.querySelector(".code-tab");
+  if (firstCodeTab) loadArduinoCode(firstCodeTab);
   resizeCanvas(); resetWorld(); requestAnimationFrame(loop);
 })();

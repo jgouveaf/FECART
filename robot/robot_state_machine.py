@@ -66,4 +66,8 @@ class RobotStateMachine:
             self.enabled = True
             self.state = RobotState.TURN_RIGHT
             return self.state, RobotCommand.RIGHT, "override por gesto: direita"
+        if normalized in {"GIRAR", "RODAR"}:
+            self.enabled = True
+            self.state = RobotState.TURN_RIGHT
+            return self.state, RobotCommand.RIGHT, "override por gesto: girar"
         return self.state, RobotCommand.STOP, "gesto desconhecido"

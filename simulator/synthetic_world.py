@@ -30,6 +30,10 @@ class SyntheticWorld:
     def send_robot_command(self, command: RobotCommand) -> None:
         self.sim.send_robot_command(command)
 
+    @property
+    def obstacle_distance_cm(self) -> float:
+        return self.sim.obstacle_distance_cm()
+
     def next_frame(self) -> Tuple[np.ndarray, List[Detection]]:
         frame, detections, _ghost_preds = self.sim.step()
         return frame, detections

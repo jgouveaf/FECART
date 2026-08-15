@@ -71,6 +71,7 @@ class VisualSimulator:
         self.robot_width: int = 60
         self.robot_height: int = 80
         self.current_command: RobotCommand = RobotCommand.STOP
+        self.obstacles: List[Tuple[float, float, float, float]] = []
 
         # Targets list
         self.targets: List[SimTarget] = []
@@ -84,6 +85,10 @@ class VisualSimulator:
         self.robot_linear_speed = 0.0
         self.robot_angular_speed = 0.0
         self.current_command = RobotCommand.STOP
+        self.obstacles = [
+            (self.width * 0.46, self.height * 0.49, 95.0, 55.0),
+            (self.width * 0.72, self.height * 0.66, 70.0, 90.0),
+        ]
 
         self.targets = [
             SimTarget(1, "Joao", 320, 240, 2.5, 1.2, 70, 160, (0, 229, 255)),
@@ -112,6 +117,25 @@ class VisualSimulator:
         elif command == RobotCommand.STOP:
             self.robot_linear_speed = 0.0
             self.robot_angular_speed = 0.0
+
+    def obstacle_distance_cm(self, max_distance_cm: float = 80.0) -> float:
+        """Distancia frontal virtual; nunca consulta o HC-SR04 fisico."""
+        pixels_per_cm = 5.0
+        max_px = max_distance_cm * pixels_per_cm
+        heading = math.radians(self.robot_heading - 90.0)
+        dx, dy = math.cos(heading), math.sin(heading)
+        nose = max(self.robot_width, self.robot_height) / 2.0
+        for distance_px in np.arange(nose, max_px + 1.0, 2.0):
+            x = self.robot_x + dx * distance_px
+            y = self.robot_y + dy * distance_px
+            if x <= 0 or x >= self.width or y <= 0 or y >= self.height:
+                return max(0.1, (distance_px - nose) / pixels_per_cm)
+            if any(
+                ox <= x <= ox + ow and oy <= y <= oy + oh
+                for ox, oy, ow, oh in self.obstacles
+            ):
+                return max(0.1, (distance_px - nose) / pixels_per_cm)
+        return max_distance_cm
 
     def force_occlusion(self, target_id: Optional[int] = None, duration: float = 4.0) -> None:
         """Trigger occlusion on a specific target or random target to test Ghost Mode."""
@@ -154,6 +178,11 @@ class VisualSimulator:
         # Render Canvas
         frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
         self._draw_arena_background(frame)
+
+        for ox, oy, ow, oh in self.obstacles:
+            if cv2 is not None:
+                cv2.rectangle(frame, (int(ox), int(oy)), (int(ox + ow), int(oy + oh)), (70, 70, 70), -1)
+                cv2.rectangle(frame, (int(ox), int(oy)), (int(ox + ow), int(oy + oh)), (210, 210, 210), 2)
 
         for target in self.targets:
             # Move target in 2D space
@@ -270,7 +299,7 @@ class VisualSimulator:
 
         # Robot Tag
         cmd_str = self.current_command.value if isinstance(self.current_command, RobotCommand) else str(self.current_command)
-        cv2.putText(frame, "ROBO [ESP32]", (rx - 45, ry + h // 2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 229, 255), 1, cv2.LINE_AA)
+        cv2.putText(frame, "ROBO [SIMULADO]", (rx - 55, ry + h // 2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 229, 255), 1, cv2.LINE_AA)
         cv2.putText(frame, f"CMD: {cmd_str}", (rx - 45, ry + h // 2 + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (180, 220, 255), 1, cv2.LINE_AA)
 
 

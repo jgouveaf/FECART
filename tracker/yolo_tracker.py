@@ -73,11 +73,49 @@ class YoloPersonTracker:
         self._frame_counter += 1
 
         # Only submit to the inference thread every N frames
-        if self._frame_counter % self._detect_interval == 0:
+        # Processa o primeiro quadro imediatamente; depois respeita o intervalo.
+        # Isso elimina a tela inicialmente vazia quando detect_interval > 1.
+        if (self._frame_counter - 1) % max(1, self._detect_interval) == 0:
             self._submit_async(frame)
 
         with self._lock:
             return list(self._latest_detections)
+
+    def detect_sync(self, frame: np.ndarray) -> List[Detection]:
+        """Executa uma inferencia sincronamente em uma imagem ja disponivel.
+
+        Este caminho existe para testes offline, benchmarks e videos gravados.
+        A interface continua usando :meth:`detect`, que nao bloqueia o loop da UI.
+        """
+        if frame is None or frame.size == 0:
+            return []
+        if not self._ensure_yolo_loaded():
+            return self._detect_with_hog(frame)
+
+        prepared = self._preprocess(frame)
+        return self._run_yolo(prepared, frame.shape)
+
+    def predict_sync(self, frame: np.ndarray) -> List[Detection]:
+        """Detecta pessoas em uma imagem isolada, sem reaproveitar IDs.
+
+        Use este metodo para fotos e benchmarks de deteccao. Para uma sequencia
+        de video, :meth:`detect_sync` mantem o estado temporal do tracker.
+        """
+        if frame is None or frame.size == 0:
+            return []
+        if not self._ensure_yolo_loaded():
+            return self._detect_with_hog(frame)
+
+        prepared = self._preprocess(frame)
+        results = self.model.predict(
+            prepared,
+            classes=[0],
+            conf=self.config.detection_confidence,
+            imgsz=self.config.yolo_infer_size,
+            half=self.config.yolo_half_precision,
+            verbose=False,
+        )
+        return self._parse_results(results, frame.shape)
 
     def shutdown(self) -> None:
         """Wait for any running inference thread to finish and reset state."""
@@ -114,18 +152,7 @@ class YoloPersonTracker:
             if frame is None or orig_shape is None:
                 return
 
-            results = self.model.track(
-                frame,
-                classes=[0],                                     # person only
-                conf=self.config.detection_confidence,
-                persist=True,
-                tracker=self.config.yolo_tracker,
-                imgsz=self.config.yolo_infer_size,               # reduced resolution
-                half=self.config.yolo_half_precision,            # FP16 when CUDA
-                verbose=False,
-            )
-
-            detections = self._parse_results(results, orig_shape)
+            detections = self._run_yolo(frame, orig_shape)
             with self._lock:
                 self._latest_detections = detections
         except Exception as exc:
@@ -134,6 +161,20 @@ class YoloPersonTracker:
         finally:
             with self._lock:
                 self._busy = False
+
+    def _run_yolo(self, frame: np.ndarray, orig_shape: tuple) -> List[Detection]:
+        """Roda YOLO+ByteTrack sobre um frame preparado e converte o resultado."""
+        results = self.model.track(
+            frame,
+            classes=[0],                                     # COCO class 0: person
+            conf=self.config.detection_confidence,
+            persist=True,
+            tracker=self.config.yolo_tracker,
+            imgsz=self.config.yolo_infer_size,
+            half=self.config.yolo_half_precision,
+            verbose=False,
+        )
+        return self._parse_results(results, orig_shape)
 
     def _preprocess(self, frame: np.ndarray) -> np.ndarray:
         """Resize frame to speed up inference while maintaining aspect ratio."""

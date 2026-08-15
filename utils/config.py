@@ -14,6 +14,13 @@ else:
     INTERNAL_ROOT = Path(__file__).resolve().parents[1]
     PROJECT_ROOT = INTERNAL_ROOT
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(PROJECT_ROOT / ".env")
+except Exception:
+    pass
+
 # Para total portabilidade, salvar dados na mesma pasta do .exe
 USER_DATA_DIR = PROJECT_ROOT / "data"
 
@@ -25,6 +32,7 @@ class AppConfig:
 
     # Pastas de dados dinâmicos do usuário
     faces_dir: Path = USER_DATA_DIR / "faces"
+    embeddings_dir: Path = USER_DATA_DIR / "embeddings"
     logs_dir: Path = USER_DATA_DIR / "logs"
     database_path: Path = USER_DATA_DIR / "database" / "quantum_tracker.sqlite3"
 
@@ -61,12 +69,15 @@ class AppConfig:
 
     # Outros
     voice_enabled: bool = True
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    # Hardware fisico e validado somente na Etapa 10. Enquanto False, nem
+    # portas COM sao enumeradas e nenhuma conexao serial pode ser aberta.
+    hardware_enabled: bool = False
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
 def load_config() -> AppConfig:
     config = AppConfig()
-    for path in (config.faces_dir, config.logs_dir, config.database_path.parent):
+    for path in (config.faces_dir, config.embeddings_dir, config.logs_dir, config.database_path.parent):
         path.mkdir(parents=True, exist_ok=True)
     return config

@@ -7,17 +7,16 @@ from utils.config import AppConfig
 
 
 class QuantumBrain:
-    """Conversational tactical analysis with Gemini-compatible fallback."""
+    """Tactical analysis with OpenAI support and a local fallback."""
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.model = None
-        if config.gemini_api_key:
+        if config.openai_api_key:
             try:
-                import google.generativeai as genai
+                from openai import OpenAI
 
-                genai.configure(api_key=config.gemini_api_key)
-                self.model = genai.GenerativeModel(config.gemini_model)
+                self.model = OpenAI(api_key=config.openai_api_key)
             except Exception:
                 self.model = None
 
@@ -52,8 +51,11 @@ class QuantumBrain:
         if self.model is None:
             return None
         try:
-            response = self.model.generate_content(prompt)
-            return getattr(response, "text", None)
+            response = self.model.responses.create(
+                model=self.config.openai_model,
+                input=prompt,
+            )
+            return response.output_text or None
         except Exception:
             return None
 

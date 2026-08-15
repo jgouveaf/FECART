@@ -24,6 +24,7 @@ class RobotState(str, Enum):
     TURN_RIGHT = "TURN_RIGHT"
     GHOST = "GHOST"
     LOST = "LOST"
+    AVOIDING_OBSTACLE = "AVOIDING_OBSTACLE"
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,8 @@ class RobotTelemetry:
     reason: str
     pose: RobotPose
     esp32_payload: str
+    obstacle_distance_cm: Optional[float] = None
+    safety_active: bool = False
 
 
 FrameSize = Tuple[int, int]

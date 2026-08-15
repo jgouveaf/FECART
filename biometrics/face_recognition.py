@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
+import unicodedata
 
 try:
     import cv2
@@ -34,12 +36,18 @@ class FaceRecognizer:
     def register_face(self, name: str, image) -> Path:
         if cv2 is None:
             raise RuntimeError("OpenCV nao esta instalado.")
-        safe_name = "".join(ch for ch in name.strip() if ch.isalnum() or ch in ("_", "-")) or "unknown"
+        ascii_name = unicodedata.normalize("NFKD", name.strip()).encode("ascii", "ignore").decode("ascii")
+        safe_name = "".join(
+            ch if ch.isalnum() or ch in ("_", "-") else "_" for ch in ascii_name
+        ).strip("_") or "unknown"
         person_dir = self.faces_dir / safe_name
         person_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_path = person_dir / f"face_{stamp}.jpg"
-        cv2.imwrite(str(file_path), image)
+        if image is None or getattr(image, "size", 0) == 0:
+            raise ValueError("A imagem de cadastro esta vazia.")
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        file_path = person_dir / f"face_{stamp}_{uuid4().hex[:8]}.jpg"
+        if not cv2.imwrite(str(file_path), image):
+            raise OSError(f"Nao foi possivel gravar a foto em {file_path}")
         return file_path
 
     def register_embedding_for_person(self, person_id: int, name: str, photo_path: Path, created_at: str = "") -> Optional[Path]:

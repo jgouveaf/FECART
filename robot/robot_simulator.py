@@ -15,6 +15,8 @@ class RobotSimulator:
         self.pose = RobotPose()
 
     def update(self, command: RobotCommand, linear_speed: float, angular_speed: float) -> RobotPose:
+        if not math.isfinite(linear_speed) or not math.isfinite(angular_speed):
+            return RobotPose(self.pose.x, self.pose.y, self.pose.heading_degrees)
         self.pose.heading_degrees = (self.pose.heading_degrees + angular_speed * 8.0) % 360.0
         heading_rad = math.radians(self.pose.heading_degrees)
         direction = -1.0 if command == RobotCommand.REVERSE else 1.0

@@ -4,6 +4,7 @@ import queue
 import shutil
 import threading
 import time
+from html import escape
 from pathlib import Path
 from typing import List, Optional
 
@@ -12,6 +13,7 @@ from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -36,6 +38,7 @@ except Exception:  # pragma: no cover
     cv2 = None
 
 from biometrics.face_recognition import FaceRecognizer
+from biometrics.registration_service import IdentityRegistrationService
 from brain.quantum_brain import QuantumBrain
 from brain.speech_listener import SpeechListener
 from brain.tactical_voice import TacticalVoice
@@ -107,9 +110,10 @@ class QuantumMainWindow(QMainWindow):
         self.detector = self.tracker.detector
         self.track_manager = self.tracker.track_manager
         self.faces = FaceRecognizer(self.config, self.db)
+        self.registration_service = IdentityRegistrationService(self.config, self.db, self.faces)
         self.identity_resolver = IdentityResolver()
         self.snapshot_service = SnapshotService()
-        self.robot_controller = RobotController()
+        self.robot_controller = RobotController(allow_hardware=self.config.hardware_enabled)
         self.gestures = GestureRecognizer(assets_dir=self.config.assets_dir)
         self.gesture_trainer = GestureTrainer(self.config.assets_dir)
         self.world = SyntheticWorld(self.config.frame_width, self.config.frame_height)
@@ -140,14 +144,17 @@ class QuantumMainWindow(QMainWindow):
         self.register_timer.timeout.connect(self._register_preview_loop)
         self.speech_timer = QTimer(self)
         self.speech_timer.timeout.connect(self._poll_speech)
+        self.robot_heartbeat_timer = QTimer(self)
+        self.robot_heartbeat_timer.timeout.connect(self._send_robot_heartbeat)
 
         self._build_ui()
         self._apply_style()
         self.voice.start()
         self.speech_timer.start(400)
+        self.robot_heartbeat_timer.start(250)
 
     def _build_ui(self) -> None:
-        self.setWindowTitle("QUANTUM TRACKER")
+        self.setWindowTitle("QUANTUM TRACKER · TESTE 1.0")
         # Set window icon
         _ico = self.config.assets_dir / "quantum_tracker_v5.ico"
         _png = self.config.assets_dir / "logo.png"
@@ -172,7 +179,7 @@ class QuantumMainWindow(QMainWindow):
             logo_label.setFixedSize(48, 48)
             header.addWidget(logo_label)
 
-        title = QLabel("QUANTUM TRACKER")
+        title = QLabel("QUANTUM TRACKER  |  TESTE 1.0")
         title.setObjectName("Title")
         self.status_label = QLabel("Sistema pronto")
         self.status_label.setObjectName("Status")
@@ -203,7 +210,10 @@ class QuantumMainWindow(QMainWindow):
 
         # Toolbar
         toolbar = QFrame()
-        toolbar.setStyleSheet("QFrame { background:#141414; border-bottom:1px solid #2d2d2d; border-radius:0; }")
+        toolbar.setStyleSheet(
+            "QFrame { background:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0d1726, stop:1 #111827); "
+            "border-bottom:1px solid #244466; border-radius:0; }"
+        )
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(16, 10, 16, 10)
 
@@ -350,8 +360,21 @@ class QuantumMainWindow(QMainWindow):
         toolbar_layout.addWidget(title_lbl)
         toolbar_layout.addSpacing(12)
         toolbar_layout.addWidget(self.robot_status_chip)
+        toolbar_layout.addSpacing(12)
+        self.arduino_port_combo = QComboBox()
+        self.arduino_port_combo.setMinimumWidth(100)
+        self.arduino_port_combo.setToolTip("Porta USB do Arduino UNO")
+        self.arduino_refresh_btn = QPushButton("↻")
+        self.arduino_refresh_btn.setToolTip("Atualizar portas USB")
+        self.arduino_refresh_btn.clicked.connect(self.refresh_arduino_ports)
+        self.arduino_connect_btn = QPushButton("CONECTAR ARDUINO")
+        self.arduino_connect_btn.clicked.connect(self.toggle_arduino_connection)
+        toolbar_layout.addWidget(self.arduino_port_combo)
+        toolbar_layout.addWidget(self.arduino_refresh_btn)
+        toolbar_layout.addWidget(self.arduino_connect_btn)
         toolbar_layout.addStretch()
         outer.addWidget(toolbar)
+        self.refresh_arduino_ports()
 
         # ── Body ─────────────────────────────────────────────────────
         body = QHBoxLayout()
@@ -791,11 +814,18 @@ class QuantumMainWindow(QMainWindow):
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(16, 10, 16, 10)
 
-        lbl_title = QLabel("MÓDULO DE ANÁLISE TÁTICA E IA (GEMINI)")
+        toolbar.setStyleSheet(
+            "QFrame { background:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0d1726, stop:1 #111827); "
+            "border-bottom:1px solid #244466; border-radius:0; }"
+        )
+        lbl_title = QLabel("MÓDULO DE ANÁLISE TÁTICA E IA (OPENAI)")
         lbl_title.setStyleSheet("color:#ffffff; font-size:14px; font-weight:800; letter-spacing:3px;")
         
-        self.ai_status_label = QLabel("Verificando conexão...")
-        self.ai_status_label.setStyleSheet("color:#aaaaaa; font-size:11px; font-family:Consolas;")
+        self.ai_status_label = QLabel("Pronto para conectar")
+        self.ai_status_label.setStyleSheet(
+            "color:#9fb4c8; font-size:11px; font-family:Consolas; background:#162536; "
+            "border:1px solid #2d5275; border-radius:10px; padding:4px 9px;"
+        )
 
         toolbar_layout.addWidget(lbl_title)
         toolbar_layout.addStretch()
@@ -810,19 +840,31 @@ class QuantumMainWindow(QMainWindow):
 
         # API Key config bar
         key_row = QHBoxLayout()
-        key_lbl = QLabel("API Key Gemini:")
+        key_lbl = QLabel("API Key OpenAI:")
         key_lbl.setFixedWidth(110)
         self.api_key_input = QLineEdit()
-        self.api_key_input.setPlaceholderText("Cole sua API Key do Google AI Studio aqui...")
+        self.api_key_input.setPlaceholderText("Cole sua API Key da OpenAI aqui (sk-...)")
         self.api_key_input.setEchoMode(QLineEdit.Password)
-        self.api_key_input.setText(self.config.gemini_api_key)
+        self.api_key_input.setText(self.config.openai_api_key)
+        self.api_key_input.setStyleSheet(
+            "QLineEdit { background:#0b1220; border:1px solid #284663; border-radius:6px; "
+            "padding:0 10px; color:#e6f2ff; } QLineEdit:focus { border:1px solid #4da3ff; }"
+        )
 
         connect_btn = QPushButton("CONECTAR")
         connect_btn.setFixedHeight(34)
-        connect_btn.clicked.connect(self._connect_gemini)
+        connect_btn.setStyleSheet(
+            "QPushButton { background:#2f80ed; color:white; border:none; border-radius:6px; padding:0 14px; font-weight:800; } "
+            "QPushButton:hover { background:#4b96f5; }"
+        )
+        connect_btn.clicked.connect(self._connect_openai)
 
         new_chat_btn = QPushButton("NOVA CONVERSA")
         new_chat_btn.setFixedHeight(34)
+        new_chat_btn.setStyleSheet(
+            "QPushButton { background:#162536; color:#c8e1ff; border:1px solid #2d5275; border-radius:6px; padding:0 12px; font-weight:700; } "
+            "QPushButton:hover { background:#203a54; }"
+        )
         new_chat_btn.clicked.connect(self._reset_ai_chat)
 
         key_row.addWidget(key_lbl)
@@ -837,13 +879,13 @@ class QuantumMainWindow(QMainWindow):
         self.chat_display.setObjectName("PanelText")
         self.chat_display.setStyleSheet("""
             QTextEdit {
-                background: #0a0a0a;
-                border: 1px solid #2d2d2d;
+                background: #080e18;
+                border: 1px solid #1f3851;
                 border-radius: 8px;
                 padding: 12px;
                 font-family: 'Consolas', monospace;
                 font-size: 12px;
-                color: #e0e0e0;
+                color: #e6f2ff;
             }
         """)
         welcome = (
@@ -885,7 +927,8 @@ class QuantumMainWindow(QMainWindow):
         input_row.addWidget(report_btn)
         body.addLayout(input_row)
 
-        QTimer.singleShot(1000, self._connect_gemini)
+        if self.config.openai_api_key:
+            QTimer.singleShot(1000, self._connect_openai)
         return page
 
     # ──────────────────────────────────────────────────────────────────
@@ -1387,7 +1430,7 @@ class QuantumMainWindow(QMainWindow):
 
         insights_status = 'ATIVO' if self.faces.available else (self.faces.last_error or 'INDISPONÍVEL')
         gestures_status = 'ATIVO' if self.gestures.available else 'INDISPONÍVEL'
-        gemini_status = 'CONFIGURADO' if self.config.gemini_api_key else 'NÃO CONFIGURADO'
+        openai_status = 'CONFIGURADO' if self.config.openai_api_key else 'NÃO CONFIGURADO'
 
         info_lines = [
             "================================================================================",
@@ -1405,7 +1448,7 @@ class QuantumMainWindow(QMainWindow):
             f" [MÓDULOS BIOMÉTRICOS & IA]",
             f"   • InsightFace        : {insights_status}",
             f"   • MediaPipe Gestos   : {gestures_status}",
-            f"   • Google Gemini AI   : {gemini_status}",
+            f"   • OpenAI Chat        : {openai_status}",
             "================================================================================",
         ]
         self.config_info.setText("\n".join(info_lines))
@@ -1417,13 +1460,13 @@ class QuantumMainWindow(QMainWindow):
         self.setStyleSheet(
             """
             QMainWindow, QWidget {
-                background-color: #0b0b0b;
-                color: #e0e0e0;
+                background-color: #07111f;
+                color: #e6f2ff;
                 font-family: 'Consolas', 'Courier New', 'Segoe UI', Arial, sans-serif;
                 font-size: 13px;
             }
             #Title {
-                color: #ffffff;
+                color: #eaf6ff;
                 font-size: 24px;
                 font-weight: 900;
                 letter-spacing: 5px;
@@ -1435,21 +1478,21 @@ class QuantumMainWindow(QMainWindow):
                 font-size: 12px;
                 font-weight: bold;
                 padding: 5px 14px;
-                border: 1px solid #444444;
-                border-radius: 4px;
-                background: #141414;
+                border: 1px solid #24527c;
+                border-radius: 10px;
+                background: #10233a;
             }
             QTabWidget::pane {
-                border: 1px solid #2d2d2d;
+                border: 1px solid #1f4a70;
                 border-radius: 6px;
-                background: #111111;
+                background: #0c1a2b;
                 margin-top: -1px;
             }
             QTabBar::tab {
-                background: #161616;
-                color: #888888;
+                background: #0d1c2d;
+                color: #8faec8;
                 padding: 10px 18px;
-                border: 1px solid #2d2d2d;
+                border: 1px solid #1d405f;
                 border-bottom: none;
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
@@ -1459,38 +1502,38 @@ class QuantumMainWindow(QMainWindow):
                 letter-spacing: 1px;
             }
             QTabBar::tab:selected {
-                background: #111111;
+                background: #10263d;
                 color: #ffffff;
-                border-top: 3px solid #ffffff;
-                border-bottom: 1px solid #111111;
+                border-top: 3px solid #28b7ff;
+                border-bottom: 1px solid #10263d;
             }
             QTabBar::tab:hover:!selected {
-                background: #1d1d1d;
-                color: #cccccc;
+                background: #15304b;
+                color: #e0f2ff;
             }
             QPushButton {
-                background: #1a1a1a;
-                color: #ffffff;
-                border: 1px solid #444444;
-                border-radius: 4px;
+                background: #10243a;
+                color: #e8f6ff;
+                border: 1px solid #285578;
+                border-radius: 6px;
                 padding: 8px 18px;
                 font-size: 11px;
                 font-weight: 700;
                 letter-spacing: 1px;
             }
             QPushButton:hover {
-                background: #2a2a2a;
-                border-color: #ffffff;
+                background: #174267;
+                border-color: #3bc0ff;
                 color: #ffffff;
             }
             QPushButton:pressed {
-                background: #0d0d0d;
-                border-color: #cccccc;
+                background: #091724;
+                border-color: #248fc7;
             }
             QPushButton:disabled {
-                background: #101010;
-                color: #444444;
-                border-color: #222222;
+                background: #0a1623;
+                color: #52687a;
+                border-color: #172c3e;
             }
             #DangerButton {
                 background: #2d1111;
@@ -1503,82 +1546,82 @@ class QuantumMainWindow(QMainWindow):
                 color: #ffffff;
             }
             QLineEdit {
-                background: #141414;
-                border: 1px solid #2d2d2d;
+                background: #0b1928;
+                border: 1px solid #285578;
                 border-radius: 4px;
-                color: #ffffff;
+                color: #eaf6ff;
                 padding: 8px 12px;
                 font-size: 13px;
                 selection-background-color: #444444;
             }
             QLineEdit:focus {
-                border-color: #ffffff;
+                border-color: #35bfff;
             }
             QTextEdit, QPlainTextEdit {
-                background: #141414;
-                border: 1px solid #2d2d2d;
+                background: #0b1928;
+                border: 1px solid #1f4a70;
                 border-radius: 6px;
-                color: #e0e0e0;
+                color: #d9edff;
                 padding: 10px;
                 font-family: Consolas, 'Courier New', monospace;
                 font-size: 12px;
-                selection-background-color: #444444;
+                selection-background-color: #1f6794;
             }
             QScrollBar:vertical {
-                background: #101010;
+                background: #081522;
                 width: 9px;
                 margin: 0;
             }
             QScrollBar::handle:vertical {
-                background: #333333;
+                background: #245273;
                 border-radius: 4px;
                 min-height: 30px;
             }
             QScrollBar::handle:vertical:hover {
-                background: #888888;
+                background: #36bfff;
             }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                 height: 0;
             }
             QScrollBar:horizontal {
-                background: #101010;
+                background: #081522;
                 height: 9px;
             }
             QScrollBar::handle:horizontal {
-                background: #333333;
+                background: #245273;
                 border-radius: 4px;
                 min-width: 30px;
             }
             QScrollBar::handle:horizontal:hover {
-                background: #888888;
+                background: #36bfff;
             }
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
                 width: 0;
             }
             QLabel {
-                color: #aaaaaa;
+                color: #a9c7de;
                 font-size: 11px;
                 font-weight: 600;
                 letter-spacing: 1px;
             }
             #Video {
                 background: #000000;
-                border: 1px solid #2d2d2d;
+                border: 1px solid #1f4a70;
                 border-radius: 8px;
-                color: #ffffff;
+                color: #dff4ff;
                 font-size: 14px;
             }
             #PanelText {
                 font-family: Consolas, monospace;
                 font-size: 11px;
-                color: #cccccc;
-                background: #121212;
-                border: 1px solid #262626;
+                color: #c8e5fa;
+                background: #0b1928;
+                border: 1px solid #1d405f;
                 border-radius: 6px;
             }
             QFrame {
-                background: #111111;
-                border: 1px solid #2d2d2d;
+                background: #0d1c2d;
+                border: 1px solid #1d405f;
                 border-radius: 6px;
             }
             QScrollArea {
@@ -1586,26 +1629,41 @@ class QuantumMainWindow(QMainWindow):
                 background: transparent;
             }
             #SideCard {
-                background: #141414;
-                border: 1px solid #2d2d2d;
+                background: #102238;
+                border: 1px solid #245273;
                 border-radius: 8px;
                 margin-bottom: 4px;
             }
             #CardHeader {
-                color: #ffffff;
+                color: #dff4ff;
                 font-size: 10px;
                 font-weight: 800;
                 letter-spacing: 2px;
                 padding-bottom: 4px;
-                border-bottom: 1px solid #2d2d2d;
+                border-bottom: 1px solid #245273;
                 margin-bottom: 6px;
             }
             #InfoValue {
-                color: #cccccc;
+                color: #c8e5fa;
                 font-family: Consolas, monospace;
                 font-size: 12px;
                 font-weight: 500;
                 padding: 2px 0;
+            }
+            QComboBox {
+                background: #0b1928;
+                color: #dff4ff;
+                border: 1px solid #285578;
+                border-radius: 6px;
+                padding: 7px 28px 7px 10px;
+                min-height: 18px;
+            }
+            QComboBox:hover, QComboBox:focus { border-color: #36bfff; }
+            QComboBox QAbstractItemView {
+                background: #0d1c2d;
+                color: #dff4ff;
+                selection-background-color: #1f6794;
+                border: 1px solid #285578;
             }
             """
         )
@@ -1643,6 +1701,7 @@ class QuantumMainWindow(QMainWindow):
     def stop(self) -> None:
         self.timer.stop()
         self.running = False
+        self.robot_controller.manual_command(RobotCommand.STOP)
         self.detector.shutdown()
         if self.capture is not None:
             self.capture.release()
@@ -1735,6 +1794,7 @@ class QuantumMainWindow(QMainWindow):
                 "PARAR": "Parar",
                 "SEGUIR": "Seguir em frente",
                 "RE": "Recuar",
+                "GIRAR": "Girar",
             }
             self.voice.say(_voz_map.get(gesture.command, f"Gesto {gesture.command}"))
         return targets, events
@@ -1744,7 +1804,26 @@ class QuantumMainWindow(QMainWindow):
         gesture = self.active_gesture_command if time.time() - self.last_gesture_time <= 2.5 else None
         if gesture is None:
             self.active_gesture_command = None
-        telemetry = self.robot_controller.update(targets, (w, h), gesture)
+        obstacle_distance_cm = (
+            self.world.obstacle_distance_cm if self.mode == "simulator" else None
+        )
+        telemetry = self.robot_controller.update(
+            targets,
+            (w, h),
+            gesture,
+            obstacle_distance_cm=obstacle_distance_cm,
+        )
+        if self.mode == "simulator":
+            self.world.send_robot_command(telemetry.command)
+        self.current_robot_telemetry = telemetry
+        self._update_robot_dashboard(telemetry)
+
+    def _send_robot_heartbeat(self) -> None:
+        """Keep a manual Arduino command alive even when the camera is off."""
+        controller = self.robot_controller
+        if not controller.esp32.connected or controller.manual_override is None:
+            return
+        telemetry = controller.update([], (640, 480))
         self.current_robot_telemetry = telemetry
         self._update_robot_dashboard(telemetry)
 
@@ -1896,15 +1975,15 @@ class QuantumMainWindow(QMainWindow):
             self._message("Capture uma foto antes de salvar.")
             return
         try:
-            photo_path = self.faces.register_face(name, self.register_frame)
-            person_id = self.db.add_person(name, str(photo_path))
-            embedding_path = self.faces.register_embedding_for_person(person_id, name, photo_path)
-            self.register_status.append(f"[OK] Cadastro salvo: ID {person_id} | {name}")
-            if embedding_path:
-                self.register_status.append(f"[OK] Embedding facial salvo: {embedding_path.name}")
-            elif self.faces.last_error:
-                self.register_status.append(f"[AVISO] Reconhecimento facial indisponivel: {self.faces.last_error}")
-            self.voice.say(f"{name} cadastrado.")
+            result = self.registration_service.register(name, self.register_frame)
+            self.register_status.append(
+                f"[OK] Cadastro salvo: ID {result.person.person_id} | {result.person.name}"
+            )
+            if result.embedding_path:
+                self.register_status.append(
+                    f"[OK] Embedding facial salvo: {result.embedding_path.name}"
+                )
+            self.voice.say(f"{result.person.name} cadastrado.")
             self.refresh_people()
 
             # Clear and restart preview for next registration
@@ -2063,10 +2142,42 @@ class QuantumMainWindow(QMainWindow):
 
     def robot_stop(self) -> None:
         self.robot_controller.stop()
+        self.current_robot_telemetry = self.robot_controller.manual_command(RobotCommand.STOP)
+        self._update_robot_dashboard(self.current_robot_telemetry)
         self._append_robot_log("Robo parado por comando manual.")
 
+    def refresh_arduino_ports(self) -> None:
+        if not hasattr(self, "arduino_port_combo"):
+            return
+        ports = self.robot_controller.esp32.available_ports()
+        current = self.robot_controller.esp32.port
+        self.arduino_port_combo.clear()
+        self.arduino_port_combo.addItems(ports or ["Nenhuma porta encontrada"])
+        if current and current in ports:
+            self.arduino_port_combo.setCurrentText(current)
+
+    def toggle_arduino_connection(self) -> None:
+        adapter = self.robot_controller.esp32
+        if adapter.connected:
+            adapter.disconnect()
+            self.robot_status_chip.setText("MODO: SIMULADOR")
+            self.arduino_connect_btn.setText("CONECTAR ARDUINO")
+            self._append_robot_log("Arduino desconectado; simulador ativo.")
+            return
+        port = self.arduino_port_combo.currentText()
+        if not port or port == "Nenhuma porta encontrada":
+            self._message("Conecte o Arduino ao USB e clique em ↻ para localizar a porta COM.")
+            return
+        ok, message = adapter.connect(port)
+        self._append_robot_log(message)
+        if ok:
+            self.robot_status_chip.setText(f"ARDUINO: {port}")
+            self.arduino_connect_btn.setText("DESCONECTAR")
+        else:
+            self._message(message)
+
     def robot_manual_command(self, command: RobotCommand) -> None:
-        if self.mode == "simulator" or not self.running:
+        if not self.robot_controller.esp32.connected and (self.mode == "simulator" or not self.running):
             self.world.send_robot_command(command)
         telemetry = self.robot_controller.manual_command(command)
         self.current_robot_telemetry = telemetry
@@ -2076,8 +2187,14 @@ class QuantumMainWindow(QMainWindow):
     def _update_robot_dashboard(self, telemetry: RobotTelemetry) -> None:
         if not hasattr(self, "robot_dashboard"):
             return
+        hardware_connected = self.robot_controller.esp32.connected
+        mode_label = (
+            f"MODO: ARDUINO UNO CONECTADO ({self.robot_controller.esp32.port})"
+            if hardware_connected
+            else "MODO: SIMULADOR (nenhum Arduino conectado)"
+        )
         lines = [
-            "MODO: SIMULADOR / HARDWARE DESATIVADO",
+            mode_label,
             f"Alvo seguido: {telemetry.target_id if telemetry.target_id is not None else '-'}",
             f"Nome: {telemetry.target_name or 'UNKNOWN'}",
             f"Estado robo: {telemetry.state.value}",
@@ -2089,10 +2206,16 @@ class QuantumMainWindow(QMainWindow):
             f"Erro horizontal: {telemetry.horizontal_error:.2f}",
             f"Velocidade alvo: {telemetry.speed:.1f}px/frame",
             f"Direcao alvo: {telemetry.direction_degrees:.0f} graus",
-            f"Pose simulada: x={telemetry.pose.x:.1f} y={telemetry.pose.y:.1f} heading={telemetry.pose.heading_degrees:.1f}",
+            f"Obstaculo virtual: {telemetry.obstacle_distance_cm if telemetry.obstacle_distance_cm is not None else '-'} cm",
+            f"Seguranca: {'ATIVA' if telemetry.safety_active else 'INATIVA'}",
+            (
+                f"Posição visual: x={telemetry.pose.x:.1f} y={telemetry.pose.y:.1f} heading={telemetry.pose.heading_degrees:.1f}"
+                if not hardware_connected
+                else "Saída física: comandos enviados ao Arduino UNO por cabo USB"
+            ),
             f"Motivo: {telemetry.reason}",
             "",
-            "Payload futuro ESP32:",
+            "Último comando USB Arduino:",
             telemetry.esp32_payload,
         ]
         self.robot_dashboard.setText("\n".join(lines))
@@ -2103,7 +2226,7 @@ class QuantumMainWindow(QMainWindow):
         stamp = time.strftime("%H:%M:%S")
         self.robot_logs.append(f"{stamp} | {message}")
 
-    def _connect_gemini(self) -> None:
+    def _connect_openai(self) -> None:
         key = self.api_key_input.text().strip()
         if not key:
             self._append_chat("sistema", "Digite uma API Key valida para conectar.")
@@ -2114,11 +2237,11 @@ class QuantumMainWindow(QMainWindow):
         def do_connect():
             ok = self.gemini.configure(key)
             # Update UI from main thread
-            QTimer.singleShot(0, lambda: self._on_gemini_connected(ok))
+            QTimer.singleShot(0, lambda: self._on_openai_connected(ok))
 
         threading.Thread(target=do_connect, daemon=True).start()
 
-    def _on_gemini_connected(self, ok: bool) -> None:
+    def _on_openai_connected(self, ok: bool) -> None:
         if ok:
             self.ai_status_label.setText("QUANTUM AI conectado")
             self.ai_status_label.setStyleSheet("color:#00ff88; font-weight:bold;")
@@ -2173,10 +2296,11 @@ class QuantumMainWindow(QMainWindow):
             "thinking": ("#0a0a0a", "#555555", "..."),
         }
         bg, color, label = colors.get(role, ("#111", "#aaa", role.upper()))
+        safe_text = escape(text).replace("\n", "<br>")
         html = (
             f'<div style="background:{bg}; border-radius:6px; padding:8px 12px; margin:4px 0;">'
             f'<span style="color:{color}; font-weight:bold; font-size:11px;">{label}</span><br>'
-            f'<span style="color:#c8ecff; font-size:13px;">{text}</span>'
+            f'<span style="color:#c8ecff; font-size:13px; line-height:1.45;">{safe_text}</span>'
             f'</div>'
         )
         self.chat_display.append(html)
@@ -2187,10 +2311,11 @@ class QuantumMainWindow(QMainWindow):
     def _replace_thinking(self, answer: str) -> None:
         """Replace the 'thinking' placeholder with the real answer."""
         cursor = self.chat_display.textCursor()
-        html = self.chat_display.toHtml()
-        # Remove last thinking block and re-render
-        if "QUANTUM AI esta pensando" in html:
-            self.chat_display.undo()  # remove thinking message
+        cursor.movePosition(cursor.End)
+        cursor.select(cursor.BlockUnderCursor)
+        if "QUANTUM AI esta pensando" in cursor.selectedText():
+            cursor.removeSelectedText()
+            cursor.deletePreviousChar()
         self._append_chat("ai", answer)
         self.voice.say(answer[:200])  # speak first 200 chars
 
@@ -2251,6 +2376,7 @@ class QuantumMainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.stop()
+        self.robot_controller.esp32.disconnect()
         self.register_timer.stop()
         if self.register_capture is not None:
             self.register_capture.release()

@@ -1,4 +1,4 @@
-"""GeminiAssistant — Conversational AI with live Quantum Tracker context."""
+"""OpenAI-backed conversational AI with live Quantum Tracker context."""
 from __future__ import annotations
 
 import logging
@@ -8,42 +8,26 @@ from typing import Callable, List, Optional
 from core.models import TrackedTarget, TargetState
 from utils.config import AppConfig
 
-logger = logging.getLogger("gemini_assistant")
+logger = logging.getLogger("quantum_ai")
 
-# System persona injected on every conversation
-_SYSTEM_PROMPT = """Voce e o QUANTUM AI, a inteligencia artificial tatica integrada ao sistema de rastreamento QUANTUM TRACKER.
-Voce monitora alvos em tempo real usando cameras, detecta pessoas com YOLOv8, rastreia com ByteTrack, reconhece rostos com InsightFace e interpreta gestos com MediaPipe.
-
-Regras do seu comportamento:
-- Responda SEMPRE em portugues do Brasil.
-- Seja objetivo, tecnico e claro. Respostas curtas a medio, nao escreva paredes de texto.
-- Quando tiver contexto do sistema, use-o para dar respostas relevantes.
-- Voce pode analisar situacoes, sugerir acoes e alertar sobre anomalias.
-- Se nao souber algo, seja honesto.
-- Tom: profissional, mas acessivel. Como um assistente militar inteligente.
-"""
+_SYSTEM_PROMPT = """Você é o QUANTUM AI, a inteligência artificial tática integrada ao QUANTUM TRACKER.
+Responda sempre em português do Brasil, de modo objetivo e claro. Você pode analisar o contexto
+de rastreamento apresentado, indicar anomalias e sugerir ações seguras. Não invente dados ausentes."""
 
 
 class GeminiAssistant:
-    """Manages a persistent conversation session with Gemini, injecting
-    live system context into every prompt so the AI knows what is happening."""
+    """Compatibility-named assistant implemented with the OpenAI Responses API."""
 
     def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self._model = None
-        self._chat = None
+        self._client = None
+        self._history: list[tuple[str, str]] = []
         self.available = False
         self.error_message = ""
         self._lock = threading.Lock()
-
-        self._init(config.gemini_api_key)
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+        self._init(config.openai_api_key)
 
     def configure(self, api_key: str) -> bool:
-        """(Re)initialize with a new API key. Returns True on success."""
         return self._init(api_key)
 
     def ask(
@@ -54,108 +38,79 @@ class GeminiAssistant:
         mode: str = "idle",
         on_done: Optional[Callable[[str], None]] = None,
     ) -> Optional[str]:
-        """Send a message to Gemini with live system context.
-        
-        If on_done is provided, sends in background thread and returns None immediately.
-        Otherwise blocks and returns the answer string.
-        """
         if not self.available:
-            return f"[QUANTUM AI offline] {self.error_message or 'Configure a API key do Gemini na aba de Configuracoes.'}"
+            return f"[QUANTUM AI offline] {self.error_message or 'Configure uma API key da OpenAI.'}"
 
-        full_prompt = self._build_prompt(question, targets or [], fps, mode)
-
+        prompt = self._build_prompt(question, targets or [], fps, mode)
         if on_done:
-            threading.Thread(
-                target=self._send_async,
-                args=(full_prompt, on_done),
-                daemon=True,
-            ).start()
+            threading.Thread(target=self._send_async, args=(prompt, question, on_done), daemon=True).start()
             return None
-        else:
-            return self._send_sync(full_prompt)
+        return self._send_sync(prompt, question)
 
     def reset_chat(self) -> None:
-        """Start a new conversation (clear history)."""
         with self._lock:
-            if self._model is not None:
-                try:
-                    self._chat = self._model.start_chat(history=[])
-                except Exception:
-                    pass
-
-    # ------------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------------
+            self._history.clear()
 
     def _init(self, api_key: str) -> bool:
-        if not api_key or api_key.strip() == "":
+        if not api_key or not api_key.strip():
             self.available = False
-            self.error_message = "API Key nao configurada."
+            self.error_message = "API key não configurada."
             return False
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key.strip())
-            model = genai.GenerativeModel(
-                model_name=self.config.gemini_model,
-                system_instruction=_SYSTEM_PROMPT,
-            )
-            chat = model.start_chat(history=[])
+            from openai import OpenAI
+
             with self._lock:
-                self._model = model
-                self._chat = chat
+                self._client = OpenAI(api_key=api_key.strip())
+                self._history.clear()
             self.available = True
             self.error_message = ""
-            logger.info("Gemini configurado com sucesso.")
             return True
         except Exception as exc:
             self.available = False
             self.error_message = str(exc)
-            logger.warning(f"Gemini nao disponivel: {exc}")
+            logger.warning("OpenAI indisponível: %s", exc)
             return False
 
-    def _build_prompt(
-        self,
-        question: str,
-        targets: List[TrackedTarget],
-        fps: float,
-        mode: str,
-    ) -> str:
-        """Builds the prompt with injected real-time system context."""
-        lines = ["--- CONTEXTO DO SISTEMA AGORA ---"]
-        lines.append(f"Modo: {mode.upper()}")
-        lines.append(f"FPS: {fps:.1f}")
-        lines.append(f"Total de alvos detectados: {len(targets)}")
-
-        visible = [t for t in targets if t.state == TargetState.VISIBLE]
-        ghost   = [t for t in targets if t.state == TargetState.GHOST]
-        lost    = [t for t in targets if t.state == TargetState.LOST]
-
-        lines.append(f"Visiveis: {len(visible)} | Ghost: {len(ghost)} | Perdidos: {len(lost)}")
-
-        for t in targets[:5]:  # limit context to 5 targets
-            name = t.name or "Desconhecido"
+    def _build_prompt(self, question: str, targets: List[TrackedTarget], fps: float, mode: str) -> str:
+        lines = [_SYSTEM_PROMPT, "", "--- CONTEXTO DO SISTEMA AGORA ---"]
+        lines.extend((
+            f"Modo: {mode.upper()}",
+            f"FPS: {fps:.1f}",
+            f"Total de alvos detectados: {len(targets)}",
+        ))
+        visible = [target for target in targets if target.state == TargetState.VISIBLE]
+        ghost = [target for target in targets if target.state == TargetState.GHOST]
+        lost = [target for target in targets if target.state == TargetState.LOST]
+        lines.append(f"Visíveis: {len(visible)} | Ghost: {len(ghost)} | Perdidos: {len(lost)}")
+        for target in targets[:5]:
             lines.append(
-                f"  - ID {t.track_id} | {name} | Estado: {t.state.value} "
-                f"| Confianca: {t.confidence:.0%} | Velocidade: {t.speed:.1f}px/f"
+                f"- ID {target.track_id} | {target.name or 'Desconhecido'} | Estado: {target.state.value} "
+                f"| Confiança: {target.confidence:.0%} | Velocidade: {target.speed:.1f}px/f"
             )
-
         if ghost:
-            lines.append("ALERTA: Ha alvos em modo Ghost (oclusos). Rastreamento por Kalman ativo.")
+            lines.append("Alerta: há alvos em modo Ghost; rastreamento por Kalman ativo.")
+        lines.extend(("--- FIM DO CONTEXTO ---", f"PERGUNTA DO OPERADOR: {question}"))
 
-        lines.append("--- FIM DO CONTEXTO ---")
-        lines.append(f"\nPERGUNTA DO OPERADOR: {question}")
-
+        with self._lock:
+            history = list(self._history[-8:])
+        if history:
+            transcript = "\n".join(f"{role}: {message}" for role, message in history)
+            lines.extend(("", "--- CONVERSA ANTERIOR ---", transcript))
         return "\n".join(lines)
 
-    def _send_sync(self, prompt: str) -> str:
-        with self._lock:
-            try:
-                response = self._chat.send_message(prompt)
-                return response.text
-            except Exception as exc:
-                logger.warning(f"Gemini error: {exc}")
-                return f"[Erro na comunicacao com Gemini: {exc}]"
+    def _send_sync(self, prompt: str, question: str) -> str:
+        try:
+            with self._lock:
+                if self._client is None:
+                    return "[QUANTUM AI offline] Cliente OpenAI não inicializado."
+                response = self._client.responses.create(model=self.config.openai_model, input=prompt)
+            answer = response.output_text.strip() or "A OpenAI não retornou uma resposta de texto."
+            with self._lock:
+                self._history.extend((("OPERADOR", question), ("QUANTUM AI", answer)))
+            return answer
+        except Exception as exc:
+            logger.warning("Erro na comunicação com OpenAI: %s", exc)
+            return f"[Erro na comunicação com OpenAI: {exc}]"
 
-    def _send_async(self, prompt: str, on_done: Callable[[str], None]) -> None:
-        answer = self._send_sync(prompt)
-        on_done(answer)
+    def _send_async(self, prompt: str, question: str, on_done: Callable[[str], None]) -> None:
+        on_done(self._send_sync(prompt, question))

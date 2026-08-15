@@ -129,7 +129,11 @@ class TrackerWrapper:
         current_active_ids = set()
 
         for target in targets:
-            if target.state == TargetState.VISIBLE:
+            # VISIBLE ainda pode durar alguns frames sem uma deteccao para
+            # absorver falhas isoladas do YOLO. So atualize a aparencia quando
+            # a pessoa realmente foi observada neste quadro; caso contrario,
+            # o fundo substituiria o ultimo perfil valido.
+            if target.state == TargetState.VISIBLE and target.frames_missing == 0:
                 current_active_ids.add(target.track_id)
                 hist = self._compute_histogram(frame, target.bbox)
                 if hist is not None:

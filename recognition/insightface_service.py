@@ -68,8 +68,34 @@ class InsightFaceService:
         crop = self._crop_target(frame, target)
         if crop is None:
             return None
-        embedding = self._extract_embedding(crop)
+        embedding = self.extract_embedding(crop)
         if embedding is None:
+            return None
+
+        return self.match_embedding(embedding, threshold)
+
+    def extract_embedding(self, image) -> Optional[np.ndarray]:
+        """Extrai um vetor facial normalizado de uma imagem ja disponivel."""
+        return self._extract_embedding(image)
+
+    def extract_single_embedding(self, image) -> tuple[Optional[np.ndarray], int]:
+        """Extrai somente quando existe exatamente um rosto no cadastro."""
+        if self.app is None:
+            return None, 0
+        try:
+            faces = self.app.get(image)
+        except Exception as exc:
+            self.last_error = f"Falha InsightFace: {exc}"
+            return None, 0
+        if len(faces) != 1:
+            return None, len(faces)
+        embedding = np.asarray(faces[0].embedding, dtype=np.float32)
+        norm = np.linalg.norm(embedding)
+        return (embedding / norm, 1) if norm > 0 else (None, 1)
+
+    def match_embedding(self, embedding: np.ndarray, threshold: float = 0.42) -> Optional[IdentityMatch]:
+        """Compara um vetor com a galeria persistente carregada."""
+        if not self.available or not self.known_faces:
             return None
 
         best: Optional[KnownFace] = None
@@ -83,22 +109,45 @@ class InsightFaceService:
             return None
         return IdentityMatch(best.person_id, best.name, float(best_score), best.embedding_id)
 
+    def store_embedding(
+        self,
+        person: PersonRecord,
+        photo_path: Path,
+        embedding: np.ndarray,
+    ) -> Path:
+        """Persiste atomicamente um embedding que ja foi calculado."""
+        if self.database is None:
+            raise RuntimeError("Banco de dados nao configurado para embeddings.")
+        vector = np.asarray(embedding, dtype=np.float32)
+        norm = np.linalg.norm(vector)
+        if norm <= 0:
+            raise ValueError("Embedding facial invalido.")
+        vector = vector / norm
+
+        embedding_dir = self.config.embeddings_dir
+        embedding_dir.mkdir(parents=True, exist_ok=True)
+        embedding_path = embedding_dir / f"person_{person.person_id}_{photo_path.stem}.npy"
+        temp_path = embedding_path.with_suffix(".tmp.npy")
+        np.save(str(temp_path), vector)
+        temp_path.replace(embedding_path)
+        try:
+            self.database.add_face_embedding(person.person_id, str(embedding_path), str(photo_path))
+        except Exception:
+            embedding_path.unlink(missing_ok=True)
+            raise
+        self.reload_gallery()
+        return embedding_path
+
     def register_person_embedding(self, person: PersonRecord, photo_path: Path) -> Optional[Path]:
         if not self.available or self.database is None or cv2 is None:
             return None
         image = cv2.imread(str(photo_path))
         if image is None:
             return None
-        embedding = self._extract_embedding(image)
+        embedding = self.extract_embedding(image)
         if embedding is None:
             return None
-        embedding_dir = self.config.assets_dir / "embeddings"
-        embedding_dir.mkdir(parents=True, exist_ok=True)
-        embedding_path = embedding_dir / f"person_{person.person_id}_{photo_path.stem}.npy"
-        np.save(str(embedding_path), embedding)
-        self.database.add_face_embedding(person.person_id, str(embedding_path), str(photo_path))
-        self.reload_gallery()
-        return embedding_path
+        return self.store_embedding(person, photo_path, embedding)
 
     def rebuild_embeddings(self) -> tuple[int, int]:
         if self.database is None:

@@ -1,0 +1,45 @@
+{
+  "modo": "OFFLINE_SEM_HARDWARE",
+  "confidence_threshold": 0.42,
+  "imagem": "D:\\QUANTUM_TRACKER\\.venv\\Lib\\site-packages\\ultralytics\\assets\\bus.jpg",
+  "deteccoes_por_condicao": {
+    "distante_65pct": 3,
+    "normal": 3,
+    "proximo_125pct": 2,
+    "escuro": 2,
+    "claro": 3,
+    "desfocado": 3
+  },
+  "comparacao_trackers": [
+    {
+      "tracker": "bytetrack.yaml",
+      "quadros": 16,
+      "quadros_com_pessoa": 16,
+      "ids_unicos": 3,
+      "melhor_persistencia_quadros": 16,
+      "persistencia_por_id": {
+        "1": 16,
+        "2": 14,
+        "3": 1
+      },
+      "deteccoes_media": 1.94,
+      "inferencia_media_ms": 125.5,
+      "inferencia_p95_ms": 151.4
+    },
+    {
+      "tracker": "botsort.yaml",
+      "quadros": 16,
+      "quadros_com_pessoa": 16,
+      "ids_unicos": 3,
+      "melhor_persistencia_quadros": 16,
+      "persistencia_por_id": {
+        "1": 16,
+        "2": 14,
+        "3": 1
+      },
+      "deteccoes_media": 1.94,
+      "inferencia_media_ms": 127.2,
+      "inferencia_p95_ms": 147.1
+    }
+  ]
+}

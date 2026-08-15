@@ -124,6 +124,7 @@ class GestureTrainer:
             return False, f"Cada classe precisa de pelo menos 5 amostras. Mínimo atual: {min_samples}."
 
         try:
+            from sklearn.calibration import CalibratedClassifierCV
             from sklearn.preprocessing import StandardScaler
             from sklearn.svm import SVC
             from sklearn.pipeline import Pipeline
@@ -148,7 +149,15 @@ class GestureTrainer:
 
         pipeline = Pipeline([
             ("scaler", StandardScaler()),
-            ("clf", SVC(kernel="rbf", C=10.0, gamma="scale", probability=True)),
+            (
+                "clf",
+                CalibratedClassifierCV(
+                    estimator=SVC(kernel="rbf", C=10.0, gamma="scale"),
+                    method="sigmoid",
+                    cv=3,
+                    ensemble=False,
+                ),
+            ),
         ])
         pipeline.fit(X, y)
 

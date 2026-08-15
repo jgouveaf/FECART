@@ -2,12 +2,24 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import unicodedata
 from pathlib import Path
 from typing import List, Optional, Sequence
 
 from datetime import datetime
 
 from core.models import EventRecord, FaceEmbeddingRecord, PersonRecord, SystemEvent, TrackedTarget
+
+
+class DuplicatePersonError(ValueError):
+    """Nome normalizado ja pertence a um cadastro persistente."""
+
+
+def normalize_person_name(name: str) -> tuple[str, str]:
+    """Retorna nome de exibicao e chave estavel, insensivel a caixa/acentos."""
+    display = " ".join(name.strip().split())
+    ascii_key = unicodedata.normalize("NFKD", display).encode("ascii", "ignore").decode("ascii")
+    return display, ascii_key.casefold()
 
 
 class DatabaseManager:
@@ -42,6 +54,20 @@ class DatabaseManager:
                 )
                 """
             )
+            columns = {
+                str(row[1])
+                for row in self.connection.execute("PRAGMA table_info(people)").fetchall()
+            }
+            if "name_key" not in columns:
+                self.connection.execute("ALTER TABLE people ADD COLUMN name_key TEXT")
+            for person_id, existing_name in self.connection.execute(
+                "SELECT id, name FROM people WHERE name_key IS NULL OR name_key = ''"
+            ).fetchall():
+                _, key = normalize_person_name(str(existing_name))
+                self.connection.execute(
+                    "UPDATE people SET name_key = ? WHERE id = ?",
+                    (key, int(person_id)),
+                )
             self.connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS face_embeddings (
@@ -119,6 +145,14 @@ class DatabaseManager:
             )
             self.connection.execute("CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp)")
             self.connection.execute("CREATE INDEX IF NOT EXISTS idx_people_name ON people(name)")
+            try:
+                self.connection.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_people_name_key ON people(name_key)"
+                )
+            except sqlite3.IntegrityError:
+                # Preserve bancos antigos com duplicatas; o servico ainda
+                # bloqueia novos nomes iguais ate que esses dados sejam revisados.
+                pass
             self.connection.execute("CREATE INDEX IF NOT EXISTS idx_track_obs_track ON track_observations(track_id, timestamp)")
             self.connection.execute("CREATE INDEX IF NOT EXISTS idx_identity_person ON identity_events(person_id, timestamp)")
             self.connection.commit()
@@ -166,12 +200,26 @@ class DatabaseManager:
         return [EventRecord(str(row[0]), row[1], row[2], float(row[3] or 0.0), str(row[4]), str(row[5])) for row in rows]
 
     def add_person(self, name: str, photo_path: str) -> int:
+        name, name_key = normalize_person_name(name)
+        if not name:
+            raise ValueError("O nome da pessoa nao pode ficar vazio.")
         created_at = datetime.now().isoformat(timespec="seconds")
         with self.lock:
-            cursor = self.connection.execute(
-                "INSERT INTO people(name, photo_path, created_at) VALUES (?, ?, ?)",
-                (name, photo_path, created_at),
-            )
+            existing = self.connection.execute(
+                "SELECT id FROM people WHERE name_key = ? LIMIT 1",
+                (name_key,),
+            ).fetchone()
+            if existing is not None:
+                raise DuplicatePersonError(
+                    f"Ja existe uma pessoa com esse nome (ID {int(existing[0])})."
+                )
+            try:
+                cursor = self.connection.execute(
+                    "INSERT INTO people(name, name_key, photo_path, created_at) VALUES (?, ?, ?, ?)",
+                    (name, name_key, photo_path, created_at),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise DuplicatePersonError("Ja existe uma pessoa com esse nome.") from exc
             self.connection.commit()
             return int(cursor.lastrowid)
 
@@ -198,10 +246,11 @@ class DatabaseManager:
         return [PersonRecord(int(row[0]), str(row[1]), str(row[2]), str(row[3])) for row in rows]
 
     def get_person_by_name(self, name: str) -> Optional[PersonRecord]:
+        _, name_key = normalize_person_name(name)
         with self.lock:
             row = self.connection.execute(
-                "SELECT id, name, photo_path, created_at FROM people WHERE name = ? ORDER BY id DESC LIMIT 1",
-                (name,),
+                "SELECT id, name, photo_path, created_at FROM people WHERE name_key = ? ORDER BY id DESC LIMIT 1",
+                (name_key,),
             ).fetchone()
         if row is None:
             return None

@@ -104,8 +104,12 @@ class TrackManager:
     def _resolve_track_id(self, detection: Detection, seen: set[int]) -> int:
         if detection.track_id is not None:
             track_id = int(detection.track_id)
-            self.next_id = max(self.next_id, track_id + 1)
-            return track_id
+            # ByteTrack normalmente entrega IDs unicos por quadro. Se um backend
+            # defeituoso repetir um ID, nao deixe a segunda deteccao sobrescrever
+            # silenciosamente a primeira pessoa.
+            if track_id not in seen:
+                self.next_id = max(self.next_id, track_id + 1)
+                return track_id
 
         best_id: Optional[int] = None
         best_distance = self.config.max_match_distance
@@ -122,7 +126,9 @@ class TrackManager:
             return best_id
 
         track_id = self.next_id
-        self.next_id += 1
+        while track_id in self.targets or track_id in seen:
+            track_id += 1
+        self.next_id = track_id + 1
         return track_id
 
     def _estimate_distance(self, bbox: BoundingBox) -> float:

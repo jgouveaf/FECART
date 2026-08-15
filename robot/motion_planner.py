@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from core.models import TargetState, TrackedTarget
 from robot.robot_models import FrameSize, MotionDecision, RobotCommand
 
@@ -24,11 +26,18 @@ class MotionPlanner:
             return MotionDecision(RobotCommand.STOP, "nenhum alvo selecionado", 0.0, 0.0, 0.0, 0.0, TargetState.LOST)
 
         width, height = frame_size
-        width = max(width, 1)
-        height = max(height, 1)
+        if not self._positive_finite(width) or not self._positive_finite(height):
+            return self._safe_stop(target, "quadro invalido: parada segura")
+
+        bbox_values = (target.bbox.x1, target.bbox.y1, target.bbox.x2, target.bbox.y2)
+        if not all(math.isfinite(float(value)) for value in bbox_values):
+            return self._safe_stop(target, "deteccao invalida: parada segura")
+
         center_x = target.bbox.center[0]
         horizontal_error = (center_x - (width / 2.0)) / (width / 2.0)
         height_ratio = target.bbox.height / height
+        if not math.isfinite(horizontal_error) or not math.isfinite(height_ratio):
+            return self._safe_stop(target, "geometria invalida: parada segura")
         distance_estimate = self._distance_from_height_ratio(height_ratio)
 
         if target.state == TargetState.LOST:
@@ -63,3 +72,22 @@ class MotionPlanner:
         if height_ratio <= 0:
             return 0.0
         return round(0.42 / height_ratio, 2)
+
+    @staticmethod
+    def _positive_finite(value: float) -> bool:
+        try:
+            return math.isfinite(float(value)) and float(value) > 0
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _safe_stop(target: TrackedTarget, reason: str) -> MotionDecision:
+        return MotionDecision(
+            RobotCommand.STOP,
+            reason,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            target.state,
+        )

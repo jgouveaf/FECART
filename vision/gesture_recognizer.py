@@ -13,6 +13,51 @@ class GestureResult:
     confidence: float
 
 
+class GestureStabilizer:
+    """Remove oscilacoes entre gestos sem atrasar o comando de parada."""
+
+    def __init__(self, stable_frames: int = 3, release_frames: int = 4) -> None:
+        if stable_frames < 1 or release_frames < 1:
+            raise ValueError("Os limites temporais devem ser positivos")
+        self.stable_frames = int(stable_frames)
+        self.release_frames = int(release_frames)
+        self.pending_command: Optional[str] = None
+        self.pending_count = 0
+        self.missing_count = 0
+        self.active: Optional[GestureResult] = None
+
+    def reset(self) -> None:
+        self.pending_command = None
+        self.pending_count = 0
+        self.missing_count = 0
+        self.active = None
+
+    def update(self, result: Optional[GestureResult]) -> Optional[GestureResult]:
+        if result is None:
+            self.missing_count += 1
+            self.pending_command = None
+            self.pending_count = 0
+            if self.missing_count >= self.release_frames:
+                self.active = None
+            return self.active
+
+        self.missing_count = 0
+        if result.command == "PARAR":
+            self.active = result
+            self.pending_command = None
+            self.pending_count = 0
+            return self.active
+
+        if result.command == self.pending_command:
+            self.pending_count += 1
+        else:
+            self.pending_command = result.command
+            self.pending_count = 1
+        if self.pending_count >= self.stable_frames:
+            self.active = result
+        return self.active
+
+
 class GestureRecognizer:
     """MediaPipe Hands gesture recognizer.
 
@@ -20,13 +65,19 @@ class GestureRecognizer:
     Otherwise falls back to the rule-based classifier.
     """
 
-    def __init__(self, assets_dir: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        assets_dir: Optional[Path] = None,
+        stable_frames: int = 3,
+        release_frames: int = 4,
+    ) -> None:
         self.available = False
         self.mp_hands = None
         self.hands = None
         self._trainer_model = None
         self._label_map: list[str] = []
         self._use_trained = False
+        self.stabilizer = GestureStabilizer(stable_frames, release_frames)
 
         try:
             import mediapipe as mp
@@ -79,10 +130,50 @@ class GestureRecognizer:
         if not result.multi_hand_landmarks:
             return None
         hand = result.multi_hand_landmarks[0].landmark
+        handedness = None
+        if result.multi_handedness:
+            handedness = result.multi_handedness[0].classification[0].label
+
+        # Number gestures are reserved for robot control.  They take priority
+        # over a custom trained gesture so the commands remain predictable.
+        number_gesture = self._classify_finger_count(hand, handedness)
+        if number_gesture is not None:
+            return self.stabilizer.update(number_gesture)
 
         if self._use_trained and self._trainer_model is not None:
-            return self._predict_trained(hand)
-        return self._classify_rules(hand)
+            return self.stabilizer.update(self._predict_trained(hand))
+        return self.stabilizer.update(self._classify_rules(hand))
+
+    @staticmethod
+    def _classify_finger_count(lm, handedness: Optional[str]) -> Optional[GestureResult]:
+        """Map one to five raised fingers to the robot's manual commands."""
+        fingers_up = [
+            lm[8].y < lm[6].y,
+            lm[12].y < lm[10].y,
+            lm[16].y < lm[14].y,
+            lm[20].y < lm[18].y,
+        ]
+
+        # The thumb points in the opposite horizontal direction for each hand.
+        # If MediaPipe cannot identify the hand, omit it rather than guessing.
+        thumb_up = False
+        if handedness == "Right":
+            thumb_up = lm[4].x < lm[3].x
+        elif handedness == "Left":
+            thumb_up = lm[4].x > lm[3].x
+
+        finger_count = sum(fingers_up) + int(thumb_up)
+        command_map = {
+            1: ("SEGUIR", "um dedo: frente"),
+            2: ("VIRAR_DIREITA", "dois dedos: direita"),
+            3: ("VIRAR_ESQUERDA", "tres dedos: esquerda"),
+            4: ("PARAR", "quatro dedos: parar"),
+            5: ("GIRAR", "cinco dedos: girar"),
+        }
+        command = command_map.get(finger_count)
+        if command is None:
+            return None
+        return GestureResult(command[0], 0.92)
 
     def _predict_trained(self, lm) -> Optional[GestureResult]:
         """Use the trained SVM model."""
@@ -125,4 +216,3 @@ class GestureRecognizer:
         if fingers[0] and fingers[1] and not fingers[2] and not fingers[3]:
             return GestureResult("RE", 0.86)
         return None
-

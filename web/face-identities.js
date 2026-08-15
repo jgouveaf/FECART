@@ -9,16 +9,26 @@
   const faceHint = document.getElementById("faceHint");
   const facePreview = document.getElementById("facePreview");
   const facePreviewImage = document.getElementById("facePreviewImage");
+  const faceConfidence = document.getElementById("faceConfidence");
+  const faceQuality = document.getElementById("faceQuality");
+  const sampleProgress = document.getElementById("sampleProgress");
+  const sampleProgressBar = document.getElementById("sampleProgressBar");
   const personName = document.getElementById("personName");
   const registerButton = document.getElementById("registerPerson");
   const registeredPeople = document.getElementById("registeredPeople");
   const identityEmpty = document.getElementById("identityEmpty");
   const identityCount = document.getElementById("identityCount");
+  const exportButton = document.getElementById("exportIdentities");
+  const importButton = document.getElementById("importIdentities");
+  const backupFile = document.getElementById("identityBackupFile");
 
   const STORAGE_KEY = "quantum_tracker_face_identities_v1";
   const MODEL_URL = new URL("web/vendor/face-api/models", document.baseURI).href.replace(/\/$/, "");
   const MATCH_THRESHOLD = 0.55;
   const DETECTION_INTERVAL_MS = 360;
+  const REQUIRED_SAMPLES = 3;
+  const MIN_DETECTION_SCORE = 0.62;
+  const MIN_FACE_WIDTH_RATIO = 0.16;
 
   let identities = loadIdentities();
   let matcher = null;
@@ -28,18 +38,34 @@
   let detectionTimer = 0;
   let currentFaces = [];
   let temporaryTracks = [];
+  let recognitionMemory = [];
   let nextTemporaryId = 1;
   let lastPreviewAt = 0;
+  let registering = false;
 
   function setStatus(text, active = false) {
     statusElement.textContent = text;
     statusDot.classList.toggle("idle", !active);
   }
 
+  function normalizeIdentity(item) {
+    if (!item?.id || typeof item.name !== "string" || !item.name.trim()) return null;
+    const candidates = Array.isArray(item.descriptors) ? item.descriptors : [item.descriptor];
+    const descriptors = candidates.filter((descriptor) => Array.isArray(descriptor) && descriptor.length === 128);
+    if (!descriptors.length || typeof item.photo !== "string" || !item.photo.startsWith("data:image/")) return null;
+    return {
+      id: String(item.id),
+      name: item.name.trim().slice(0, 60),
+      descriptors,
+      photo: item.photo,
+      createdAt: item.createdAt || new Date().toISOString(),
+    };
+  }
+
   function loadIdentities() {
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-      return parsed.filter((item) => item?.id && item?.name && Array.isArray(item.descriptor) && item.descriptor.length === 128);
+      return Array.isArray(parsed) ? parsed.map(normalizeIdentity).filter(Boolean) : [];
     } catch {
       return [];
     }
@@ -56,15 +82,17 @@
     }
     const labeled = identities.map((identity) => new faceapi.LabeledFaceDescriptors(
       identity.id,
-      [new Float32Array(identity.descriptor)]
+      identity.descriptors.map((descriptor) => new Float32Array(descriptor))
     ));
     matcher = new faceapi.FaceMatcher(labeled, MATCH_THRESHOLD);
+    recognitionMemory = recognitionMemory.filter((memory) => identities.some((identity) => identity.id === memory.id));
   }
 
   function renderIdentities() {
     registeredPeople.replaceChildren();
     identityCount.textContent = `${identities.length} ${identities.length === 1 ? "ID" : "IDs"}`;
     identityEmpty.classList.toggle("hidden", identities.length > 0);
+    exportButton.disabled = identities.length === 0;
 
     for (const identity of identities) {
       const card = document.createElement("article");
@@ -133,14 +161,62 @@
     return bestTrack.id;
   }
 
+  function assessFaceQuality(result) {
+    const score = result.detection.score;
+    const widthRatio = video.videoWidth ? result.detection.box.width / video.videoWidth : 0;
+    const acceptable = score >= MIN_DETECTION_SCORE && widthRatio >= MIN_FACE_WIDTH_RATIO;
+    const combined = Math.min(1, score * 0.65 + Math.min(1, widthRatio / 0.3) * 0.35);
+    let label = "BAIXA";
+    if (combined >= 0.82 && acceptable) label = "ALTA";
+    else if (combined >= 0.68 && acceptable) label = "BOA";
+    const reason = widthRatio < MIN_FACE_WIDTH_RATIO
+      ? "Aproxime o rosto da câmera."
+      : score < MIN_DETECTION_SCORE
+        ? "Melhore a iluminação e olhe de frente."
+        : "Rosto em boa posição para cadastro.";
+    return { score, widthRatio, combined, acceptable, label, reason };
+  }
+
+  function rememberRecognition(identity, box) {
+    const now = performance.now();
+    recognitionMemory = recognitionMemory.filter((memory) => now - memory.seenAt < 1400);
+    const previous = recognitionMemory.find((memory) => memory.id === identity.id && intersectionOverUnion(memory.box, box) > 0.2);
+    if (previous) {
+      previous.box = box;
+      previous.seenAt = now;
+    } else {
+      recognitionMemory.push({ id: identity.id, name: identity.name, box, seenAt: now });
+    }
+  }
+
+  function recalledRecognition(box) {
+    const now = performance.now();
+    recognitionMemory = recognitionMemory.filter((memory) => now - memory.seenAt < 1400);
+    let best = null;
+    let bestOverlap = 0;
+    for (const memory of recognitionMemory) {
+      const overlap = intersectionOverUnion(memory.box, box);
+      if (overlap > bestOverlap) {
+        best = memory;
+        bestOverlap = overlap;
+      }
+    }
+    return bestOverlap >= 0.38 ? best : null;
+  }
+
   function identifyFace(result) {
     if (matcher) {
       const match = matcher.findBestMatch(result.descriptor);
       if (match.label !== "unknown") {
         const identity = identities.find((item) => item.id === match.label);
-        if (identity) return { id: identity.id, name: identity.name, registered: true, distance: match.distance };
+        if (identity) {
+          rememberRecognition(identity, result.detection.box);
+          return { id: identity.id, name: identity.name, registered: true, distance: match.distance };
+        }
       }
     }
+    const recalled = recalledRecognition(result.detection.box);
+    if (recalled) return { id: recalled.id, name: recalled.name, registered: true, distance: null, recalled: true };
     return { id: temporaryIdFor(result.detection.box), name: "Não cadastrado", registered: false, distance: null };
   }
 
@@ -182,29 +258,64 @@
     }
   }
 
+  function setSampleProgress(value) {
+    const safeValue = Math.max(0, Math.min(REQUIRED_SAMPLES, value));
+    sampleProgress.textContent = `${safeValue}/${REQUIRED_SAMPLES}`;
+    sampleProgressBar.style.width = `${(safeValue / REQUIRED_SAMPLES) * 100}%`;
+  }
+
+  function resetFaceMetrics() {
+    faceConfidence.textContent = "—";
+    faceQuality.textContent = "—";
+    faceQuality.className = "";
+    if (!registering) setSampleProgress(0);
+  }
+
+  function showFaceMetrics(face) {
+    faceConfidence.textContent = `${Math.round(face.quality.score * 100)}%`;
+    faceQuality.textContent = face.quality.label;
+    faceQuality.className = face.quality.acceptable ? "good" : "bad";
+  }
+
   function updateRegistrationPanel(faces) {
     currentFaces = faces;
     const onlyFace = faces.length === 1 ? faces[0] : null;
-    const canRegister = Boolean(onlyFace && !onlyFace.identity.registered && personName.value.trim());
+    const canRegister = Boolean(
+      onlyFace
+      && !onlyFace.identity.registered
+      && onlyFace.quality.acceptable
+      && personName.value.trim()
+      && !registering
+    );
     registerButton.disabled = !canRegister;
 
     if (!faces.length) {
+      resetFaceMetrics();
       currentFaceId.textContent = "NENHUM";
       faceHint.textContent = "Nenhum rosto detectado. Olhe de frente para a câmera.";
       facePreview.classList.remove("has-image");
       return;
     }
     if (faces.length > 1) {
+      resetFaceMetrics();
       currentFaceId.textContent = `${faces.length} ROSTOS`;
       faceHint.textContent = "Para cadastrar, deixe apenas uma pessoa na imagem.";
       facePreview.classList.remove("has-image");
       return;
     }
 
+    showFaceMetrics(onlyFace);
+    if (registering) {
+      currentFaceId.textContent = "CAPTURANDO";
+      faceHint.textContent = "Mantenha o rosto firme e olhe para a câmera.";
+      return;
+    }
     currentFaceId.textContent = onlyFace.identity.id;
     faceHint.textContent = onlyFace.identity.registered
       ? `${onlyFace.identity.name} reconhecido(a).`
-      : "Rosto pronto. Digite o nome e confirme o cadastro.";
+      : onlyFace.quality.acceptable
+        ? "Rosto pronto. Digite o nome e capture três amostras."
+        : onlyFace.quality.reason;
     if (performance.now() - lastPreviewAt > 900) {
       facePreviewImage.src = captureFace(onlyFace.result.detection.box);
       facePreview.classList.add("has-image");
@@ -231,7 +342,13 @@
     try {
       const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.55 });
       const results = await faceapi.detectAllFaces(video, options).withFaceLandmarks(true).withFaceDescriptors();
-      const faces = results.map((result) => ({ result, identity: identifyFace(result) }));
+      const detectedAt = performance.now();
+      const faces = results.map((result) => ({
+        result,
+        identity: identifyFace(result),
+        quality: assessFaceQuality(result),
+        detectedAt,
+      }));
       drawFaces(faces);
       updateRegistrationPanel(faces);
       setStatus(faces.length ? `${faces.length} ROSTO${faces.length === 1 ? "" : "S"} DETECTADO${faces.length === 1 ? "" : "S"}` : "PROCURANDO ROSTO", true);
@@ -272,6 +389,7 @@
 
   function stopIdentification() {
     cameraActive = false;
+    registering = false;
     clearTimeout(detectionTimer);
     context.clearRect(0, 0, canvas.width, canvas.height);
     currentFaces = [];
@@ -280,22 +398,62 @@
     currentFaceId.textContent = "NENHUM";
     faceHint.textContent = "Inicie a câmera e fique de frente, sozinho, para cadastrar.";
     facePreview.classList.remove("has-image");
+    registerButton.textContent = "Cadastrar com 3 amostras";
+    resetFaceMetrics();
     setStatus("AGUARDANDO CÂMERA");
   }
 
   personName.addEventListener("input", () => updateRegistrationPanel(currentFaces));
-  registerButton.addEventListener("click", () => {
+  function waitForFreshFace(afterTimestamp, timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+      const startedAt = performance.now();
+      const check = () => {
+        if (!cameraActive) {
+          reject(new Error("A câmera foi desligada durante o cadastro."));
+          return;
+        }
+        const face = currentFaces.length === 1 ? currentFaces[0] : null;
+        if (face && face.detectedAt > afterTimestamp && !face.identity.registered) {
+          resolve(face);
+          return;
+        }
+        if (performance.now() - startedAt >= timeoutMs) {
+          reject(new Error("Não foi possível obter uma nova amostra. Fique sozinho e olhe para a câmera."));
+          return;
+        }
+        window.setTimeout(check, 70);
+      };
+      check();
+    });
+  }
+
+  registerButton.addEventListener("click", async () => {
     const name = personName.value.trim();
-    const face = currentFaces.length === 1 ? currentFaces[0] : null;
-    if (!name || !face || face.identity.registered) return;
-    const identity = {
-      id: nextPermanentId(),
-      name,
-      descriptor: Array.from(face.result.descriptor),
-      photo: captureFace(face.result.detection.box),
-      createdAt: new Date().toISOString(),
-    };
+    let face = currentFaces.length === 1 ? currentFaces[0] : null;
+    if (!name || !face || face.identity.registered || !face.quality.acceptable || registering) return;
+    registering = true;
+    registerButton.disabled = true;
+    const descriptors = [];
+    const photo = captureFace(face.result.detection.box);
+    let identity = null;
     try {
+      for (let index = 0; index < REQUIRED_SAMPLES; index += 1) {
+        if (index > 0) face = await waitForFreshFace(face.detectedAt);
+        if (!face.quality.acceptable) throw new Error(face.quality.reason);
+        descriptors.push(Array.from(face.result.descriptor));
+        setSampleProgress(index + 1);
+        registerButton.textContent = `Capturando ${index + 1}/${REQUIRED_SAMPLES}`;
+        faceHint.textContent = index + 1 < REQUIRED_SAMPLES
+          ? "Ótimo. Continue olhando para a câmera."
+          : "Amostras capturadas. Salvando cadastro…";
+      }
+      identity = {
+        id: nextPermanentId(),
+        name,
+        descriptors,
+        photo,
+        createdAt: new Date().toISOString(),
+      };
       identities.push(identity);
       saveIdentities();
       rebuildMatcher();
@@ -303,10 +461,66 @@
       personName.value = "";
       currentFaceId.textContent = identity.id;
       faceHint.textContent = `${identity.name} cadastrado(a) e salvo(a) neste navegador.`;
+      registerButton.textContent = "Cadastrado ✓";
       registerButton.disabled = true;
     } catch (error) {
-      identities = identities.filter((item) => item.id !== identity.id);
+      if (identity) identities = identities.filter((item) => item.id !== identity.id);
       faceHint.textContent = `Não foi possível salvar: ${error.message}`;
+      setSampleProgress(0);
+    } finally {
+      registering = false;
+      window.setTimeout(() => {
+        registerButton.textContent = "Cadastrar com 3 amostras";
+        if (!personName.value) setSampleProgress(0);
+        updateRegistrationPanel(currentFaces);
+      }, 1300);
+    }
+  });
+
+  exportButton.addEventListener("click", () => {
+    if (!identities.length) return;
+    const backup = {
+      format: "quantum-tracker-face-identities",
+      version: 2,
+      exportedAt: new Date().toISOString(),
+      identities,
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `quantum-tracker-identidades-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  importButton.addEventListener("click", () => backupFile.click());
+  backupFile.addEventListener("change", async () => {
+    const file = backupFile.files?.[0];
+    backupFile.value = "";
+    if (!file) return;
+    try {
+      if (file.size > 15 * 1024 * 1024) throw new Error("O backup ultrapassa o limite de 15 MB.");
+      const backup = JSON.parse(await file.text());
+      if (backup?.format !== "quantum-tracker-face-identities" || !Array.isArray(backup.identities)) {
+        throw new Error("Arquivo não pertence ao Quantum Tracker.");
+      }
+      const imported = backup.identities.map(normalizeIdentity).filter(Boolean);
+      if (!imported.length) throw new Error("Nenhum cadastro válido foi encontrado.");
+      if (identities.length && !window.confirm(`Importar ${imported.length} cadastro(s) e manter os atuais?`)) return;
+      let added = 0;
+      for (const candidate of imported) {
+        const duplicate = identities.some((identity) => identity.id === candidate.id && identity.name === candidate.name);
+        if (duplicate) continue;
+        if (identities.some((identity) => identity.id === candidate.id)) candidate.id = nextPermanentId();
+        identities.push(candidate);
+        added += 1;
+      }
+      saveIdentities();
+      rebuildMatcher();
+      renderIdentities();
+      faceHint.textContent = `${added} cadastro(s) importado(s). Os IDs duplicados foram ignorados.`;
+    } catch (error) {
+      faceHint.textContent = `Falha ao importar backup: ${error.message}`;
     }
   });
 

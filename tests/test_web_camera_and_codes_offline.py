@@ -86,6 +86,21 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("QT-", self.face_js)
         self.assertIn("quantum:camera-started", self.camera_js)
 
+    def test_face_registration_uses_quality_gate_and_three_samples(self) -> None:
+        self.assertRegex(self.face_js, r"REQUIRED_SAMPLES\s*=\s*3")
+        self.assertIn("MIN_DETECTION_SCORE", self.face_js)
+        self.assertIn("MIN_FACE_WIDTH_RATIO", self.face_js)
+        self.assertIn("descriptors.push", self.face_js)
+        self.assertIn('id="faceQuality"', self.html)
+        self.assertIn('id="sampleProgress"', self.html)
+
+    def test_identity_backup_can_be_exported_and_imported(self) -> None:
+        self.assertIn('id="exportIdentities"', self.html)
+        self.assertIn('id="importIdentities"', self.html)
+        self.assertIn('id="identityBackupFile"', self.html)
+        self.assertIn('format: "quantum-tracker-face-identities"', self.face_js)
+        self.assertIn("URL.createObjectURL", self.face_js)
+
     def test_web_test_never_opens_serial_or_contains_secret(self) -> None:
         public = "\n".join((self.html, self.app_js, self.camera_js, self.face_js, self.code_bundle_js))
         self.assertNotIn("navigator.serial", public)

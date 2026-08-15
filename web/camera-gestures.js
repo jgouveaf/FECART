@@ -1,5 +1,3 @@
-import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
-
 const video = document.getElementById("cameraVideo");
 const canvas = document.getElementById("gestureCanvas");
 const context = canvas.getContext("2d");
@@ -18,6 +16,17 @@ const COMMANDS = {
   4: "PARAR",
   5: "GIRAR",
 };
+
+const VISION_SOURCES = [
+  {
+    module: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs",
+    wasm: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm",
+  },
+  {
+    module: "https://unpkg.com/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs",
+    wasm: "https://unpkg.com/@mediapipe/tasks-vision@1.0.1/wasm",
+  },
+];
 
 const CONNECTIONS = [
   [0,1],[1,2],[2,3],[3,4],
@@ -101,25 +110,37 @@ function drawHand(landmarks) {
 
 async function initializeModel() {
   if (handLandmarker) return;
-  setStatus("CARREGANDO MODELO");
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm"
-  );
   const modelAssetPath = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-  const options = {
-    baseOptions: { modelAssetPath, delegate: "GPU" },
-    runningMode: "VIDEO",
-    numHands: 1,
-    minHandDetectionConfidence: 0.6,
-    minHandPresenceConfidence: 0.6,
-    minTrackingConfidence: 0.55,
-  };
-  try {
-    handLandmarker = await HandLandmarker.createFromOptions(vision, options);
-  } catch {
-    options.baseOptions.delegate = "CPU";
-    handLandmarker = await HandLandmarker.createFromOptions(vision, options);
+  let lastError = null;
+
+  for (let index = 0; index < VISION_SOURCES.length; index += 1) {
+    const source = VISION_SOURCES[index];
+    setStatus(`CÂMERA ATIVA · CARREGANDO IA ${index + 1}/${VISION_SOURCES.length}`, true);
+    try {
+      const { FilesetResolver, HandLandmarker } = await import(source.module);
+      const vision = await FilesetResolver.forVisionTasks(source.wasm);
+      const options = {
+        baseOptions: { modelAssetPath, delegate: "GPU" },
+        runningMode: "VIDEO",
+        numHands: 1,
+        minHandDetectionConfidence: 0.6,
+        minHandPresenceConfidence: 0.6,
+        minTrackingConfidence: 0.55,
+      };
+      try {
+        handLandmarker = await HandLandmarker.createFromOptions(vision, options);
+      } catch {
+        options.baseOptions.delegate = "CPU";
+        handLandmarker = await HandLandmarker.createFromOptions(vision, options);
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      console.warn(`MediaPipe não carregou por ${source.module}`, error);
+    }
   }
+
+  throw new Error(lastError?.message || "Não foi possível carregar a inteligência de gestos.");
 }
 
 function processFrame(now) {
@@ -150,7 +171,6 @@ async function startCamera() {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       throw new Error("Este navegador exige HTTPS e suporte a câmera.");
     }
-    await initializeModel();
     setStatus("PEDINDO PERMISSÃO");
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -163,12 +183,35 @@ async function startCamera() {
     stage.classList.add("active");
     running = true;
     stopButton.disabled = false;
-    setStatus("CÂMERA ATIVA", true);
-    animationId = requestAnimationFrame(processFrame);
+    setStatus("CÂMERA ATIVA · CARREGANDO IA", true);
+    commandElement.textContent = "CÂMERA OK";
+    countElement.textContent = "A imagem já está ativa. Carregando reconhecimento de gestos…";
+    try {
+      await initializeModel();
+      if (!running) return;
+      setStatus("CÂMERA E GESTOS ATIVOS", true);
+      animationId = requestAnimationFrame(processFrame);
+    } catch (modelError) {
+      setStatus("CÂMERA ATIVA · IA INDISPONÍVEL", true);
+      commandElement.textContent = "CÂMERA OK";
+      countElement.textContent = `A câmera funciona, mas a IA não carregou. Recarregue a página. Detalhe: ${modelError.message}`;
+    }
   } catch (error) {
+    stream?.getTracks().forEach((track) => track.stop());
+    stream = null;
+    video.srcObject = null;
+    stage.classList.remove("active");
     setStatus("ERRO");
     commandElement.textContent = "INDISPONÍVEL";
-    countElement.textContent = error?.message || "Não foi possível abrir a câmera.";
+    if (error?.name === "NotAllowedError") {
+      countElement.textContent = "Permissão negada. Clique no cadeado da barra de endereço, permita a câmera e tente novamente.";
+    } else if (error?.name === "NotFoundError") {
+      countElement.textContent = "Nenhuma câmera foi encontrada neste computador.";
+    } else if (error?.name === "NotReadableError") {
+      countElement.textContent = "A câmera está ocupada por outro programa. Feche-o e tente novamente.";
+    } else {
+      countElement.textContent = error?.message || "Não foi possível abrir a câmera.";
+    }
     startButton.disabled = false;
   }
 }

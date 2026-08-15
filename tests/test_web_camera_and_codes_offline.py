@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import unittest
@@ -18,6 +19,9 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         cls.html = (ROOT / "index.html").read_text(encoding="utf-8")
         cls.app_js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
         cls.camera_js = (ROOT / "web" / "camera-gestures.js").read_text(encoding="utf-8")
+        cls.code_bundle_js = (ROOT / "web" / "arduino-codes.js").read_text(encoding="utf-8")
+        object_source = cls.code_bundle_js.split("Object.freeze(", 1)[1].rsplit(");", 1)[0]
+        cls.code_bundle = json.loads(object_source)
 
     def test_camera_and_code_tabs_exist(self) -> None:
         for required in (
@@ -26,6 +30,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="gestureCommand"',
             'id="codigos"',
             'id="arduinoCode"',
+            'web/arduino-codes.js?v=3',
         ):
             self.assertIn(required, self.html)
 
@@ -38,6 +43,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             code = path.read_text(encoding="utf-8")
             self.assertIn("void setup()", code)
             self.assertIn("void loop()", code)
+            self.assertEqual(self.code_bundle[relative], code)
 
     def test_main_firmware_pin_map_matches_declared_wiring(self) -> None:
         code = (ROOT / "firmware" / "quantum_tracker_arduino" / "quantum_tracker_arduino.ino").read_text(encoding="utf-8")
@@ -57,9 +63,10 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             self.assertRegex(self.camera_js, rf'{fingers}:\s*"{command}"')
         self.assertIn("HandLandmarker", self.camera_js)
         self.assertIn("getUserMedia", self.camera_js)
+        self.assertIn("NotAllowedError", self.camera_js)
 
     def test_web_test_never_opens_serial_or_contains_secret(self) -> None:
-        public = "\n".join((self.html, self.app_js, self.camera_js))
+        public = "\n".join((self.html, self.app_js, self.camera_js, self.code_bundle_js))
         self.assertNotIn("navigator.serial", public)
         self.assertNotIn("sk-proj-", public)
         self.assertIn("não movimenta o Arduino", self.html)

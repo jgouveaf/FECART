@@ -138,6 +138,14 @@
   const copyCode = document.getElementById("copyCode");
   const downloadCode = document.getElementById("downloadCode");
   let loadedCode = "";
+  let downloadObjectUrl = "";
+
+  function prepareCodeDownload(code, filename) {
+    if (downloadObjectUrl) URL.revokeObjectURL(downloadObjectUrl);
+    downloadObjectUrl = URL.createObjectURL(new Blob([code], { type: "text/x-arduino;charset=utf-8" }));
+    downloadCode.href = downloadObjectUrl;
+    downloadCode.setAttribute("download", filename);
+  }
 
   async function loadArduinoCode(tab) {
     const source = tab.dataset.codeSource;
@@ -150,14 +158,21 @@
     codeFilename.textContent = filename;
     codeStatus.textContent = "CARREGANDO";
     codeElement.textContent = "Carregando código…";
-    downloadCode.href = source;
-    downloadCode.setAttribute("download", filename);
+    const bundledCode = window.QUANTUM_ARDUINO_CODES?.[source];
+    if (bundledCode) {
+      loadedCode = bundledCode;
+      codeElement.textContent = loadedCode;
+      codeStatus.textContent = "PRONTO · INTEGRADO";
+      prepareCodeDownload(loadedCode, filename);
+      return;
+    }
     try {
       const response = await fetch(new URL(source, document.baseURI));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       loadedCode = await response.text();
       codeElement.textContent = loadedCode;
       codeStatus.textContent = "PRONTO";
+      prepareCodeDownload(loadedCode, filename);
     } catch (error) {
       loadedCode = "";
       codeElement.textContent = `Não foi possível carregar ${filename}. Abra o site publicado ou tente novamente.\n\nDetalhe: ${error.message}`;

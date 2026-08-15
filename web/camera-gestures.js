@@ -183,6 +183,7 @@ async function startCamera() {
     stage.classList.add("active");
     running = true;
     stopButton.disabled = false;
+    window.dispatchEvent(new CustomEvent("quantum:camera-started"));
     setStatus("CÂMERA ATIVA · CARREGANDO IA", true);
     commandElement.textContent = "CÂMERA OK";
     countElement.textContent = "A imagem já está ativa. Carregando reconhecimento de gestos…";
@@ -230,6 +231,7 @@ function stopCamera() {
   countElement.textContent = "Câmera desligada";
   setStatus("AGUARDANDO");
   document.querySelectorAll(".gesture-map .active").forEach((item) => item.classList.remove("active"));
+  window.dispatchEvent(new CustomEvent("quantum:camera-stopped"));
 }
 
 startButton.addEventListener("click", startCamera);

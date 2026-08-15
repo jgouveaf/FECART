@@ -19,6 +19,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         cls.html = (ROOT / "index.html").read_text(encoding="utf-8")
         cls.app_js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
         cls.camera_js = (ROOT / "web" / "camera-gestures.js").read_text(encoding="utf-8")
+        cls.face_js = (ROOT / "web" / "face-identities.js").read_text(encoding="utf-8")
         cls.code_bundle_js = (ROOT / "web" / "arduino-codes.js").read_text(encoding="utf-8")
         object_source = cls.code_bundle_js.split("Object.freeze(", 1)[1].rsplit(");", 1)[0]
         cls.code_bundle = json.loads(object_source)
@@ -28,6 +29,9 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="camera-gestos"',
             'id="cameraVideo"',
             'id="gestureCommand"',
+            'id="identityCanvas"',
+            'id="registerPerson"',
+            'id="registeredPeople"',
             'id="codigos"',
             'id="arduinoCode"',
             'web/arduino-codes.js?v=3',
@@ -65,8 +69,25 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("getUserMedia", self.camera_js)
         self.assertIn("NotAllowedError", self.camera_js)
 
+    def test_face_identity_models_and_local_persistence_exist(self) -> None:
+        models = ROOT / "web" / "vendor" / "face-api" / "models"
+        for filename in (
+            "tiny_face_detector_model-weights_manifest.json",
+            "tiny_face_detector_model-shard1",
+            "face_landmark_68_tiny_model-weights_manifest.json",
+            "face_landmark_68_tiny_model-shard1",
+            "face_recognition_model-weights_manifest.json",
+            "face_recognition_model-shard1",
+            "face_recognition_model-shard2",
+        ):
+            self.assertGreater((models / filename).stat().st_size, 100)
+        self.assertIn("FaceMatcher", self.face_js)
+        self.assertIn("localStorage", self.face_js)
+        self.assertIn("QT-", self.face_js)
+        self.assertIn("quantum:camera-started", self.camera_js)
+
     def test_web_test_never_opens_serial_or_contains_secret(self) -> None:
-        public = "\n".join((self.html, self.app_js, self.camera_js, self.code_bundle_js))
+        public = "\n".join((self.html, self.app_js, self.camera_js, self.face_js, self.code_bundle_js))
         self.assertNotIn("navigator.serial", public)
         self.assertNotIn("sk-proj-", public)
         self.assertIn("não movimenta o Arduino", self.html)

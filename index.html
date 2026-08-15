@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#07111f">
   <meta name="description" content="Quantum Tracker — painel web e laboratório de simulação do projeto FECART.">
   <title>Quantum Tracker — Painel Web</title>
-  <link rel="stylesheet" href="web/styles.css?v=3">
+  <link rel="stylesheet" href="web/styles.css?v=4">
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
@@ -70,7 +70,7 @@
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>76 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>77 aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⊘</span><div><small>Arduino</small><strong>Etapa 10</strong></div></article>
@@ -115,6 +115,7 @@
           <div class="camera-stage" id="cameraStage">
             <video id="cameraVideo" playsinline muted aria-label="Prévia da câmera"></video>
             <canvas id="gestureCanvas" aria-hidden="true"></canvas>
+            <canvas id="identityCanvas" aria-hidden="true"></canvas>
             <div class="camera-placeholder" id="cameraPlaceholder">
               <span>◉</span>
               <strong>Câmera desligada</strong>
@@ -138,6 +139,30 @@
             </div>
             <p class="privacy-note">Processamento local no navegador. Nenhuma imagem é enviada ao Quantum Tracker ou salva no site.</p>
           </aside>
+        </div>
+        <div class="identity-lab">
+          <div class="identity-register-card">
+            <div class="identity-heading">
+              <div><span class="section-tag">Identificação local</span><h3>Cadastrar pessoa</h3></div>
+              <span class="identity-status"><span class="status-dot idle" id="faceStatusDot"></span><span id="faceStatus">AGUARDANDO CÂMERA</span></span>
+            </div>
+            <div class="current-face">
+              <div class="face-preview" id="facePreview"><span>◎</span><img id="facePreviewImage" alt="Rosto pronto para cadastro"></div>
+              <div>
+                <small>Rosto selecionado</small>
+                <strong id="currentFaceId">NENHUM</strong>
+                <span id="faceHint">Inicie a câmera e fique de frente, sozinho, para cadastrar.</span>
+              </div>
+            </div>
+            <label class="identity-field" for="personName"><span>Nome da pessoa</span><input id="personName" maxlength="60" autocomplete="off" placeholder="Ex.: João"></label>
+            <button class="primary-button" id="registerPerson" disabled>Cadastrar rosto e gerar ID</button>
+            <p class="privacy-note">O cadastro só acontece ao clicar no botão. Foto e características faciais ficam neste navegador e não são enviadas ao servidor.</p>
+          </div>
+          <div class="identity-list-card">
+            <div class="identity-heading"><div><span class="section-tag">Banco local</span><h3>Pessoas cadastradas</h3></div><span class="identity-counter" id="identityCount">0 IDs</span></div>
+            <div class="identity-empty" id="identityEmpty"><span>◇</span><p>Nenhuma pessoa cadastrada neste navegador.</p></div>
+            <div class="registered-people" id="registeredPeople"></div>
+          </div>
         </div>
         <p class="notice">Este é um teste visual. Mesmo quando um comando aparece, a página não abre porta USB e não movimenta o Arduino.</p>
       </section>
@@ -174,7 +199,7 @@
           <article><span>02</span><h3>Reconhecimento facial</h3><p>Cadastro com uma única face, bloqueio de duplicatas e rollback seguro.</p><strong>InsightFace validado</strong></article>
           <article><span>03</span><h3>Dados persistentes</h3><p>Fotos, embeddings e registros sobrevivem ao reinício e só somem ao excluir.</p><strong>SQLite + arquivos locais</strong></article>
         </div>
-        <p class="notice">Esta página pública não envia nem armazena rostos. O banco biométrico continua local por privacidade.</p>
+        <p class="notice">Esta página pública não envia rostos ao servidor. Os cadastros feitos na câmera ficam somente no armazenamento local deste navegador.</p>
       </section>
 
       <section id="etapas" class="page-section panel">
@@ -208,7 +233,9 @@
     </main>
   </div>
   <script src="web/arduino-codes.js?v=3" defer></script>
-  <script src="web/app.js?v=3" defer></script>
-  <script type="module" src="web/camera-gestures.js?v=3"></script>
+  <script src="web/vendor/face-api/face-api.min.js?v=0.22.2" defer></script>
+  <script src="web/app.js?v=4" defer></script>
+  <script src="web/face-identities.js?v=4" defer></script>
+  <script type="module" src="web/camera-gestures.js?v=4"></script>
 </body>
 </html>

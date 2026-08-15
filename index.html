@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#07111f">
   <meta name="description" content="Quantum Tracker — painel web e laboratório de simulação do projeto FECART.">
   <title>Quantum Tracker — Painel Web</title>
-  <link rel="stylesheet" href="web/styles.css?v=5">
+  <link rel="stylesheet" href="web/styles.css?v=6">
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
@@ -70,7 +70,7 @@
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>79 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>82 aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⊘</span><div><small>Arduino</small><strong>Etapa 10</strong></div></article>
@@ -157,12 +157,21 @@
             <div class="face-metrics" aria-live="polite">
               <div><small>Confiança</small><strong id="faceConfidence">—</strong></div>
               <div><small>Qualidade</small><strong id="faceQuality">—</strong></div>
-              <div><small>Amostras</small><strong id="sampleProgress">0/3</strong></div>
+              <div><small>Similaridade</small><strong id="faceSimilarity">—</strong></div>
+              <div><small>Amostras</small><strong id="sampleProgress">0/5</strong></div>
             </div>
             <div class="sample-progress" aria-hidden="true"><span id="sampleProgressBar"></span></div>
+            <div class="face-validation" aria-label="Validações do rosto">
+              <span id="checkSingle">Um rosto</span>
+              <span id="checkSize">Distância</span>
+              <span id="checkPose">De frente</span>
+              <span id="checkReal">Presença</span>
+              <span id="checkLive">Rosto vivo</span>
+              <span id="checkBlink">Piscar</span>
+            </div>
             <label class="identity-field" for="personName"><span>Nome da pessoa</span><input id="personName" maxlength="60" autocomplete="off" placeholder="Ex.: João"></label>
-            <button class="primary-button" id="registerPerson" disabled>Cadastrar com 3 amostras</button>
-            <p class="privacy-note">O cadastro só acontece ao clicar no botão. Foto e características faciais ficam neste navegador e não são enviadas ao servidor.</p>
+            <button class="primary-button" id="registerPerson" disabled>Validar e cadastrar rosto</button>
+            <p class="privacy-note">O cadastro só acontece ao clicar no botão. A foto de perfil e cinco embeddings alinhados ficam no IndexedDB deste navegador; nada é enviado ao servidor.</p>
           </div>
           <div class="identity-list-card">
             <div class="identity-heading"><div><span class="section-tag">Banco local</span><h3>Pessoas cadastradas</h3></div><span class="identity-counter" id="identityCount">0 IDs</span></div>
@@ -245,9 +254,9 @@
     </main>
   </div>
   <script src="web/arduino-codes.js?v=3" defer></script>
-  <script src="web/vendor/face-api/face-api.min.js?v=0.22.2" defer></script>
-  <script src="web/app.js?v=5" defer></script>
-  <script src="web/face-identities.js?v=5" defer></script>
-  <script type="module" src="web/camera-gestures.js?v=5"></script>
+  <script src="web/vendor/human/human.js?v=3.3.6" defer></script>
+  <script src="web/app.js?v=6" defer></script>
+  <script src="web/face-identities.js?v=6" defer></script>
+  <script type="module" src="web/camera-gestures.js?v=6"></script>
 </body>
 </html>

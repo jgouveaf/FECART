@@ -69,36 +69,61 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("getUserMedia", self.camera_js)
         self.assertIn("NotAllowedError", self.camera_js)
 
-    def test_face_identity_models_and_local_persistence_exist(self) -> None:
-        models = ROOT / "web" / "vendor" / "face-api" / "models"
+    def test_human_faceid_runtime_and_models_are_available_offline(self) -> None:
+        vendor = ROOT / "web" / "vendor" / "human"
+        self.assertGreater((vendor / "human.js").stat().st_size, 1_000_000)
+        models = vendor / "models"
         for filename in (
-            "tiny_face_detector_model-weights_manifest.json",
-            "tiny_face_detector_model-shard1",
-            "face_landmark_68_tiny_model-weights_manifest.json",
-            "face_landmark_68_tiny_model-shard1",
-            "face_recognition_model-weights_manifest.json",
-            "face_recognition_model-shard1",
-            "face_recognition_model-shard2",
+            "blazeface.json", "blazeface.bin",
+            "facemesh.json", "facemesh.bin",
+            "iris.json", "iris.bin",
+            "faceres.json", "faceres.bin",
+            "antispoof.json", "antispoof.bin",
+            "liveness.json", "liveness.bin",
         ):
             self.assertGreater((models / filename).stat().st_size, 100)
-        self.assertIn("FaceMatcher", self.face_js)
-        self.assertIn("localStorage", self.face_js)
+        self.assertIn('web/vendor/human/human.js?v=3.3.6', self.html)
+        self.assertIn("new HumanLibrary.Human", self.face_js)
+
+    def test_face_identity_uses_indexeddb_and_migrates_legacy_records(self) -> None:
+        self.assertIn('DB_NAME = "quantum_tracker_biometrics"', self.face_js)
+        self.assertIn("indexedDB.open", self.face_js)
+        self.assertIn("quantum_tracker_indexeddb_migrated_v1", self.face_js)
+        self.assertIn("face-api-legacy", self.face_js)
+        self.assertIn("LEGADO — RECADASTRE", self.face_js)
         self.assertIn("QT-", self.face_js)
         self.assertIn("quantum:camera-started", self.camera_js)
 
-    def test_face_registration_uses_quality_gate_and_three_samples(self) -> None:
-        self.assertRegex(self.face_js, r"REQUIRED_SAMPLES\s*=\s*3")
-        self.assertIn("MIN_DETECTION_SCORE", self.face_js)
-        self.assertIn("MIN_FACE_WIDTH_RATIO", self.face_js)
-        self.assertIn("descriptors.push", self.face_js)
+    def test_face_registration_uses_five_1024_value_embeddings(self) -> None:
+        self.assertRegex(self.face_js, r"REQUIRED_SAMPLES\s*=\s*5")
+        self.assertRegex(self.face_js, r"EMBEDDING_LENGTH\s*=\s*1024")
+        self.assertIn("embeddings.push", self.face_js)
+        self.assertIn("human.match.find", self.face_js)
+        self.assertIn("MATCH_THRESHOLD", self.face_js)
         self.assertIn('id="faceQuality"', self.html)
+        self.assertIn('id="faceSimilarity"', self.html)
         self.assertIn('id="sampleProgress"', self.html)
+
+    def test_face_registration_validates_pose_size_presence_and_liveness(self) -> None:
+        for setting in ("MIN_CONFIDENCE", "MIN_FACE_SIZE", "MIN_REAL", "MIN_LIVE"):
+            self.assertIn(setting, self.face_js)
+        for feature in ("rotation: true", "equalization: true", "antispoof", "liveness", "facing center"):
+            self.assertIn(feature, self.face_js)
+        for element_id in ("checkSingle", "checkSize", "checkPose", "checkReal", "checkLive", "checkBlink"):
+            self.assertIn(f'id="{element_id}"', self.html)
+
+    def test_face_registration_releases_model_tensors_and_keeps_detection_running(self) -> None:
+        self.assertIn("human.tf.dispose", self.face_js)
+        self.assertIn("DETECTION_DELAY_MS", self.face_js)
+        self.assertIn("scheduleDetection", self.face_js)
+        self.assertIn("recognitionMemory", self.face_js)
 
     def test_identity_backup_can_be_exported_and_imported(self) -> None:
         self.assertIn('id="exportIdentities"', self.html)
         self.assertIn('id="importIdentities"', self.html)
         self.assertIn('id="identityBackupFile"', self.html)
         self.assertIn('format: "quantum-tracker-face-identities"', self.face_js)
+        self.assertIn("version: 3", self.face_js)
         self.assertIn("URL.createObjectURL", self.face_js)
 
     def test_web_test_never_opens_serial_or_contains_secret(self) -> None:

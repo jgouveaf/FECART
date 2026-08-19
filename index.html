@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#07111f">
   <meta name="description" content="Quantum Tracker — painel web e laboratório de simulação do projeto FECART.">
   <title>Quantum Tracker — Painel Web</title>
-  <link rel="stylesheet" href="web/styles.css?v=6">
+  <link rel="stylesheet" href="web/styles.css?v=7">
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
@@ -27,7 +27,7 @@
       </nav>
       <div class="sidebar-note">
         <span class="status-dot"></span>
-        <div><strong>Modo software</strong><small>Hardware bloqueado até a Etapa 10</small></div>
+        <div><strong>Controle USB</strong><small>Arduino só se move após conexão e escolha do modo</small></div>
       </div>
     </aside>
 
@@ -49,7 +49,7 @@
           <div>
             <span class="section-tag">Laboratório digital</span>
             <h2>Robótica e visão computacional em um só painel.</h2>
-            <p>Simule o comportamento, acompanhe a evolução e valide a segurança antes de qualquer teste físico.</p>
+            <p>Conecte o Arduino por USB, escolha um dos três modos e acompanhe câmera, gestos, sensor e comandos em tempo real.</p>
           </div>
           <a class="primary-button" href="#simulador">Abrir simulador <span>→</span></a>
           <div class="orb" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -57,11 +57,11 @@
 
         <article class="progress-card">
           <div class="card-heading">
-            <div><span class="section-tag">Progresso atual</span><h3>Etapa 9 de 10</h3></div>
-            <strong>90%</strong>
+            <div><span class="section-tag">Progresso atual</span><h3>Etapa 10 em validação</h3></div>
+            <strong>95%</strong>
           </div>
-          <div class="progress-track"><span style="width:90%"></span></div>
-          <p>Integração completa das Etapas 1–9 em software.</p>
+          <div class="progress-track"><span style="width:95%"></span></div>
+          <p>Controle físico liberado somente após conexão USB explícita.</p>
           <div class="mini-stats">
             <div><strong>50 mil</strong><span>quadros de stress</span></div>
             <div><strong>0</strong><span>acessos físicos</span></div>
@@ -70,10 +70,10 @@
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>82 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>96 aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
-        <article class="metric-card"><span class="metric-icon amber">⊘</span><div><small>Arduino</small><strong>Etapa 10</strong></div></article>
+        <article class="metric-card"><span class="metric-icon amber">⌁</span><div><small>Arduino</small><strong>USB Serial</strong></div></article>
       </section>
 
       <section id="simulador" class="page-section panel simulator-panel">
@@ -105,11 +105,45 @@
 
       <section id="camera-gestos" class="page-section panel camera-panel">
         <div class="section-heading">
-          <div><span class="section-tag">Teste no navegador</span><h2>Câmera &amp; gestos</h2><p>Confira a imagem, os pontos da mão e o comando reconhecido sem enviar nada ao robô.</p></div>
+          <div><span class="section-tag">Controle físico supervisionado</span><h2>Câmeras &amp; robô</h2><p>Use a câmera facial para seguimento ou a câmera de mão para controlar o Arduino conectado por USB.</p></div>
           <div class="controls">
             <button class="secondary-button" id="stopCamera" disabled>Desligar</button>
             <button class="primary-button compact" id="startCamera">Iniciar câmera</button>
           </div>
+        </div>
+        <div class="robot-control-panel" aria-label="Controle do Arduino">
+          <div class="robot-connection-row">
+            <div>
+              <span class="section-tag">Arduino UNO · 9600 baud</span>
+              <strong><span class="status-dot idle" id="robotConnectionDot"></span><span id="robotConnectionStatus">DESCONECTADO</span></strong>
+              <small id="robotConnectionHint">Use Chrome ou Edge no computador e conecte o cabo USB.</small>
+            </div>
+            <div class="robot-actions">
+              <button class="primary-button compact" id="connectRobot">Conectar Arduino USB</button>
+              <button class="secondary-button" id="disconnectRobot" disabled>Desconectar</button>
+              <button class="danger-button" id="emergencyStop" disabled>PARADA DE EMERGÊNCIA</button>
+            </div>
+          </div>
+          <div class="robot-mode-grid" role="radiogroup" aria-label="Modo do robô">
+            <button class="robot-mode active" data-robot-mode="1" role="radio" aria-checked="true"><b>1</b><span><strong>Autônomo</strong><small>Anda sempre e desvia pelo HC-SR04.</small></span></button>
+            <button class="robot-mode" data-robot-mode="2" role="radio" aria-checked="false"><b>2</b><span><strong>Seguir pessoa</strong><small>Segue o rosto visível; sem imagem, para.</small></span></button>
+            <button class="robot-mode" data-robot-mode="3" role="radio" aria-checked="false"><b>3</b><span><strong>Gestos</strong><small>1 frente · 2 direita · 3 esquerda · 4 para · 5 gira.</small></span></button>
+          </div>
+          <div class="robot-telemetry" aria-live="polite">
+            <div><small>Modo</small><strong id="robotModeStatus">AUTÔNOMO</strong></div>
+            <div><small>Comando enviado</small><strong id="robotCommandStatus">PARAR</strong></div>
+            <div><small>Distância</small><strong id="robotDistanceStatus">—</strong></div>
+            <div><small>Arduino</small><strong id="robotStateStatus">SEM TELEMETRIA</strong></div>
+          </div>
+          <div class="beacon-row" id="beaconRow">
+            <div><strong>Celular BLE experimental</strong><small>O sinal informa proximidade, não direção. Sem rosto visível, o robô para por segurança.</small></div>
+            <span id="beaconStatus">NÃO CONECTADO</span>
+            <button class="secondary-button" id="connectBeacon">Ler sinal BLE</button>
+          </div>
+        </div>
+        <div class="camera-view-tabs" role="tablist" aria-label="Escolher câmera">
+          <button class="camera-view-tab active" id="faceCameraTab" data-camera-view="face" role="tab" aria-selected="true">◎ Rosto &amp; identificação</button>
+          <button class="camera-view-tab" id="handCameraTab" data-camera-view="hand" role="tab" aria-selected="false">✋ Mão &amp; gestos</button>
         </div>
         <div class="camera-layout">
           <div class="camera-stage" id="cameraStage">
@@ -123,12 +157,12 @@
             </div>
             <span class="canvas-badge"><span class="status-dot idle" id="cameraDot"></span><span id="cameraStatus">AGUARDANDO</span></span>
           </div>
-          <aside class="gesture-console" aria-live="polite">
+          <aside class="gesture-console camera-hand-only" id="gestureCameraPanel" aria-live="polite" hidden>
             <span class="section-tag">Leitura atual</span>
             <div class="gesture-result" id="gestureResult">
               <small>Comando detectado</small>
               <strong id="gestureCommand">NENHUM</strong>
-              <span id="fingerCount">Mostre uma mão aberta para começar</span>
+              <span id="fingerCount">Abra a aba da mão e mostre um gesto para começar</span>
             </div>
             <div class="gesture-map" aria-label="Mapa de comandos por dedos">
               <div data-fingers="1"><b>1</b><span>Frente</span></div>
@@ -137,10 +171,10 @@
               <div data-fingers="4"><b>4</b><span>Parar</span></div>
               <div data-fingers="5"><b>5</b><span>Girar</span></div>
             </div>
-            <p class="privacy-note">Processamento local no navegador. Nenhuma imagem é enviada ao Quantum Tracker ou salva no site.</p>
+            <p class="privacy-note" id="gestureDeliveryStatus">Processamento local. Conecte o Arduino e escolha o Modo 3 para aplicar os comandos ao robô.</p>
           </aside>
         </div>
-        <div class="identity-lab">
+        <div class="identity-lab camera-face-only" id="faceCameraPanel">
           <div class="identity-register-card">
             <div class="identity-heading">
               <div><span class="section-tag">Identificação local</span><h3>Cadastrar pessoa</h3></div>
@@ -185,7 +219,7 @@
             <p class="backup-warning">O arquivo de backup contém fotos e características faciais. Guarde-o com segurança.</p>
           </div>
         </div>
-        <p class="notice">Este é um teste visual. Mesmo quando um comando aparece, a página não abre porta USB e não movimenta o Arduino.</p>
+        <p class="notice safety-notice"><strong>Segurança:</strong> o HC-SR04 e o timeout do Arduino têm prioridade sobre câmera e gestos. Teste primeiro com as rodas levantadas; use “PARADA DE EMERGÊNCIA” se houver comportamento inesperado.</p>
       </section>
 
       <section id="codigos" class="page-section panel code-panel">
@@ -237,26 +271,27 @@
           <li class="done"><span>7</span><div><strong>Gestos</strong><small>Prioridade de comandos</small></div><em>Concluída</em></li>
           <li class="done"><span>8</span><div><strong>Localização indireta</strong><small>RSSI aproximado</small></div><em>Concluída</em></li>
           <li class="done"><span>9</span><div><strong>Integração geral</strong><small>Todos os módulos</small></div><em>Concluída</em></li>
-          <li class="locked"><span>10</span><div><strong>Aplicação física</strong><small>Arduino UNO e robô real</small></div><em>Bloqueada</em></li>
+          <li class="current"><span>10</span><div><strong>Aplicação física</strong><small>Arduino UNO por USB e três modos</small></div><em>Em validação</em></li>
         </ol>
       </section>
 
       <section id="sistema" class="page-section panel system-panel">
         <div><span class="section-tag">Arquitetura segura</span><h2>O que funciona neste site?</h2></div>
         <div class="system-grid">
-          <div><strong>Agora</strong><p>Painel responsivo, simulação autônoma e transparência dos testes.</p></div>
-          <div><strong>No computador</strong><p>YOLO, InsightFace e banco biométrico continuam no projeto Python local.</p></div>
-          <div><strong>Somente na Etapa 10</strong><p>Porta USB, Arduino UNO, L298N, sensor HC-SR04 e motores reais.</p></div>
+          <div><strong>No navegador</strong><p>Câmera facial, gestos, cadastro local e Web Serial para o Arduino UNO.</p></div>
+          <div><strong>No Arduino</strong><p>Três modos, timeout de comandos, HC-SR04 e parada de emergência.</p></div>
+          <div><strong>Limite do Bluetooth</strong><p>Um único RSSI indica proximidade, mas não fornece direção atrás de paredes.</p></div>
         </div>
       </section>
 
       <footer><span>Quantum Tracker · FECART 2026</span><span>João · Gustavo · Renato</span></footer>
     </main>
   </div>
-  <script src="web/arduino-codes.js?v=3" defer></script>
+  <script src="web/arduino-codes.js?v=4" defer></script>
   <script src="web/vendor/human/human.js?v=3.3.6" defer></script>
-  <script src="web/app.js?v=6" defer></script>
-  <script src="web/face-identities.js?v=6" defer></script>
-  <script type="module" src="web/camera-gestures.js?v=6"></script>
+  <script src="web/app.js?v=7" defer></script>
+  <script src="web/robot-control.js?v=1" defer></script>
+  <script src="web/face-identities.js?v=7" defer></script>
+  <script type="module" src="web/camera-gestures.js?v=7"></script>
 </body>
 </html>

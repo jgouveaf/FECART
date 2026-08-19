@@ -25,6 +25,7 @@
   const exportButton = $("exportIdentities");
   const importButton = $("importIdentities");
   const backupFile = $("identityBackupFile");
+  const cameraPanel = $("camera-gestos");
 
   const checks = {
     single: $("checkSingle"),
@@ -43,11 +44,11 @@
   const REQUIRED_SAMPLES = 5;
   const EMBEDDING_LENGTH = 1024;
   const MATCH_THRESHOLD = 0.50;
-  const MIN_CONFIDENCE = 0.62;
-  const MIN_FACE_SIZE = 180;
-  const MIN_REAL = 0.55;
-  const MIN_LIVE = 0.55;
-  const DETECTION_DELAY_MS = 40;
+  const MIN_CONFIDENCE = 0.58;
+  const MIN_FACE_SIZE = 140;
+  const MIN_REAL = 0.50;
+  const MIN_LIVE = 0.50;
+  const DETECTION_DELAY_MS = 70;
   const MATCH_OPTIONS = { order: 2, multiplier: 25, min: 0.2, max: 0.8 };
   const MODEL_URL = new URL("web/vendor/human/models/", document.baseURI).href;
 
@@ -59,13 +60,13 @@
     filter: { enabled: true, equalization: true },
     face: {
       enabled: true,
-      detector: { rotation: true, return: true, mask: false, maxDetected: 4 },
-      mesh: { enabled: true },
-      iris: { enabled: true },
-      description: { enabled: true },
+      detector: { rotation: true, return: true, mask: false, maxDetected: 3, minConfidence: 0.45, minSize: 70, skipFrames: 2, skipTime: 120 },
+      mesh: { enabled: true, keepInvalid: false },
+      iris: { enabled: true, skipFrames: 2 },
+      description: { enabled: true, minConfidence: 0.55, skipFrames: 2 },
       emotion: { enabled: false },
-      antispoof: { enabled: true },
-      liveness: { enabled: true },
+      antispoof: { enabled: true, skipFrames: 4 },
+      liveness: { enabled: true, skipFrames: 4 },
     },
     body: { enabled: false },
     hand: { enabled: false },
@@ -88,6 +89,7 @@
   let nextTemporaryId = 1;
   let temporaryTracks = [];
   let recognitionMemory = [];
+  let activeView = cameraPanel?.dataset.cameraView || "face";
 
   function setStatus(text, active = false) {
     statusElement.textContent = text;
@@ -244,7 +246,12 @@
     if (gestures.some((gesture) => gesture.includes("blink"))) blinkSeenAt = performance.now();
     const confidence = Number(face.faceScore || face.boxScore || face.score || 0);
     const size = Math.min(Number(face.box?.[2] || 0), Number(face.box?.[3] || 0));
-    const pose = gestures.includes("facing center");
+    const angle = face.rotation?.angle || {};
+    const yaw = Number(angle.yaw || 0);
+    const pitch = Number(angle.pitch || 0);
+    const roll = Number(angle.roll || 0);
+    const poseByAngle = Math.abs(yaw) <= 0.38 && Math.abs(pitch) <= 0.34 && Math.abs(roll) <= 0.42;
+    const pose = gestures.includes("facing center") || poseByAngle;
     const real = Number(face.real || 0);
     const live = Number(face.live || 0);
     const embedding = Array.isArray(face.embedding) ? face.embedding : [];
@@ -376,6 +383,26 @@
     }
   }
 
+  function publishPersonTracking(faces) {
+    if (activeView !== "face" || !cameraActive || !faces.length) {
+      window.dispatchEvent(new CustomEvent("quantum:person-tracking", { detail: { visible: false, command: "PARAR" } }));
+      return;
+    }
+    const target = [...faces].sort((first, second) => second.face.box[2] * second.face.box[3] - first.face.box[2] * first.face.box[3])[0];
+    const center = (target.face.box[0] + target.face.box[2] / 2) / Math.max(1, video.videoWidth);
+    const command = center < 0.38 ? "ESQUERDA" : center > 0.62 ? "DIREITA" : "FRENTE";
+    window.dispatchEvent(new CustomEvent("quantum:person-tracking", {
+      detail: {
+        visible: true,
+        command,
+        center,
+        id: target.identity.id,
+        registered: target.identity.registered,
+        confidence: target.quality.confidence,
+      },
+    }));
+  }
+
   function setSampleProgress(value) {
     const safe = Math.max(0, Math.min(REQUIRED_SAMPLES, value));
     sampleProgress.textContent = `${safe}/${REQUIRED_SAMPLES}`;
@@ -458,6 +485,7 @@
       }));
       drawFaces(faces);
       updatePanel(faces);
+      publishPersonTracking(faces);
       const count = faces.length;
       setStatus(count ? `${count} ROSTO${count === 1 ? "" : "S"} DETECTADO${count === 1 ? "" : "S"}` : "PROCURANDO ROSTO", true);
     } catch (error) {
@@ -471,7 +499,7 @@
 
   function scheduleDetection() {
     clearTimeout(detectionTimer);
-    if (!cameraActive) return;
+    if (!cameraActive || activeView !== "face") return;
     detectionTimer = window.setTimeout(async () => {
       await detectFaces();
       scheduleDetection();
@@ -482,6 +510,7 @@
     cameraActive = true;
     canvas.width = video.videoWidth || 960;
     canvas.height = video.videoHeight || 540;
+    if (activeView !== "face") return;
     try {
       await loadModels();
       await loadIdentities();
@@ -514,6 +543,7 @@
     facePreview.classList.remove("has-image");
     resetMetrics();
     setStatus("AGUARDANDO CÂMERA");
+    publishPersonTracking([]);
   }
 
   function waitForFreshFace(afterTimestamp, timeoutMs = 30000) {
@@ -521,6 +551,7 @@
       const start = performance.now();
       const check = () => {
         if (!cameraActive) return reject(new Error("A câmera foi desligada durante o cadastro."));
+        if (activeView !== "face") return reject(new Error("O cadastro foi interrompido porque a aba da câmera mudou."));
         const item = currentFaces.length === 1 ? currentFaces[0] : null;
         if (item && item.detectedAt > afterTimestamp && !item.identity.registered && item.quality.acceptable) return resolve(item);
         if (performance.now() - start >= timeoutMs) return reject(new Error("Não obtive uma nova amostra válida. Olhe de frente e melhore a iluminação."));
@@ -622,6 +653,28 @@
 
   window.addEventListener("quantum:camera-started", startIdentification);
   window.addEventListener("quantum:camera-stopped", stopIdentification);
+  window.addEventListener("quantum:camera-view-changed", async (event) => {
+    activeView = event.detail?.view === "hand" ? "hand" : "face";
+    clearTimeout(detectionTimer);
+    if (activeView !== "face") {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      registerButton.disabled = true;
+      setStatus(cameraActive ? "PAUSADA · ABA DA MÃO" : "AGUARDANDO CÂMERA");
+      publishPersonTracking([]);
+      return;
+    }
+    if (!cameraActive) return;
+    canvas.width = video.videoWidth || 960;
+    canvas.height = video.videoHeight || 540;
+    try {
+      await loadModels();
+      await detectFaces();
+      scheduleDetection();
+    } catch (error) {
+      setStatus("IDENTIFICAÇÃO INDISPONÍVEL");
+      faceHint.textContent = `Não foi possível retomar o FaceID: ${error.message}`;
+    }
+  });
   loadIdentities().catch((error) => {
     console.error("Falha ao abrir banco facial", error);
     faceHint.textContent = "O navegador bloqueou o armazenamento local dos cadastros.";

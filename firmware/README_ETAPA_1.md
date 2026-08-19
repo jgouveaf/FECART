@@ -1,11 +1,13 @@
-# Quantum Tracker - Etapa 1
+# Quantum Tracker — Arduino UNO e controle USB
 
-Firmware destinado exclusivamente ao Arduino UNO, L298N, dois motores DC e
-HC-SR04. Nesta etapa nao ha aplicativo, Bluetooth, ESP32, camera ou gestos.
+Firmware integrado para Arduino UNO, L298N, dois motores DC e HC-SR04. Ele
+mantém a segurança no próprio Arduino e aceita comandos do site pelo cabo USB.
+Bluetooth, câmera e IA executam no computador; o Arduino não depende deles para
+detectar o obstáculo à frente.
 
-## Pinagem obrigatoria
+## Pinagem confirmada
 
-Desligue USB e baterias antes de alterar fios.
+Desligue o USB e as baterias antes de alterar qualquer fio.
 
 | Arduino UNO | Destino |
 |---|---|
@@ -18,95 +20,119 @@ Desligue USB e baterias antes de alterar fios.
 | 5V | HC-SR04 VCC |
 | GND | HC-SR04 GND e GND do L298N |
 
-Regras do L298N:
+No L298N, mantenha os jumpers ENA e ENB instalados, ligue um motor em
+OUT1/OUT2 e o outro em OUT3/OUT4. O negativo da bateria, o GND do L298N e o GND
+do Arduino precisam estar unidos. A alimentação dos motores entra no borne
+`12V`/`VMS` e `GND`; nunca coloque as pilhas diretamente no pino 5V do Arduino.
 
-- os jumpers ENA e ENB precisam estar instalados;
-- motor A deve ocupar OUT1 e OUT2;
-- motor B deve ocupar OUT3 e OUT4;
-- negativo da bateria, GND do L298N e GND do Arduino precisam estar unidos;
-- positivo da bateria dos motores entra em `12V`/`VMS` do L298N;
-- nao ligue a saida de 5V do L298N no 5V do Arduino com o jumper `5V-EN`
-  instalado.
+## Instalar com Arduino IDE 2.3.10
 
-## Problemas visiveis nas fotos recebidas
+1. Abra `firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino`.
+2. Selecione **Arduino Uno** e a porta COM correta.
+3. Feche o Monitor Serial e feche qualquer site/app que esteja usando essa COM.
+4. Deixe as rodas suspensas, confira a polaridade da alimentação e clique em
+   **Carregar**.
+5. A compilação validada usa 6.608 bytes de flash e 407 bytes de RAM. O sketch
+   não precisa de biblioteca externa.
 
-1. Ha fios ligados em D0/RX e D1/TX, enquanto D6 e D7 aparecem vazios. Para
-   esta pinagem, mova os fios de D0 e D1 para D6 e D7. D0 e D1 sao reservados
-   para USB/Serial.
-2. O borne de alimentacao tem fios entrando por tras, mas os rotulos ficam
-   escondidos nas fotos. Confirme na propria placa: positivo da bateria em
-   `12V`/`VMS`, negativo em `GND` e GND do Arduino unido a esse mesmo GND.
-3. Os quatro fios de controle e os dois jumpers ENA/ENB aparecem presentes no
-   segundo angulo. Ainda assim, confira a ordem IN1, IN2, IN3 e IN4 pelos
-   rotulos impressos, pois a ordem de cores fotografada nao corresponde a
-   D7, D6, D5 e D4 no Arduino.
-4. O suporte usa quatro pilhas Ni-MH de 1,2 V, total nominal de 4,8 V. O L298N
-   perde parte dessa tensao; sob carga os motores podem nao partir. Isso nao e
-   corrigivel por software. Primeiro confirme todo o circuito com as rodas
-   suspensas. Se nem o teste minimo girar, meca a tensao e revise a alimentacao.
+Depois do envio, o Modo 1 começa automaticamente. Para usar o site, feche o
+Monitor Serial, abra o site no Chrome ou Edge para computador, clique em
+**Conectar Arduino USB** e escolha o Arduino UNO. O UNO reinicia quando a porta
+serial é aberta; por isso a interface aguarda cerca de dois segundos.
 
-As constatacoes foram feitas comparando todos os angulos recebidos e precisam
-ser confirmadas no hardware real pelos rotulos impressos na placa.
+## Os três modos
 
-## Politica de testes desta fase
+### Modo 1 — autônomo
 
-Todos os testes de desenvolvimento da Etapa 1 sao executados sem o robo:
+O Arduino anda continuamente. Duas leituras consecutivas de até 20 cm iniciam
+o desvio: parar, recuar, virar, sair da curva e continuar. O lado da curva é
+alternado. Esse modo continua funcionando mesmo sem site conectado.
 
-- compilacao local para Arduino UNO;
-- simulacao da maquina de estados;
-- injecao de distancias falsas do HC-SR04;
-- verificacao das saidas logicas IN1, IN2, IN3 e IN4;
-- testes automatizados de caminho livre, ruido, desvio e parada de seguranca.
+### Modo 2 — seguir pessoa
 
-Execute a simulacao com:
+A câmera do rosto escolhe a maior pessoa detectada e envia `ESQUERDA`, `FRENTE`
+ou `DIREITA` conforme a posição dela no quadro. Ao perder o rosto, o comando é
+`PARAR`. O HC-SR04 continua tendo prioridade e executa o desvio antes de voltar
+ao seguimento.
 
-```powershell
-cd D:\QUANTUM_TRACKER\firmware\simulacao
-python -m unittest -v
-python simulador_robo.py
+O painel BLE exibe apenas intensidade/proximidade do sinal. Um único receptor
+RSSI não informa se a pessoa está à esquerda ou à direita; portanto o robô não
+se movimenta às cegas atrás de uma parede. Para localização direcional real,
+são necessários vários receptores fixos ou outro sistema de posicionamento.
+
+### Modo 3 — gestos
+
+A câmera da mão conta os dedos e o site envia:
+
+| Dedos | Comando |
+|---:|---|
+| 1 | Frente |
+| 2 | Direita |
+| 3 | Esquerda |
+| 4 | Parar imediatamente |
+| 5 | Girar |
+
+Sem uma mão válida por cerca de 700 ms, o site manda parar. Sem receber um
+comando novo por 1,5 s, o próprio Arduino também para.
+
+## Camadas de segurança
+
+- `PARAR` e `ESTOP` cancelam um desvio em andamento.
+- O HC-SR04 é verificado nos três modos e sempre vence um comando da câmera.
+- Cinco leituras inválidas consecutivas do sensor travam os motores.
+- Cinco obstáculos em 15 segundos ativam a parada de emergência.
+- Nos Modos 2 e 3, ausência de comandos por 1,5 segundo para os motores.
+- O botão de emergência só deve ser liberado depois de conferir o entorno e as
+  rodas.
+
+A câmera auxilia no alinhamento com a pessoa; ela não substitui o HC-SR04 como
+sensor físico de obstáculo.
+
+## Protocolo serial (9600 baud)
+
+Comandos aceitos, uma linha por vez:
+
+```text
+MODE:1
+MODE:2
+MODE:3
+CMD:FRENTE
+CMD:TRAS
+CMD:DIREITA
+CMD:ESQUERDA
+CMD:PARAR
+CMD:GIRAR
+ESTOP
+RESET_ESTOP
+STATUS
+PING
 ```
 
-Os sketches `teste_motores` e `teste_sensor_hcsr04` ficam reservados para a
-Etapa 10, quando o projeto for finalmente aplicado no robo. Nao os envie agora.
+Telemetria emitida pelo Arduino:
 
-## Ordem futura de validacao no hardware - somente Etapa 10
+```text
+QT|MODE:3|DIST:42.0|CMD:FRENTE|STATE:GESTOS
+```
 
-### 1. Motores
+## Diagnóstico em ordem
 
-Abra `teste_motores/teste_motores.ino`, selecione Arduino Uno e a porta correta,
-compile e envie. Deixe as rodas suspensas.
+1. Com as rodas suspensas, teste alimentação, GND comum e jumpers ENA/ENB.
+2. Se nenhum motor girar, carregue `teste_motores/teste_motores.ino`.
+3. Se o sensor não variar, carregue `teste_sensor_hcsr04/teste_sensor_hcsr04.ino`
+   e leia a distância no Monitor Serial.
+4. Recarregue o firmware integrado e teste primeiro o Modo 1.
+5. Só depois teste os Modos 2 e 3 pelo site, mantendo o cabo USB conectado.
 
-Esperado: frente por 3 s, pausa, re por 3 s e parada definitiva.
+Quatro pilhas Ni-MH de 1,2 V fornecem aproximadamente 4,8 V antes das perdas do
+L298N. Se o motor só vibrar ou não partir, meça a tensão sob carga: alimentação
+insuficiente não pode ser corrigida por software.
 
-Se nenhum motor girar, o defeito esta em alimentacao, GND comum, ENA/ENB,
-pinagem ou driver. Nao avance para o sensor.
+## Testes sem movimentar o robô
 
-Se somente um girar, teste o motor e o respectivo par OUT/IN.
+```powershell
+cd D:\QUANTUM_TRACKER
+.\.venv\Scripts\python.exe -m unittest discover -s tests -q
+```
 
-Se ambos girarem em sentidos opostos, inverta os dois fios de apenas um motor.
-
-### 2. Sensor
-
-Abra `teste_sensor_hcsr04/teste_sensor_hcsr04.ino`, envie e abra o Monitor Serial
-em 115200 baud. A distancia deve acompanhar um objeto movido diante do sensor.
-
-### 3. Integracao autonoma
-
-Somente depois dos dois testes anteriores, envie
-`quantum_tracker_arduino/quantum_tracker_arduino.ino`.
-
-O robo inicia sozinho apos 1 s, anda, confirma obstaculo em ate 20 cm, para,
-gira no proprio eixo, alterna curvas para direita/esquerda e continua. Curvas
-repetidas ficam progressivamente maiores. Cinco desvios dentro de 15 s causam
-parada de seguranca; reinicie o Arduino para recomecar.
-
-## Compilacao mais rapida no Arduino IDE 2.3.10
-
-- mantenha placa `Arduino Uno` selecionada;
-- feche Monitor Serial antes de enviar;
-- use `Verificar` apenas uma vez e depois `Enviar`;
-- estes sketches nao usam bibliotecas externas;
-- a primeira compilacao pode montar o cache; as seguintes devem ser menores.
-
-O codigo compilar e a simulacao passar comprovam apenas o comportamento de
-software. A aplicacao fisica fica deliberadamente adiada para a Etapa 10.
+Esses testes verificam firmware, protocolo, segurança, interface, câmera e
+persistência. Eles não substituem o teste físico com as rodas suspensas.

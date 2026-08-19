@@ -1,18 +1,25 @@
 /*
-  Quantum Tracker - Etapa 1
-  Arduino UNO + L298N + HC-SR04
+  Quantum Tracker - controle integrado
+  Arduino UNO + L298N + HC-SR04 + USB Serial
 
-  Comportamento:
-  - inicia sozinho;
-  - anda para frente;
-  - confirma obstaculos com o HC-SR04;
-  - para, gira no proprio eixo e continua;
-  - para por seguranca apos 5 desvios em 15 segundos.
+  MODOS:
+  1 - AUTONOMO: anda sempre e desvia com o HC-SR04.
+  2 - SEGUIR: recebe direcao da camera; sensor continua soberano.
+  3 - GESTOS: recebe os gestos; sensor continua soberano.
 
-  Nao usa aplicativo, Bluetooth, gestos ou comandos seriais.
+  PROTOCOLO SERIAL (9600 baud, uma linha por comando):
+  MODE:1 | MODE:2 | MODE:3
+  CMD:FRENTE | CMD:TRAS | CMD:DIREITA | CMD:ESQUERDA | CMD:PARAR | CMD:GIRAR
+  ESTOP | RESET_ESTOP | PING | STATUS
+
+  Seguranca:
+  - PARAR e ESTOP interrompem imediatamente;
+  - modos 2 e 3 param sem heartbeat por 1,5 s;
+  - cinco falhas consecutivas do sensor param o movimento;
+  - cinco obstaculos em 15 s ativam parada de seguranca.
 */
 
-// L298N: ENA e ENB devem ficar com os jumpers instalados.
+// L298N: mantenha os jumpers ENA e ENB instalados.
 const byte IN1 = 7;
 const byte IN2 = 6;
 const byte IN3 = 5;
@@ -22,25 +29,52 @@ const byte IN4 = 4;
 const byte TRIG = 3;
 const byte ECHO = 2;
 
-const unsigned int DISTANCIA_OBSTACULO_CM = 20;
-const unsigned int TEMPO_PARADO_MS = 120;
-const unsigned int TEMPO_CURVA_BASE_MS = 800;
-const unsigned int AUMENTO_CURVA_MS = 180;
-const unsigned long JANELA_DESVIOS_MS = 15000UL;
-const byte LIMITE_DESVIOS = 5;
+const float DISTANCIA_OBSTACULO_CM = 20.0;
+const unsigned long INTERVALO_SENSOR_MS = 80UL;
+const unsigned long INTERVALO_TELEMETRIA_MS = 250UL;
+const unsigned long TIMEOUT_COMANDO_MS = 1500UL;
+const unsigned long JANELA_OBSTACULOS_MS = 15000UL;
 
-enum Estado {
-  FRENTE,
-  PAUSA_ANTES_CURVA,
-  CURVANDO,
-  PARADO_SEGURANCA
+const unsigned int TEMPO_PAUSA_MS = 200;
+const unsigned int TEMPO_RE_MS = 700;
+const unsigned int TEMPO_CURVA_MS = 900;
+const unsigned int TEMPO_SAIDA_MS = 600;
+
+const byte LIMITE_FALHAS_SENSOR = 5;
+const byte LIMITE_OBSTACULOS = 5;
+
+enum ModoRobo { MODO_AUTONOMO = 1, MODO_SEGUIR = 2, MODO_GESTOS = 3 };
+enum ComandoMovimento { CMD_PARAR, CMD_FRENTE, CMD_TRAS, CMD_DIREITA, CMD_ESQUERDA, CMD_GIRAR };
+enum EstadoDesvio {
+  DESVIO_INATIVO,
+  DESVIO_PAUSA_INICIAL,
+  DESVIO_RE,
+  DESVIO_PAUSA_RE,
+  DESVIO_CURVA,
+  DESVIO_PAUSA_CURVA,
+  DESVIO_SAIDA
 };
 
-Estado estado = FRENTE;
-unsigned long estadoDesde = 0;
-unsigned long temposDesvios[LIMITE_DESVIOS];
-byte desviosRegistrados = 0;
+ModoRobo modo = MODO_AUTONOMO;
+ComandoMovimento comandoRecebido = CMD_PARAR;
+ComandoMovimento comandoAplicado = CMD_PARAR;
+EstadoDesvio estadoDesvio = DESVIO_INATIVO;
+
+unsigned long ultimoSensorEm = 0;
+unsigned long ultimaTelemetriaEm = 0;
+unsigned long ultimoComandoEm = 0;
+unsigned long estadoDesvioDesde = 0;
+unsigned long obstaculosEm[LIMITE_OBSTACULOS];
+
+float distanciaAtualCm = -1;
+byte falhasConsecutivasSensor = 0;
+byte obstaculosConsecutivos = 0;
+byte quantidadeObstaculos = 0;
 bool proximaCurvaDireita = true;
+bool paradaEmergencia = false;
+
+char linhaSerial[34];
+byte tamanhoLinha = 0;
 
 void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
   digitalWrite(IN1, in1);
@@ -51,76 +85,263 @@ void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
 
 void pararMotores() {
   aplicarMotores(LOW, LOW, LOW, LOW);
+  comandoAplicado = CMD_PARAR;
 }
 
 void andarParaFrente() {
+  aplicarMotores(LOW, HIGH, LOW, HIGH);
+  comandoAplicado = CMD_FRENTE;
+}
+
+void andarParaTras() {
   aplicarMotores(HIGH, LOW, HIGH, LOW);
+  comandoAplicado = CMD_TRAS;
 }
 
-void girarNoLugar(bool direita) {
-  if (direita) {
-    aplicarMotores(HIGH, LOW, LOW, HIGH);
-  } else {
-    aplicarMotores(LOW, HIGH, HIGH, LOW);
+void girarDireita() {
+  aplicarMotores(LOW, HIGH, LOW, LOW);
+  comandoAplicado = CMD_DIREITA;
+}
+
+void girarEsquerda() {
+  aplicarMotores(LOW, LOW, LOW, HIGH);
+  comandoAplicado = CMD_ESQUERDA;
+}
+
+void girarNoLugar() {
+  aplicarMotores(LOW, HIGH, HIGH, LOW);
+  comandoAplicado = CMD_GIRAR;
+}
+
+void aplicarComando(ComandoMovimento comando) {
+  switch (comando) {
+    case CMD_FRENTE: andarParaFrente(); break;
+    case CMD_TRAS: andarParaTras(); break;
+    case CMD_DIREITA: girarDireita(); break;
+    case CMD_ESQUERDA: girarEsquerda(); break;
+    case CMD_GIRAR: girarNoLugar(); break;
+    default: pararMotores(); break;
   }
 }
 
-unsigned int medirDistanciaCm() {
+float medirDistanciaCm() {
   digitalWrite(TRIG, LOW);
-  delayMicroseconds(3);
+  delayMicroseconds(5);
   digitalWrite(TRIG, HIGH);
-  delayMicroseconds(10);
+  delayMicroseconds(12);
   digitalWrite(TRIG, LOW);
 
-  // 25 ms cobre aproximadamente 4,3 metros e impede travamento sem eco.
-  const unsigned long duracao = pulseIn(ECHO, HIGH, 25000UL);
-  if (duracao == 0) {
-    return 999;  // Sem eco: nao inventa obstaculo.
+  const unsigned long duracao = pulseIn(ECHO, HIGH, 30000UL);
+  if (duracao == 0) return -1;
+  const float distancia = duracao / 58.0;
+  if (distancia < 2 || distancia > 400) return -1;
+  return distancia;
+}
+
+void atualizarSensor(unsigned long agora) {
+  if (agora - ultimoSensorEm < INTERVALO_SENSOR_MS) return;
+  ultimoSensorEm = agora;
+  distanciaAtualCm = medirDistanciaCm();
+
+  if (distanciaAtualCm < 0) {
+    if (falhasConsecutivasSensor < 255) falhasConsecutivasSensor++;
+    obstaculosConsecutivos = 0;
+    return;
   }
-  return (unsigned int)(duracao / 58UL);
+
+  falhasConsecutivasSensor = 0;
+  if (distanciaAtualCm <= DISTANCIA_OBSTACULO_CM) {
+    if (obstaculosConsecutivos < 255) obstaculosConsecutivos++;
+  } else {
+    obstaculosConsecutivos = 0;
+  }
+}
+
+bool sensorSeguro() {
+  return falhasConsecutivasSensor < LIMITE_FALHAS_SENSOR;
 }
 
 bool obstaculoConfirmado() {
-  byte leiturasPerto = 0;
-
-  // Duas de tres leituras evitam desvios causados por um eco isolado.
-  for (byte i = 0; i < 3; i++) {
-    const unsigned int distancia = medirDistanciaCm();
-    if (distancia >= 2 && distancia <= DISTANCIA_OBSTACULO_CM) {
-      leiturasPerto++;
-    }
-    delay(18);
-  }
-
-  return leiturasPerto >= 2;
+  return distanciaAtualCm > 0 && obstaculosConsecutivos >= 2;
 }
 
-bool atingiuLimiteDeDesvios(unsigned long agora) {
-  // Remove da fila os desvios que ja sairam da janela movel.
+bool registrarObstaculo(unsigned long agora) {
   byte validos = 0;
-  for (byte i = 0; i < desviosRegistrados; i++) {
-    if (agora - temposDesvios[i] <= JANELA_DESVIOS_MS) {
-      temposDesvios[validos++] = temposDesvios[i];
+  for (byte i = 0; i < quantidadeObstaculos; i++) {
+    if (agora - obstaculosEm[i] <= JANELA_OBSTACULOS_MS) {
+      obstaculosEm[validos++] = obstaculosEm[i];
     }
   }
-  desviosRegistrados = validos;
-
-  if (desviosRegistrados < LIMITE_DESVIOS) {
-    temposDesvios[desviosRegistrados++] = agora;
+  quantidadeObstaculos = validos;
+  if (quantidadeObstaculos < LIMITE_OBSTACULOS) {
+    obstaculosEm[quantidadeObstaculos++] = agora;
   }
-
-  return desviosRegistrados >= LIMITE_DESVIOS;
+  return quantidadeObstaculos >= LIMITE_OBSTACULOS;
 }
 
-unsigned int tempoDaCurvaMs() {
-  // Aumenta a rotacao quando o robo encontra varios bloqueios na mesma janela.
-  // O quinto bloqueio para o sistema antes de chegar aqui.
-  return TEMPO_CURVA_BASE_MS + (desviosRegistrados - 1) * AUMENTO_CURVA_MS;
+void cancelarDesvio() {
+  estadoDesvio = DESVIO_INATIVO;
+  pararMotores();
 }
 
-void mudarEstado(Estado novoEstado, unsigned long agora) {
-  estado = novoEstado;
-  estadoDesde = agora;
+void iniciarDesvio(unsigned long agora) {
+  pararMotores();
+  obstaculosConsecutivos = 0;
+  if (registrarObstaculo(agora)) {
+    paradaEmergencia = true;
+    Serial.println(F("ALERTA:5_OBSTACULOS"));
+    return;
+  }
+  estadoDesvio = DESVIO_PAUSA_INICIAL;
+  estadoDesvioDesde = agora;
+  Serial.println(F("EVENTO:DESVIO_INICIADO"));
+}
+
+void atualizarDesvio(unsigned long agora) {
+  const unsigned long decorrido = agora - estadoDesvioDesde;
+  switch (estadoDesvio) {
+    case DESVIO_PAUSA_INICIAL:
+      pararMotores();
+      if (decorrido >= TEMPO_PAUSA_MS) {
+        andarParaTras();
+        estadoDesvio = DESVIO_RE;
+        estadoDesvioDesde = agora;
+      }
+      break;
+    case DESVIO_RE:
+      if (decorrido >= TEMPO_RE_MS) {
+        pararMotores();
+        estadoDesvio = DESVIO_PAUSA_RE;
+        estadoDesvioDesde = agora;
+      }
+      break;
+    case DESVIO_PAUSA_RE:
+      if (decorrido >= 150UL) {
+        if (proximaCurvaDireita) girarDireita(); else girarEsquerda();
+        estadoDesvio = DESVIO_CURVA;
+        estadoDesvioDesde = agora;
+      }
+      break;
+    case DESVIO_CURVA:
+      if (decorrido >= TEMPO_CURVA_MS) {
+        pararMotores();
+        proximaCurvaDireita = !proximaCurvaDireita;
+        estadoDesvio = DESVIO_PAUSA_CURVA;
+        estadoDesvioDesde = agora;
+      }
+      break;
+    case DESVIO_PAUSA_CURVA:
+      if (decorrido >= 150UL) {
+        andarParaFrente();
+        estadoDesvio = DESVIO_SAIDA;
+        estadoDesvioDesde = agora;
+      }
+      break;
+    case DESVIO_SAIDA:
+      if (decorrido >= TEMPO_SAIDA_MS) {
+        estadoDesvio = DESVIO_INATIVO;
+        obstaculosConsecutivos = 0;
+      }
+      break;
+    default: break;
+  }
+}
+
+const __FlashStringHelper* nomeModo() {
+  if (modo == MODO_AUTONOMO) return F("AUTONOMO");
+  if (modo == MODO_SEGUIR) return F("SEGUIR");
+  return F("GESTOS");
+}
+
+const __FlashStringHelper* nomeComando(ComandoMovimento comando) {
+  switch (comando) {
+    case CMD_FRENTE: return F("FRENTE");
+    case CMD_TRAS: return F("TRAS");
+    case CMD_DIREITA: return F("DIREITA");
+    case CMD_ESQUERDA: return F("ESQUERDA");
+    case CMD_GIRAR: return F("GIRAR");
+    default: return F("PARAR");
+  }
+}
+
+void enviarStatus(unsigned long agora, bool forcar = false) {
+  if (!forcar && agora - ultimaTelemetriaEm < INTERVALO_TELEMETRIA_MS) return;
+  ultimaTelemetriaEm = agora;
+  Serial.print(F("QT|MODE:"));
+  Serial.print((byte)modo);
+  Serial.print(F("|DIST:"));
+  if (distanciaAtualCm < 0) Serial.print(F("ERR")); else Serial.print(distanciaAtualCm, 1);
+  Serial.print(F("|CMD:"));
+  Serial.print(nomeComando(comandoAplicado));
+  Serial.print(F("|STATE:"));
+  if (paradaEmergencia) Serial.print(F("ESTOP"));
+  else if (!sensorSeguro()) Serial.print(F("SENSOR_FAIL"));
+  else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
+  else Serial.print(nomeModo());
+  Serial.println();
+}
+
+void selecionarModo(byte numero, unsigned long agora) {
+  if (numero < 1 || numero > 3) return;
+  modo = (ModoRobo)numero;
+  comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
+  ultimoComandoEm = agora;
+  cancelarDesvio();
+  Serial.print(F("OK:MODE:"));
+  Serial.println(numero);
+}
+
+void receberComando(ComandoMovimento comando, unsigned long agora) {
+  comandoRecebido = comando;
+  ultimoComandoEm = agora;
+  if (comando == CMD_PARAR) cancelarDesvio();
+  Serial.print(F("OK:CMD:"));
+  Serial.println(nomeComando(comando));
+}
+
+void processarLinha(char* linha, unsigned long agora) {
+  if (strcmp(linha, "MODE:1") == 0) selecionarModo(1, agora);
+  else if (strcmp(linha, "MODE:2") == 0) selecionarModo(2, agora);
+  else if (strcmp(linha, "MODE:3") == 0) selecionarModo(3, agora);
+  else if (strcmp(linha, "CMD:FRENTE") == 0) receberComando(CMD_FRENTE, agora);
+  else if (strcmp(linha, "CMD:TRAS") == 0) receberComando(CMD_TRAS, agora);
+  else if (strcmp(linha, "CMD:DIREITA") == 0) receberComando(CMD_DIREITA, agora);
+  else if (strcmp(linha, "CMD:ESQUERDA") == 0) receberComando(CMD_ESQUERDA, agora);
+  else if (strcmp(linha, "CMD:PARAR") == 0) receberComando(CMD_PARAR, agora);
+  else if (strcmp(linha, "CMD:GIRAR") == 0) receberComando(CMD_GIRAR, agora);
+  else if (strcmp(linha, "ESTOP") == 0) {
+    paradaEmergencia = true;
+    cancelarDesvio();
+    Serial.println(F("OK:ESTOP"));
+  } else if (strcmp(linha, "RESET_ESTOP") == 0) {
+    paradaEmergencia = false;
+    quantidadeObstaculos = 0;
+    comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
+    ultimoComandoEm = agora;
+    Serial.println(F("OK:RESET_ESTOP"));
+  } else if (strcmp(linha, "PING") == 0) {
+    ultimoComandoEm = agora;
+    Serial.println(F("PONG"));
+  } else if (strcmp(linha, "STATUS") == 0) enviarStatus(agora, true);
+  else Serial.println(F("ERRO:COMANDO_INVALIDO"));
+}
+
+void lerSerial(unsigned long agora) {
+  while (Serial.available() > 0) {
+    const char recebido = (char)Serial.read();
+    if (recebido == '\n' || recebido == '\r') {
+      if (tamanhoLinha > 0) {
+        linhaSerial[tamanhoLinha] = '\0';
+        processarLinha(linhaSerial, agora);
+        tamanhoLinha = 0;
+      }
+    } else if (tamanhoLinha < sizeof(linhaSerial) - 1) {
+      linhaSerial[tamanhoLinha++] = recebido;
+    } else {
+      tamanhoLinha = 0;
+      Serial.println(F("ERRO:LINHA_LONGA"));
+    }
+  }
 }
 
 void setup() {
@@ -130,49 +351,44 @@ void setup() {
   pinMode(IN4, OUTPUT);
   pinMode(TRIG, OUTPUT);
   pinMode(ECHO, INPUT);
-
-  pararMotores();
   digitalWrite(TRIG, LOW);
-  delay(1000);  // Tempo para a alimentacao estabilizar.
+  pararMotores();
 
-  estadoDesde = millis();
-  andarParaFrente();
+  Serial.begin(9600);
+  delay(2000);
+  ultimoComandoEm = millis();
+  Serial.println(F("QT:READY:V3"));
+  Serial.println(F("OK:MODE:1"));
 }
 
 void loop() {
   const unsigned long agora = millis();
+  lerSerial(agora);
+  atualizarSensor(agora);
 
-  switch (estado) {
-    case FRENTE:
-      andarParaFrente();
-      if (obstaculoConfirmado()) {
-        pararMotores();
-
-        if (atingiuLimiteDeDesvios(agora)) {
-          mudarEstado(PARADO_SEGURANCA, agora);
-        } else {
-          mudarEstado(PAUSA_ANTES_CURVA, agora);
-        }
-      }
-      break;
-
-    case PAUSA_ANTES_CURVA:
-      if (agora - estadoDesde >= TEMPO_PARADO_MS) {
-        girarNoLugar(proximaCurvaDireita);
-        mudarEstado(CURVANDO, agora);
-      }
-      break;
-
-    case CURVANDO:
-      if (agora - estadoDesde >= tempoDaCurvaMs()) {
-        proximaCurvaDireita = !proximaCurvaDireita;
-        andarParaFrente();
-        mudarEstado(FRENTE, agora);
-      }
-      break;
-
-    case PARADO_SEGURANCA:
-      pararMotores();
-      break;
+  if (paradaEmergencia || !sensorSeguro()) {
+    pararMotores();
+    enviarStatus(agora);
+    return;
   }
+
+  if (modo != MODO_AUTONOMO && agora - ultimoComandoEm > TIMEOUT_COMANDO_MS) {
+    comandoRecebido = CMD_PARAR;
+    cancelarDesvio();
+  }
+
+  if (estadoDesvio != DESVIO_INATIVO) {
+    atualizarDesvio(agora);
+    enviarStatus(agora);
+    return;
+  }
+
+  const ComandoMovimento desejado = modo == MODO_AUTONOMO ? CMD_FRENTE : comandoRecebido;
+  if (desejado == CMD_FRENTE && obstaculoConfirmado()) {
+    iniciarDesvio(agora);
+  } else {
+    aplicarComando(desejado);
+  }
+
+  enviarStatus(agora);
 }

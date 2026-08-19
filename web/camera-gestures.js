@@ -8,6 +8,10 @@ const statusElement = document.getElementById("cameraStatus");
 const statusDot = document.getElementById("cameraDot");
 const commandElement = document.getElementById("gestureCommand");
 const countElement = document.getElementById("fingerCount");
+const cameraPanel = document.getElementById("camera-gestos");
+const facePanel = document.getElementById("faceCameraPanel");
+const gesturePanel = document.getElementById("gestureCameraPanel");
+const cameraTabs = document.querySelectorAll(".camera-view-tab");
 
 const COMMANDS = {
   1: "FRENTE",
@@ -45,6 +49,10 @@ let lastInferenceAt = 0;
 let pendingCount = 0;
 let pendingFrames = 0;
 let stableCount = 0;
+let activeView = "face";
+let lastGestureAt = 0;
+let lastDispatchAt = 0;
+let lastDispatchedCommand = "";
 
 function setStatus(text, active = false) {
   statusElement.textContent = text;
@@ -61,7 +69,20 @@ function setGesture(count, stable = false) {
     return;
   }
   commandElement.textContent = COMMANDS[count];
-  countElement.textContent = `${count} dedo(s) reconhecido(s) · teste visual`;
+  countElement.textContent = `${count} dedo(s) reconhecido(s) · comando pronto`;
+  lastGestureAt = performance.now();
+  const command = COMMANDS[count];
+  if (command !== lastDispatchedCommand || command === "PARAR" || performance.now() - lastDispatchAt >= 450) {
+    lastDispatchedCommand = command;
+    lastDispatchAt = performance.now();
+    window.dispatchEvent(new CustomEvent("quantum:gesture-command", { detail: { command, count, stable: true } }));
+  }
+}
+
+function stopGestureOutput() {
+  lastDispatchedCommand = "PARAR";
+  lastDispatchAt = performance.now();
+  window.dispatchEvent(new CustomEvent("quantum:gesture-command", { detail: { command: "PARAR", count: 0, stable: false } }));
 }
 
 function classifyFingerCount(landmarks, handedness) {
@@ -144,7 +165,7 @@ async function initializeModel() {
 }
 
 function processFrame(now) {
-  if (!running) return;
+  if (!running || activeView !== "hand") return;
   animationId = requestAnimationFrame(processFrame);
   if (video.readyState < 2 || video.currentTime === lastVideoTime || now - lastInferenceAt < 70) return;
   lastVideoTime = video.currentTime;
@@ -155,6 +176,7 @@ function processFrame(now) {
     pendingFrames = 0;
     stableCount = 0;
     setGesture(0, false);
+    if (performance.now() - lastGestureAt > 700 && lastDispatchedCommand !== "PARAR") stopGestureOutput();
     return;
   }
   const landmarks = result.landmarks[0];
@@ -162,6 +184,40 @@ function processFrame(now) {
   drawHand(landmarks);
   const count = classifyFingerCount(landmarks, handedness);
   setGesture(count, stabilizeCount(count));
+}
+
+async function setCameraView(view) {
+  activeView = view === "hand" ? "hand" : "face";
+  cameraPanel.dataset.cameraView = activeView;
+  cameraTabs.forEach((button) => {
+    const selected = button.dataset.cameraView === activeView;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  });
+  facePanel.hidden = activeView !== "face";
+  gesturePanel.hidden = activeView !== "hand";
+  cancelAnimationFrame(animationId);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  window.dispatchEvent(new CustomEvent("quantum:camera-view-changed", { detail: { view: activeView } }));
+  if (!running) return;
+  if (activeView === "face") {
+    stopGestureOutput();
+    setStatus("CÂMERA FACIAL ATIVA", true);
+    return;
+  }
+  setStatus("CÂMERA ATIVA · CARREGANDO GESTOS", true);
+  commandElement.textContent = "CARREGANDO";
+  countElement.textContent = "Preparando o reconhecimento da mão…";
+  try {
+    await initializeModel();
+    if (!running || activeView !== "hand") return;
+    setStatus("CÂMERA DE GESTOS ATIVA", true);
+    animationId = requestAnimationFrame(processFrame);
+  } catch (error) {
+    setStatus("CÂMERA ATIVA · GESTOS INDISPONÍVEIS", true);
+    commandElement.textContent = "ERRO";
+    countElement.textContent = `Não foi possível carregar os gestos: ${error.message}`;
+  }
 }
 
 async function startCamera() {
@@ -184,19 +240,10 @@ async function startCamera() {
     running = true;
     stopButton.disabled = false;
     window.dispatchEvent(new CustomEvent("quantum:camera-started"));
-    setStatus("CÂMERA ATIVA · CARREGANDO IA", true);
+    setStatus("CÂMERA ATIVA", true);
     commandElement.textContent = "CÂMERA OK";
-    countElement.textContent = "A imagem já está ativa. Carregando reconhecimento de gestos…";
-    try {
-      await initializeModel();
-      if (!running) return;
-      setStatus("CÂMERA E GESTOS ATIVOS", true);
-      animationId = requestAnimationFrame(processFrame);
-    } catch (modelError) {
-      setStatus("CÂMERA ATIVA · IA INDISPONÍVEL", true);
-      commandElement.textContent = "CÂMERA OK";
-      countElement.textContent = `A câmera funciona, mas a IA não carregou. Recarregue a página. Detalhe: ${modelError.message}`;
-    }
+    countElement.textContent = "Escolha rosto ou mão nas abas acima.";
+    await setCameraView(activeView);
   } catch (error) {
     stream?.getTracks().forEach((track) => track.stop());
     stream = null;
@@ -218,6 +265,7 @@ async function startCamera() {
 }
 
 function stopCamera() {
+  stopGestureOutput();
   running = false;
   cancelAnimationFrame(animationId);
   stream?.getTracks().forEach((track) => track.stop());
@@ -234,7 +282,10 @@ function stopCamera() {
   window.dispatchEvent(new CustomEvent("quantum:camera-stopped"));
 }
 
+cameraTabs.forEach((button) => button.addEventListener("click", () => setCameraView(button.dataset.cameraView)));
 startButton.addEventListener("click", startCamera);
 stopButton.addEventListener("click", stopCamera);
 window.addEventListener("pagehide", stopCamera);
+cameraPanel.dataset.cameraView = "face";
+setCameraView("face");
 setStatus("PRONTO PARA INICIAR");

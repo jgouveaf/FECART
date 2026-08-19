@@ -103,11 +103,19 @@ class TestFullIntegrationOffline(unittest.TestCase):
                 self.assertNotEqual(output.robot.command, RobotCommand.FORWARD)
         self.assertEqual(self.system.sequence, 30_000)
 
-    def test_public_site_has_no_secret_and_declares_stage_10_lock(self) -> None:
-        files = [ROOT / "index.html", ROOT / "web" / "app.js", ROOT / "web" / "styles.css"]
+    def test_public_site_has_no_secret_and_requires_explicit_usb_connection(self) -> None:
+        files = [
+            ROOT / "index.html",
+            ROOT / "web" / "app.js",
+            ROOT / "web" / "robot-control.js",
+            ROOT / "web" / "styles.css",
+        ]
         public = "\n".join(path.read_text(encoding="utf-8") for path in files)
         self.assertNotIn("sk-proj-", public)
-        self.assertIn("Hardware bloqueado até a Etapa 10", public)
+        self.assertIn("Conectar Arduino USB", public)
+        self.assertIn("requestPort()", public)
+        self.assertIn("PARADA DE EMERGÊNCIA", public)
+        self.assertIn("HC-SR04", public)
 
 
 if __name__ == "__main__":

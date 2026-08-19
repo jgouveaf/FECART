@@ -20,6 +20,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         cls.app_js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
         cls.camera_js = (ROOT / "web" / "camera-gestures.js").read_text(encoding="utf-8")
         cls.face_js = (ROOT / "web" / "face-identities.js").read_text(encoding="utf-8")
+        cls.robot_js = (ROOT / "web" / "robot-control.js").read_text(encoding="utf-8")
         cls.code_bundle_js = (ROOT / "web" / "arduino-codes.js").read_text(encoding="utf-8")
         object_source = cls.code_bundle_js.split("Object.freeze(", 1)[1].rsplit(");", 1)[0]
         cls.code_bundle = json.loads(object_source)
@@ -28,13 +29,16 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         for required in (
             'id="camera-gestos"',
             'id="cameraVideo"',
+            'id="faceCameraTab"',
+            'id="handCameraTab"',
             'id="gestureCommand"',
             'id="identityCanvas"',
             'id="registerPerson"',
             'id="registeredPeople"',
             'id="codigos"',
             'id="arduinoCode"',
-            'web/arduino-codes.js?v=3',
+            'web/arduino-codes.js?v=4',
+            'web/robot-control.js?v=1',
         ):
             self.assertIn(required, self.html)
 
@@ -68,6 +72,8 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("HandLandmarker", self.camera_js)
         self.assertIn("getUserMedia", self.camera_js)
         self.assertIn("NotAllowedError", self.camera_js)
+        self.assertIn('quantum:gesture-command', self.camera_js)
+        self.assertIn('quantum:camera-view-changed', self.camera_js)
 
     def test_human_faceid_runtime_and_models_are_available_offline(self) -> None:
         vendor = ROOT / "web" / "vendor" / "human"
@@ -117,6 +123,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("DETECTION_DELAY_MS", self.face_js)
         self.assertIn("scheduleDetection", self.face_js)
         self.assertIn("recognitionMemory", self.face_js)
+        self.assertIn('quantum:person-tracking', self.face_js)
 
     def test_identity_backup_can_be_exported_and_imported(self) -> None:
         self.assertIn('id="exportIdentities"', self.html)
@@ -127,10 +134,11 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("URL.createObjectURL", self.face_js)
 
     def test_web_test_never_opens_serial_or_contains_secret(self) -> None:
-        public = "\n".join((self.html, self.app_js, self.camera_js, self.face_js, self.code_bundle_js))
-        self.assertNotIn("navigator.serial", public)
+        public = "\n".join((self.html, self.app_js, self.camera_js, self.face_js, self.robot_js, self.code_bundle_js))
+        self.assertIn("navigator.serial", self.robot_js)
         self.assertNotIn("sk-proj-", public)
-        self.assertIn("não movimenta o Arduino", self.html)
+        self.assertIn("PARADA DE EMERGÊNCIA", self.html)
+        self.assertIn("timeout do Arduino", self.html)
 
 
 if __name__ == "__main__":

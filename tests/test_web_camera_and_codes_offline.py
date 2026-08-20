@@ -135,6 +135,14 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         for error_name in ("NotAllowedError", "NotFoundError", "NotReadableError", "OverconstrainedError"):
             self.assertIn(error_name, self.camera_js)
 
+    def test_camera_controller_uses_compatible_classic_bootstrap(self) -> None:
+        self.assertIn('id="startCamera" disabled>Carregando controle…', self.html)
+        self.assertIn('src="web/camera-gestures.js?v=9" defer', self.html)
+        self.assertNotIn('type="module" src="web/camera-gestures.js', self.html)
+        self.assertIn("window.quantumCameraController", self.camera_js)
+        self.assertIn('startButton.textContent = "Iniciar câmera"', self.camera_js)
+        self.assertIn("FALHA AO CARREGAR CONTROLE", self.html)
+
     def test_identity_backup_can_be_exported_and_imported(self) -> None:
         self.assertIn('id="exportIdentities"', self.html)
         self.assertIn('id="importIdentities"', self.html)

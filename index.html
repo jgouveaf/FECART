@@ -70,7 +70,7 @@
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>97 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>98 aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⌁</span><div><small>Arduino</small><strong>USB Serial</strong></div></article>
@@ -108,7 +108,7 @@
           <div><span class="section-tag">Controle físico supervisionado</span><h2>Câmeras &amp; robô</h2><p>Use a câmera facial para seguimento ou a câmera de mão para controlar o Arduino conectado por USB.</p></div>
           <div class="controls">
             <button class="secondary-button" id="stopCamera" disabled>Desligar</button>
-            <button class="primary-button compact" id="startCamera">Iniciar câmera</button>
+            <button class="primary-button compact" id="startCamera" disabled>Carregando controle…</button>
           </div>
         </div>
         <div class="robot-control-panel" aria-label="Controle do Arduino">
@@ -292,6 +292,6 @@
   <script src="web/app.js?v=7" defer></script>
   <script src="web/robot-control.js?v=1" defer></script>
   <script src="web/face-identities.js?v=7" defer></script>
-  <script type="module" src="web/camera-gestures.js?v=8"></script>
+  <script src="web/camera-gestures.js?v=9" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
 </body>
 </html>

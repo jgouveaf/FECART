@@ -326,3 +326,12 @@ window.addEventListener("pagehide", stopCamera);
 cameraPanel.dataset.cameraView = "face";
 setCameraView("face");
 setStatus("PRONTO PARA INICIAR");
+startButton.disabled = false;
+startButton.textContent = "Iniciar câmera";
+window.quantumCameraController = Object.freeze({
+  start: startCamera,
+  stop: stopCamera,
+  selectView: setCameraView,
+  get running() { return running; },
+  get view() { return activeView; },
+});

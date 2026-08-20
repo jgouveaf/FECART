@@ -653,6 +653,13 @@
 
   window.addEventListener("quantum:camera-started", startIdentification);
   window.addEventListener("quantum:camera-stopped", stopIdentification);
+  window.addEventListener("quantum:camera-error", (event) => {
+    cameraActive = false;
+    clearTimeout(detectionTimer);
+    setStatus("CÂMERA INDISPONÍVEL");
+    faceHint.textContent = event.detail?.message || "Não foi possível abrir a câmera.";
+    registerButton.disabled = true;
+  });
   window.addEventListener("quantum:camera-view-changed", async (event) => {
     activeView = event.detail?.view === "hand" ? "hand" : "face";
     clearTimeout(detectionTimer);

@@ -6,6 +6,8 @@ const startButton = document.getElementById("startCamera");
 const stopButton = document.getElementById("stopCamera");
 const statusElement = document.getElementById("cameraStatus");
 const statusDot = document.getElementById("cameraDot");
+const placeholderTitle = document.getElementById("cameraPlaceholderTitle");
+const placeholderHint = document.getElementById("cameraPlaceholderHint");
 const commandElement = document.getElementById("gestureCommand");
 const countElement = document.getElementById("fingerCount");
 const cameraPanel = document.getElementById("camera-gestos");
@@ -57,6 +59,39 @@ let lastDispatchedCommand = "";
 function setStatus(text, active = false) {
   statusElement.textContent = text;
   statusDot.classList.toggle("idle", !active);
+}
+
+function setPlaceholder(title, hint) {
+  placeholderTitle.textContent = title;
+  placeholderHint.textContent = hint;
+}
+
+function cameraErrorMessage(error) {
+  if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
+    return "A permissão foi bloqueada. Clique no cadeado ao lado do endereço, permita a câmera e tente novamente.";
+  }
+  if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") {
+    return "Nenhuma webcam foi encontrada. Conecte ou ative a câmera e tente novamente.";
+  }
+  if (error?.name === "NotReadableError" || error?.name === "TrackStartError" || error?.name === "AbortError") {
+    return "A webcam está ocupada ou bloqueada pelo Windows. Feche Câmera, Teams, Discord e outros aplicativos e tente novamente.";
+  }
+  if (error?.name === "OverconstrainedError" || error?.name === "ConstraintNotSatisfiedError") {
+    return "A webcam não aceitou a configuração solicitada. Recarregue a página para tentar no modo compatível.";
+  }
+  return error?.message || "Não foi possível abrir a câmera neste navegador.";
+}
+
+async function requestCameraStream() {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 540 } },
+    });
+  } catch (error) {
+    if (!["OverconstrainedError", "ConstraintNotSatisfiedError"].includes(error?.name)) throw error;
+    return navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+  }
 }
 
 function setGesture(count, stable = false) {
@@ -223,15 +258,15 @@ async function setCameraView(view) {
 async function startCamera() {
   if (running) return;
   startButton.disabled = true;
+  startButton.setAttribute("aria-busy", "true");
+  startButton.textContent = "Abrindo câmera…";
   try {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       throw new Error("Este navegador exige HTTPS e suporte a câmera.");
     }
-    setStatus("PEDINDO PERMISSÃO");
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 540 } },
-    });
+    setStatus("PERMISSÃO PENDENTE");
+    setPlaceholder("Permita o uso da câmera", "Responda à solicitação que apareceu perto da barra de endereço do navegador.");
+    stream = await requestCameraStream();
     video.srcObject = stream;
     await video.play();
     canvas.width = video.videoWidth || 960;
@@ -239,6 +274,8 @@ async function startCamera() {
     stage.classList.add("active");
     running = true;
     stopButton.disabled = false;
+    startButton.textContent = "Câmera ligada";
+    setPlaceholder("Câmera desligada", "Clique em “Iniciar câmera” e permita o acesso.");
     window.dispatchEvent(new CustomEvent("quantum:camera-started"));
     setStatus("CÂMERA ATIVA", true);
     commandElement.textContent = "CÂMERA OK";
@@ -249,18 +286,16 @@ async function startCamera() {
     stream = null;
     video.srcObject = null;
     stage.classList.remove("active");
-    setStatus("ERRO");
+    const message = cameraErrorMessage(error);
+    setStatus("CÂMERA NÃO ABRIU");
+    setPlaceholder("Não foi possível iniciar", message);
     commandElement.textContent = "INDISPONÍVEL";
-    if (error?.name === "NotAllowedError") {
-      countElement.textContent = "Permissão negada. Clique no cadeado da barra de endereço, permita a câmera e tente novamente.";
-    } else if (error?.name === "NotFoundError") {
-      countElement.textContent = "Nenhuma câmera foi encontrada neste computador.";
-    } else if (error?.name === "NotReadableError") {
-      countElement.textContent = "A câmera está ocupada por outro programa. Feche-o e tente novamente.";
-    } else {
-      countElement.textContent = error?.message || "Não foi possível abrir a câmera.";
-    }
+    countElement.textContent = message;
+    window.dispatchEvent(new CustomEvent("quantum:camera-error", { detail: { name: error?.name || "Error", message } }));
+    startButton.textContent = "Tentar novamente";
     startButton.disabled = false;
+  } finally {
+    startButton.setAttribute("aria-busy", "false");
   }
 }
 
@@ -274,6 +309,8 @@ function stopCamera() {
   context.clearRect(0, 0, canvas.width, canvas.height);
   stage.classList.remove("active");
   startButton.disabled = false;
+  startButton.textContent = "Iniciar câmera";
+  setPlaceholder("Câmera desligada", "Clique em “Iniciar câmera” e permita o acesso.");
   stopButton.disabled = true;
   commandElement.textContent = "NENHUM";
   countElement.textContent = "Câmera desligada";

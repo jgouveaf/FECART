@@ -70,7 +70,7 @@
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>96 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>97 aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⌁</span><div><small>Arduino</small><strong>USB Serial</strong></div></article>
@@ -152,8 +152,8 @@
             <canvas id="identityCanvas" aria-hidden="true"></canvas>
             <div class="camera-placeholder" id="cameraPlaceholder">
               <span>◉</span>
-              <strong>Câmera desligada</strong>
-              <small>Clique em “Iniciar câmera” e permita o acesso.</small>
+              <strong id="cameraPlaceholderTitle">Câmera desligada</strong>
+              <small id="cameraPlaceholderHint">Clique em “Iniciar câmera” e permita o acesso.</small>
             </div>
             <span class="canvas-badge"><span class="status-dot idle" id="cameraDot"></span><span id="cameraStatus">AGUARDANDO</span></span>
           </div>
@@ -292,6 +292,6 @@
   <script src="web/app.js?v=7" defer></script>
   <script src="web/robot-control.js?v=1" defer></script>
   <script src="web/face-identities.js?v=7" defer></script>
-  <script type="module" src="web/camera-gestures.js?v=7"></script>
+  <script type="module" src="web/camera-gestures.js?v=8"></script>
 </body>
 </html>

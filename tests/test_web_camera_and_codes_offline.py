@@ -125,6 +125,16 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("recognitionMemory", self.face_js)
         self.assertIn('quantum:person-tracking', self.face_js)
 
+    def test_camera_start_feedback_is_visible_on_face_tab(self) -> None:
+        self.assertIn('id="cameraPlaceholderTitle"', self.html)
+        self.assertIn('id="cameraPlaceholderHint"', self.html)
+        self.assertIn('startButton.textContent = "Abrindo câmera…"', self.camera_js)
+        self.assertIn('setPlaceholder("Não foi possível iniciar", message)', self.camera_js)
+        self.assertIn('new CustomEvent("quantum:camera-error"', self.camera_js)
+        self.assertIn('window.addEventListener("quantum:camera-error"', self.face_js)
+        for error_name in ("NotAllowedError", "NotFoundError", "NotReadableError", "OverconstrainedError"):
+            self.assertIn(error_name, self.camera_js)
+
     def test_identity_backup_can_be_exported_and_imported(self) -> None:
         self.assertIn('id="exportIdentities"', self.html)
         self.assertIn('id="importIdentities"', self.html)

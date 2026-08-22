@@ -27,6 +27,8 @@
       { x: 790, y: 170, w: 70, h: 210 }
     ]
   };
+  let simulatorVisible = true;
+  let animationFrame = 0;
 
   function resizeCanvas() {
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -42,6 +44,7 @@
     world.running = true;
     world.lastTime = performance.now();
     toggleButton.textContent = "Pausar";
+    scheduleAnimation();
   }
 
   function rayDistance() {
@@ -110,26 +113,56 @@
   }
 
   function loop(time) {
+    animationFrame = 0;
     const dt = Math.min((time - world.lastTime) / 1000, 0.05);
     world.lastTime = time;
     if (world.running) update(dt, time);
     draw();
-    requestAnimationFrame(loop);
+    if (world.running && simulatorVisible && !document.hidden) animationFrame = requestAnimationFrame(loop);
+  }
+
+  function scheduleAnimation() {
+    if (animationFrame || !world.running || !simulatorVisible || document.hidden) return;
+    world.lastTime = performance.now();
+    animationFrame = requestAnimationFrame(loop);
   }
 
   toggleButton.addEventListener("click", () => {
     world.running = !world.running;
     toggleButton.textContent = world.running ? "Pausar" : "Continuar";
-    if (!world.running) { stateValue.textContent = "PAUSADO"; commandValue.textContent = "PARAR"; }
+    if (!world.running) {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      stateValue.textContent = "PAUSADO";
+      commandValue.textContent = "PARAR";
+      draw();
+    } else scheduleAnimation();
   });
   resetButton.addEventListener("click", resetWorld);
-  menuButton.addEventListener("click", () => {
-    const open = sidebar.classList.toggle("open");
+  const mobileNavigation = window.matchMedia("(max-width: 920px)");
+  function setMenuOpen(open) {
+    sidebar.classList.toggle("open", open);
     menuButton.setAttribute("aria-expanded", String(open));
+    if (mobileNavigation.matches) {
+      sidebar.setAttribute("aria-hidden", String(!open));
+      sidebar.inert = !open;
+    } else {
+      sidebar.removeAttribute("aria-hidden");
+      sidebar.inert = false;
+    }
+  }
+  menuButton.addEventListener("click", () => setMenuOpen(!sidebar.classList.contains("open")));
+  mobileNavigation.addEventListener?.("change", () => setMenuOpen(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && sidebar.classList.contains("open")) {
+      setMenuOpen(false);
+      menuButton.focus();
+    }
   });
   document.querySelectorAll(".nav-link").forEach((link) => link.addEventListener("click", () => {
     document.querySelectorAll(".nav-link").forEach((item) => item.classList.remove("active"));
-    link.classList.add("active"); sidebar.classList.remove("open"); menuButton.setAttribute("aria-expanded", "false");
+    link.classList.add("active");
+    setMenuOpen(false);
   }));
 
   const codeElement = document.getElementById("arduinoCode");
@@ -154,7 +187,9 @@
       const selected = item === tab;
       item.classList.toggle("active", selected);
       item.setAttribute("aria-selected", String(selected));
+      item.tabIndex = selected ? 0 : -1;
     });
+    document.getElementById("codeViewer")?.setAttribute("aria-labelledby", tab.id);
     codeFilename.textContent = filename;
     codeStatus.textContent = "CARREGANDO";
     codeElement.textContent = "Carregando código…";
@@ -180,7 +215,21 @@
     }
   }
 
-  document.querySelectorAll(".code-tab").forEach((tab) => tab.addEventListener("click", () => loadArduinoCode(tab)));
+  const codeTabs = [...document.querySelectorAll(".code-tab")];
+  codeTabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => loadArduinoCode(tab));
+    tab.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const nextIndex = event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? codeTabs.length - 1
+          : (index + (event.key === "ArrowRight" ? 1 : -1) + codeTabs.length) % codeTabs.length;
+      codeTabs[nextIndex].focus();
+      loadArduinoCode(codeTabs[nextIndex]);
+    });
+  });
   copyCode.addEventListener("click", async () => {
     if (!loadedCode) return;
     try {
@@ -196,8 +245,22 @@
     }
   });
 
-  window.addEventListener("resize", resizeCanvas);
+  window.addEventListener("resize", () => { resizeCanvas(); if (!world.running) draw(); });
+  document.addEventListener("visibilitychange", scheduleAnimation);
+  const simulatorSection = document.getElementById("simulador");
+  if ("IntersectionObserver" in window && simulatorSection) {
+    new IntersectionObserver(([entry]) => {
+      simulatorVisible = entry.isIntersecting;
+      if (!simulatorVisible && animationFrame) {
+        cancelAnimationFrame(animationFrame);
+        animationFrame = 0;
+      }
+      scheduleAnimation();
+    }, { rootMargin: "180px" }).observe(simulatorSection);
+  }
   const firstCodeTab = document.querySelector(".code-tab");
   if (firstCodeTab) loadArduinoCode(firstCodeTab);
-  resizeCanvas(); resetWorld(); requestAnimationFrame(loop);
+  resizeCanvas();
+  resetWorld();
+  setMenuOpen(false);
 })();

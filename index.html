@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#07111f">
   <meta name="description" content="Quantum Tracker — painel web e laboratório de simulação do projeto FECART.">
   <title>Quantum Tracker — Painel Web</title>
-  <link rel="stylesheet" href="web/styles.css?v=7">
+  <link rel="stylesheet" href="web/styles.css?v=10">
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
   <div class="app-shell">
-    <aside class="sidebar" aria-label="Navegação principal">
+    <aside class="sidebar" id="sidebarNavigation" aria-label="Navegação principal">
       <a class="brand" href="#visao-geral" aria-label="Quantum Tracker, início">
         <span class="brand-mark">Q</span>
         <span><strong>Quantum</strong><small>Tracker</small></span>
@@ -22,6 +22,8 @@
         <a class="nav-link" href="#camera-gestos" data-section="camera-gestos"><span>◉</span> Câmera &amp; gestos</a>
         <a class="nav-link" href="#codigos" data-section="codigos"><span>⌘</span> Códigos</a>
         <a class="nav-link" href="#identidades" data-section="identidades"><span>◎</span> Identidades</a>
+        <a class="nav-link" href="#diagnostico" data-section="diagnostico"><span>⚡</span> Diagnóstico</a>
+        <a class="nav-link" href="#logs" data-section="logs"><span>≡</span> Logs</a>
         <a class="nav-link" href="#etapas" data-section="etapas"><span>✓</span> Etapas</a>
         <a class="nav-link" href="#sistema" data-section="sistema"><span>⚙</span> Sistema</a>
       </nav>
@@ -33,13 +35,13 @@
 
     <main id="conteudo">
       <header class="topbar">
-        <button class="menu-button" id="menuButton" aria-label="Abrir menu" aria-expanded="false">☰</button>
+        <button class="menu-button" id="menuButton" aria-label="Abrir menu" aria-controls="sidebarNavigation" aria-expanded="false">☰</button>
         <div>
           <p class="eyebrow">FECART · TESTE 1.0</p>
           <h1>Centro de controle</h1>
         </div>
         <div class="top-actions">
-          <span class="pill"><span class="status-dot"></span> Site online</span>
+          <span class="pill mission-pill"><span class="status-dot idle"></span><span id="overallModeStatus">AUTÔNOMO</span></span>
           <a class="icon-button" href="https://github.com/jgouveaf/FECART" target="_blank" rel="noreferrer" aria-label="Abrir código no GitHub">↗</a>
         </div>
       </header>
@@ -61,7 +63,7 @@
             <strong>95%</strong>
           </div>
           <div class="progress-track"><span style="width:95%"></span></div>
-          <p>Controle físico liberado somente após conexão USB explícita.</p>
+          <p>Controle físico liberado somente após conexão USB e confirmação explícita do operador.</p>
           <div class="mini-stats">
             <div><strong>50 mil</strong><span>quadros de stress</span></div>
             <div><strong>0</strong><span>acessos físicos</span></div>
@@ -70,7 +72,7 @@
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>98 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>138 aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⌁</span><div><small>Arduino</small><strong>USB Serial</strong></div></article>
@@ -106,10 +108,18 @@
       <section id="camera-gestos" class="page-section panel camera-panel">
         <div class="section-heading">
           <div><span class="section-tag">Controle físico supervisionado</span><h2>Câmeras &amp; robô</h2><p>Use a câmera facial para seguimento ou a câmera de mão para controlar o Arduino conectado por USB.</p></div>
-          <div class="controls">
+          <div class="controls camera-toolbar">
+            <label class="camera-device-control" for="cameraDeviceSelect"><span>Dispositivo</span><select id="cameraDeviceSelect" aria-label="Selecionar câmera"><option value="">Detectando câmeras…</option></select></label>
             <button class="secondary-button" id="stopCamera" disabled>Desligar</button>
-            <button class="primary-button compact" id="startCamera" disabled>Carregando controle…</button>
+            <button class="primary-button compact" id="startCamera">Ativar câmera</button>
           </div>
+        </div>
+        <div class="system-status-grid" aria-label="Estado geral da operação">
+          <article class="system-indicator" data-status="offline"><span>Robô</span><strong id="overallRobotStatus">OFFLINE</strong><small>Arduino USB</small></article>
+          <article class="system-indicator" data-status="offline"><span>Câmera</span><strong id="overallCameraStatus">OFFLINE</strong><small>Dispositivo local</small></article>
+          <article class="system-indicator" data-status="offline"><span>Visão</span><strong id="overallVisionStatus">OFFLINE</strong><small>Rosto e alvo</small></article>
+          <article class="system-indicator" data-status="offline"><span>Gestos</span><strong id="overallGestureStatus">OFFLINE</strong><small>MediaPipe local</small></article>
+          <article class="system-indicator" data-status="offline"><span>Comunicação</span><strong id="overallCommunicationStatus">OFFLINE</strong><small>Handshake e ACK</small></article>
         </div>
         <div class="robot-control-panel" aria-label="Controle do Arduino">
           <div class="robot-connection-row">
@@ -135,6 +145,12 @@
             <div><small>Distância</small><strong id="robotDistanceStatus">—</strong></div>
             <div><small>Arduino</small><strong id="robotStateStatus">SEM TELEMETRIA</strong></div>
           </div>
+          <div class="mission-summary" aria-label="Resumo da missão">
+            <div><small>Modo operacional</small><strong id="missionModeStatus">AUTÔNOMO</strong></div>
+            <div><small>Alvo atual</small><strong id="overallTargetStatus">NENHUM</strong></div>
+            <div><small>Obstáculo</small><strong id="overallObstacleStatus">DESCONHECIDO</strong></div>
+            <div><small>Prioridade</small><strong>EMERGÊNCIA › SENSOR › MODO</strong></div>
+          </div>
           <div class="beacon-row" id="beaconRow">
             <div><strong>Celular BLE experimental</strong><small>O sinal informa proximidade, não direção. Sem rosto visível, o robô para por segurança.</small></div>
             <span id="beaconStatus">NÃO CONECTADO</span>
@@ -142,8 +158,8 @@
           </div>
         </div>
         <div class="camera-view-tabs" role="tablist" aria-label="Escolher câmera">
-          <button class="camera-view-tab active" id="faceCameraTab" data-camera-view="face" role="tab" aria-selected="true">◎ Rosto &amp; identificação</button>
-          <button class="camera-view-tab" id="handCameraTab" data-camera-view="hand" role="tab" aria-selected="false">✋ Mão &amp; gestos</button>
+          <button class="camera-view-tab active" id="faceCameraTab" data-camera-view="face" role="tab" aria-selected="true" aria-controls="faceCameraPanel" tabindex="0">◎ Rosto &amp; identificação</button>
+          <button class="camera-view-tab" id="handCameraTab" data-camera-view="hand" role="tab" aria-selected="false" aria-controls="gestureCameraPanel" tabindex="-1">✋ Mão &amp; gestos</button>
         </div>
         <div class="camera-layout">
           <div class="camera-stage" id="cameraStage">
@@ -156,9 +172,18 @@
               <small id="cameraPlaceholderHint">Clique em “Iniciar câmera” e permita o acesso.</small>
             </div>
             <span class="canvas-badge"><span class="status-dot idle" id="cameraDot"></span><span id="cameraStatus">AGUARDANDO</span></span>
+            <span class="camera-fps-badge" id="cameraFpsBadge">— FPS</span>
           </div>
-          <aside class="gesture-console camera-hand-only" id="gestureCameraPanel" aria-live="polite" hidden>
-            <span class="section-tag">Leitura atual</span>
+          <aside class="gesture-console camera-hand-only" id="gestureCameraPanel" role="tabpanel" aria-labelledby="handCameraTab" hidden>
+            <div class="gesture-toolbar">
+              <div><span class="section-tag">Detector de mão</span><strong id="gestureDetectorStatus">OFFLINE</strong></div>
+              <button class="primary-button compact" id="toggleGestures" type="button" aria-pressed="false">Ativar gestos</button>
+            </div>
+            <div class="gesture-metrics" aria-label="Métricas do detector">
+              <div><small>Confiança</small><strong id="gestureConfidence">—</strong></div>
+              <div><small>Inferência</small><strong id="gestureFps">— FPS</strong></div>
+              <div><small>Confirmação</small><strong>4 QUADROS</strong></div>
+            </div>
             <div class="gesture-result" id="gestureResult">
               <small>Comando detectado</small>
               <strong id="gestureCommand">NENHUM</strong>
@@ -174,11 +199,14 @@
             <p class="privacy-note" id="gestureDeliveryStatus">Processamento local. Conecte o Arduino e escolha o Modo 3 para aplicar os comandos ao robô.</p>
           </aside>
         </div>
-        <div class="identity-lab camera-face-only" id="faceCameraPanel">
+        <div class="identity-lab camera-face-only" id="faceCameraPanel" role="tabpanel" aria-labelledby="faceCameraTab">
           <div class="identity-register-card">
             <div class="identity-heading">
               <div><span class="section-tag">Identificação local</span><h3>Cadastrar pessoa</h3></div>
-              <span class="identity-status"><span class="status-dot idle" id="faceStatusDot"></span><span id="faceStatus">AGUARDANDO CÂMERA</span></span>
+              <div class="identity-status-actions">
+                <span class="identity-status"><span class="status-dot idle" id="faceStatusDot"></span><span id="faceStatus">AGUARDANDO CÂMERA</span></span>
+                <button class="secondary-button compact" id="retryFaceDetection" type="button" hidden>Tentar FaceID novamente</button>
+              </div>
             </div>
             <div class="current-face">
               <div class="face-preview" id="facePreview"><span>◎</span><img id="facePreviewImage" alt="Rosto pronto para cadastro"></div>
@@ -193,6 +221,8 @@
               <div><small>Qualidade</small><strong id="faceQuality">—</strong></div>
               <div><small>Similaridade</small><strong id="faceSimilarity">—</strong></div>
               <div><small>Amostras</small><strong id="sampleProgress">0/5</strong></div>
+              <div><small>Rastreamento</small><strong id="faceTrackingState">PROCURANDO</strong></div>
+              <div><small>Direção</small><strong id="faceDirection">PARAR</strong></div>
             </div>
             <div class="sample-progress" aria-hidden="true"><span id="sampleProgressBar"></span></div>
             <div class="face-validation" aria-label="Validações do rosto">
@@ -222,6 +252,30 @@
         <p class="notice safety-notice"><strong>Segurança:</strong> o HC-SR04 e o timeout do Arduino têm prioridade sobre câmera e gestos. Teste primeiro com as rodas levantadas; use “PARADA DE EMERGÊNCIA” se houver comportamento inesperado.</p>
       </section>
 
+      <section id="diagnostico" class="page-section panel diagnostic-panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Saúde do sistema</span><h2>Diagnóstico em tempo real</h2><p>Estado real dos dispositivos, modelos e comunicação — sem esconder falhas atrás de mensagens genéricas.</p></div>
+          <span class="pill neutral">Atualização local</span>
+        </div>
+        <div class="diagnostic-grid">
+          <article class="diagnostic-card"><span>Câmera</span><strong id="diagnosticCamera">—</strong><small id="diagnosticResolution">—</small></article>
+          <article class="diagnostic-card"><span>FPS da câmera</span><strong id="diagnosticCameraFps">—</strong><small>Feed recebido</small></article>
+          <article class="diagnostic-card"><span>Modelo de gestos</span><strong id="diagnosticGestureModel">NOT_LOADED</strong><small id="diagnosticGestureFps">—</small></article>
+          <article class="diagnostic-card"><span>Arduino</span><strong id="diagnosticArduino">OFFLINE</strong><small id="diagnosticMode">AUTONOMOUS</small></article>
+          <article class="diagnostic-card"><span>Último TX</span><strong id="diagnosticLastTx">—</strong><small>Site → Arduino</small></article>
+          <article class="diagnostic-card"><span>Último RX</span><strong id="diagnosticLastRx">—</strong><small>Arduino → site</small></article>
+          <article class="diagnostic-card wide"><span>Último erro</span><strong id="diagnosticLastError">Nenhum</strong><small>Uma ação de recuperação será exibida junto ao módulo afetado.</small></article>
+        </div>
+      </section>
+
+      <section id="logs" class="page-section panel event-log-panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Caixa-preta</span><h2>Eventos da operação</h2><p>Histórico limitado para diagnosticar câmera, visão, gestos, modos e Arduino sem degradar o navegador.</p></div>
+          <div class="log-actions"><span id="eventLogCount">0/120</span><button class="secondary-button" id="clearEventLog" type="button">Limpar logs</button></div>
+        </div>
+        <ol class="event-log" id="eventLog" aria-label="Histórico de eventos do sistema"></ol>
+      </section>
+
       <section id="codigos" class="page-section panel code-panel">
         <div class="section-heading">
           <div><span class="section-tag">Arduino UNO</span><h2>Códigos do robô</h2><p>Abra, copie ou baixe os sketches usados no Arduino IDE.</p></div>
@@ -234,11 +288,11 @@
           <span><b>D7</b> IN1</span><span><b>D6</b> IN2</span><span><b>D5</b> IN3</span><span><b>D4</b> IN4</span><span><b>D3</b> TRIG</span><span><b>D2</b> ECHO</span>
         </div>
         <div class="code-tabs" role="tablist" aria-label="Sketches disponíveis">
-          <button class="code-tab active" role="tab" aria-selected="true" data-code-source="firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino" data-filename="quantum_tracker_arduino.ino">Código principal</button>
-          <button class="code-tab" role="tab" aria-selected="false" data-code-source="firmware/teste_motores/teste_motores.ino" data-filename="teste_motores.ino">Teste dos motores</button>
-          <button class="code-tab" role="tab" aria-selected="false" data-code-source="firmware/teste_sensor_hcsr04/teste_sensor_hcsr04.ino" data-filename="teste_sensor_hcsr04.ino">Teste do sensor</button>
+          <button class="code-tab active" id="codeTabMain" role="tab" aria-selected="true" aria-controls="codeViewer" tabindex="0" data-code-source="firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino" data-filename="quantum_tracker_arduino.ino">Código principal</button>
+          <button class="code-tab" id="codeTabMotors" role="tab" aria-selected="false" aria-controls="codeViewer" tabindex="-1" data-code-source="firmware/teste_motores/teste_motores.ino" data-filename="teste_motores.ino">Teste dos motores</button>
+          <button class="code-tab" id="codeTabSensor" role="tab" aria-selected="false" aria-controls="codeViewer" tabindex="-1" data-code-source="firmware/teste_sensor_hcsr04/teste_sensor_hcsr04.ino" data-filename="teste_sensor_hcsr04.ino">Teste do sensor</button>
         </div>
-        <div class="code-window">
+        <div class="code-window" id="codeViewer" role="tabpanel" aria-labelledby="codeTabMain">
           <div class="code-titlebar"><span></span><span></span><span></span><strong id="codeFilename">quantum_tracker_arduino.ino</strong><em id="codeStatus">CARREGANDO</em></div>
           <pre tabindex="0"><code id="arduinoCode">Carregando código…</code></pre>
         </div>
@@ -287,11 +341,13 @@
       <footer><span>Quantum Tracker · FECART 2026</span><span>João · Gustavo · Renato</span></footer>
     </main>
   </div>
+  <script src="web/control-state.js?v=1" defer></script>
   <script src="web/arduino-codes.js?v=4" defer></script>
   <script src="web/vendor/human/human.js?v=3.3.6" defer></script>
-  <script src="web/app.js?v=7" defer></script>
-  <script src="web/robot-control.js?v=1" defer></script>
-  <script src="web/face-identities.js?v=7" defer></script>
-  <script src="web/camera-gestures.js?v=9" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
+  <script src="web/app.js?v=8" defer></script>
+  <script src="web/camera-controller.js?v=1" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
+  <script src="web/robot-control.js?v=2" defer></script>
+  <script src="web/face-identities.js?v=8" defer></script>
+  <script src="web/camera-gestures.js?v=10" defer></script>
 </body>
 </html>

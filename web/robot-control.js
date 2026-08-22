@@ -1,6 +1,8 @@
 (() => {
   "use strict";
 
+  const control = window.QuantumControl;
+  const testConfig = window.__QUANTUM_ROBOT_TEST__ || {};
   const panel = document.getElementById("camera-gestos");
   const connectButton = document.getElementById("connectRobot");
   const disconnectButton = document.getElementById("disconnectRobot");
@@ -15,231 +17,733 @@
   const gestureDeliveryStatus = document.getElementById("gestureDeliveryStatus");
   const beaconButton = document.getElementById("connectBeacon");
   const beaconStatus = document.getElementById("beaconStatus");
+  const modeButtons = [...document.querySelectorAll(".robot-mode")];
 
-  const MODE_NAMES = { 1: "AUTÔNOMO", 2: "SEGUIR PESSOA", 3: "GESTOS" };
+  if (!panel || !connectButton || !disconnectButton || !emergencyButton) {
+    console.error("Controle do robô não iniciou: elementos obrigatórios ausentes.");
+    return;
+  }
+
+  const MODE_NAMES = Object.freeze({ 1: "AUTÔNOMO", 2: "SEGUIR PESSOA", 3: "GESTOS" });
   const VALID_COMMANDS = new Set(["FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]);
-  const COMMAND_HEARTBEAT_MS = 500;
-  const INPUT_TIMEOUT_MS = 900;
+  const COMMAND_HEARTBEAT_MS = Number(testConfig.commandHeartbeatMs) || 500;
+  const INPUT_TIMEOUT_MS = Number(testConfig.inputTimeoutMs) || 900;
+  const READY_TIMEOUT_MS = Number(testConfig.readyTimeoutMs) || 6500;
+  const ACK_TIMEOUT_MS = Number(testConfig.ackTimeoutMs) || 1000;
+  const MAX_EVENT_AGE_MS = Number(testConfig.maxEventAgeMs) || 1200;
+  const MAX_QUEUED_MOTION_AGE_MS = Number(testConfig.maxQueuedMotionAgeMs) || 350;
+  const MAX_READ_BUFFER = 512;
+  const REQUIRED_FIRMWARE_READY = "QT:READY:V3";
 
   let port = null;
   let reader = null;
   let writer = null;
+  let transportOpen = false;
   let connected = false;
   let closing = false;
+  let closePromise = null;
   let readBuffer = "";
-  let currentMode = 1;
+  let readTask = null;
+  let connectionGeneration = 0;
+  let operationGeneration = 0;
+  let modeGeneration = 0;
+  let activeMode = Number(control?.state?.mode?.id) || 1;
+  let confirmedMode = null;
+  let modeTransitioning = false;
+  let modeActivatedAt = performance.now();
   let emergencyActive = false;
+  let emergencyOwner = null;
   let lastIntent = "PARAR";
-  let lastInputAt = 0;
+  let lastFreshInputAt = 0;
   let lastWriteAt = 0;
   let lastWrittenCommand = "";
-  let writeChain = Promise.resolve();
+  let lastAcknowledgedCommand = "PARAR";
+  let motionAckInFlight = false;
+  let pendingMotion = null;
+  let consecutiveMotionFailures = 0;
+  let writeTail = Promise.resolve();
+  let lineWaiters = new Set();
+  let splitBrainHandling = false;
   let beaconDevice = null;
 
   function delay(milliseconds) {
     return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
   }
 
-  function setConnection(text, active, hint = "") {
-    connectionStatus.textContent = text;
-    connectionDot.classList.toggle("idle", !active);
-    if (hint) connectionHint.textContent = hint;
+  function cancelled(message = "Operação substituída por uma solicitação mais recente.") {
+    const error = new Error(message);
+    error.name = "AbortError";
+    return error;
   }
 
-  function setMode(mode, send = true) {
-    currentMode = Number(mode);
-    panel.dataset.robotMode = String(currentMode);
-    modeStatus.textContent = MODE_NAMES[currentMode];
-    document.querySelectorAll(".robot-mode").forEach((button) => {
-      const selected = Number(button.dataset.robotMode) === currentMode;
-      button.classList.toggle("active", selected);
-      button.setAttribute("aria-checked", String(selected));
-    });
-    lastIntent = currentMode === 1 ? "FRENTE" : "PARAR";
-    lastInputAt = performance.now();
-    commandStatus.textContent = lastIntent;
-    if (currentMode === 2) document.getElementById("faceCameraTab").click();
-    if (currentMode === 3) document.getElementById("handCameraTab").click();
-    if (send && connected) {
-      sendLine("CMD:PARAR", true);
-      sendLine(`MODE:${currentMode}`, true);
+  function log(level, source, message, details = null) {
+    control?.log?.(level, source, message, details);
+  }
+
+  function patch(section, values, meta = {}) {
+    try { control?.patch?.(section, values, meta); } catch (error) { console.warn("Estado central não aceitou atualização", error); }
+  }
+
+  function reportError(message, error = null) {
+    const detail = error?.message && error.message !== message ? `${message}: ${error.message}` : message;
+    patch("diagnostics", { lastError: detail }, { source: "robot-serial" });
+    log("ERROR", "ARDUINO", detail);
+  }
+
+  function setConnection(text, status, hint = "") {
+    if (connectionStatus) connectionStatus.textContent = text;
+    if (connectionDot) {
+      connectionDot.classList.toggle("idle", status !== "ONLINE");
+      connectionDot.dataset.status = status.toLowerCase();
     }
-    updateDeliveryHint();
+    if (hint && connectionHint) connectionHint.textContent = hint;
+    patch("communication", { status }, { source: "robot-serial" });
+    patch("robot", { connected: status === "ONLINE", status }, { source: "robot-serial" });
+  }
+
+  function markTx(line) {
+    patch("communication", { lastTx: line, status: splitBrainHandling ? "ERROR" : connected ? "ONLINE" : "CONNECTING" }, { source: "serial-tx" });
+  }
+
+  function markRx(line) {
+    patch("communication", { lastRx: line, status: splitBrainHandling ? "ERROR" : connected ? "ONLINE" : "CONNECTING" }, { source: "serial-rx" });
+  }
+
+  function renderMode(activeId = activeMode, requestedId = null) {
+    panel.dataset.robotMode = String(activeId);
+    const activeLabel = MODE_NAMES[activeId] || String(activeId);
+    if (modeStatus) modeStatus.textContent = requestedId ? `${activeLabel} → ${MODE_NAMES[requestedId]}` : activeLabel;
+    for (const button of modeButtons) {
+      const id = Number(button.dataset.robotMode);
+      const selected = id === activeId && requestedId === null;
+      button.classList.toggle("active", selected);
+      button.classList.toggle("pending", id === requestedId);
+      button.setAttribute("aria-checked", String(selected));
+      button.setAttribute("aria-busy", String(id === requestedId));
+      button.tabIndex = id === (requestedId || activeId) ? 0 : -1;
+    }
   }
 
   function updateDeliveryHint() {
-    if (currentMode !== 3) {
-      gestureDeliveryStatus.textContent = "Gestos detectados, mas só são enviados no Modo 3.";
-    } else if (!connected) {
-      gestureDeliveryStatus.textContent = "Gesto reconhecido. Conecte o Arduino por USB para aplicá-lo ao robô.";
-    } else {
-      gestureDeliveryStatus.textContent = `Modo 3 ativo · comando ${lastIntent} enviado ao Arduino por USB.`;
+    if (!gestureDeliveryStatus) return;
+    if (activeMode !== 3) gestureDeliveryStatus.textContent = "Gestos detectados, mas só são enviados no Modo 3.";
+    else if (!connected) gestureDeliveryStatus.textContent = "Gesto reconhecido. Conecte o Arduino por USB para aplicá-lo ao robô.";
+    else if (modeTransitioning) gestureDeliveryStatus.textContent = "Aguarde a confirmação do modo pelo Arduino.";
+    else gestureDeliveryStatus.textContent = `Modo 3 ativo · último comando confirmado: ${lastAcknowledgedCommand}.`;
+  }
+
+  function setEmergencyUi(active, state = active ? "ESTOP" : null, owner = active ? "firmware" : null) {
+    emergencyActive = active;
+    emergencyOwner = active ? owner : null;
+    emergencyButton.textContent = active ? "Liberar após conferir" : "PARADA DE EMERGÊNCIA";
+    if (state && stateStatus) stateStatus.textContent = state;
+    patch("safety", { emergency: active, status: active ? "EMERGENCY" : "MONITORING" }, { source: "robot-safety" });
+  }
+
+  function rejectWaiters(error, generation = null) {
+    for (const waiter of [...lineWaiters]) {
+      if (generation === null || waiter.connectionGeneration === generation) waiter.reject(error);
     }
   }
 
-  function sendLine(line, urgent = false) {
-    if (!connected || !writer) return Promise.resolve(false);
-    const payload = `${line}\n`;
-    writeChain = writeChain.then(async () => {
-      if (!connected || !writer) return false;
-      await writer.write(new TextEncoder().encode(payload));
+  function rejectSupersededOperationWaiters(activeOperationToken) {
+    for (const waiter of [...lineWaiters]) {
+      if (waiter.operationGeneration !== null && waiter.operationGeneration !== activeOperationToken) {
+        waiter.reject(cancelled());
+      }
+    }
+  }
+
+  function waitForLine(predicate, options = {}) {
+    const connectionToken = options.connectionToken ?? connectionGeneration;
+    const operationToken = options.operationToken ?? null;
+    const timeoutMs = options.timeoutMs ?? ACK_TIMEOUT_MS;
+    const label = options.label || "resposta do Arduino";
+    let settled = false;
+    let timeoutId = 0;
+    let resolvePromise;
+    let rejectPromise;
+
+    const promise = new Promise((resolve, reject) => {
+      resolvePromise = resolve;
+      rejectPromise = reject;
+    });
+    // A transação pode ser cancelada enquanto ainda aguarda a fila de escrita.
+    // Instala o tratador imediatamente para não gerar unhandledrejection; quem
+    // aguarda `promise` continua recebendo a rejeição original normalmente.
+    promise.catch(() => {});
+    const waiter = {
+      connectionGeneration: connectionToken,
+      operationGeneration: operationToken,
+      accept(line) {
+        if (settled || connectionToken !== connectionGeneration) return false;
+        let matches = false;
+        try { matches = Boolean(predicate(line)); } catch (error) { this.reject(error); return false; }
+        if (!matches) return false;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        lineWaiters.delete(waiter);
+        resolvePromise(line);
+        return true;
+      },
+      reject(error) {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        lineWaiters.delete(waiter);
+        rejectPromise(error);
+      },
+    };
+    timeoutId = window.setTimeout(() => waiter.reject(new Error(`Tempo esgotado aguardando ${label}.`)), timeoutMs);
+    lineWaiters.add(waiter);
+    return { promise, cancel: (error = cancelled()) => waiter.reject(error) };
+  }
+
+  function enqueueLine(line, options = {}) {
+    const connectionToken = options.connectionToken ?? connectionGeneration;
+    const operationToken = options.operationToken ?? null;
+    const modeToken = options.modeToken ?? null;
+    const maxAgeMs = options.maxAgeMs ?? Infinity;
+    const createdAt = performance.now();
+    const payload = new TextEncoder().encode(`${line}\n`);
+    const task = writeTail.then(async () => {
+      if (!transportOpen || !writer || connectionToken !== connectionGeneration) return false;
+      if (operationToken !== null && operationToken !== operationGeneration) return false;
+      if (modeToken !== null && modeToken !== modeGeneration) return false;
+      if (performance.now() - createdAt > maxAgeMs) return false;
+      await writer.write(payload);
+      markTx(line);
       if (line.startsWith("CMD:")) {
         lastWrittenCommand = line.slice(4);
         lastWriteAt = performance.now();
-        commandStatus.textContent = lastWrittenCommand;
       }
       return true;
-    }).catch((error) => {
-      console.error("Falha ao enviar comando serial", error);
-      handleConnectionFailure(error);
-      return false;
     });
-    if (urgent) lastWriteAt = 0;
-    return writeChain;
+    writeTail = task.catch(() => false);
+    return task;
   }
 
-  function deliverIntent(command, source) {
-    if (!VALID_COMMANDS.has(command)) return;
-    lastIntent = command;
-    lastInputAt = performance.now();
-    commandStatus.textContent = command;
-    const urgent = command === "PARAR";
-    const changed = command !== lastWrittenCommand;
-    if (connected && !emergencyActive && (urgent || changed || performance.now() - lastWriteAt >= COMMAND_HEARTBEAT_MS)) {
-      sendLine(`CMD:${command}`, urgent);
+  async function transact(line, predicate, options = {}) {
+    const connectionToken = options.connectionToken ?? connectionGeneration;
+    const waiter = waitForLine(predicate, {
+      connectionToken,
+      operationToken: options.operationToken ?? null,
+      timeoutMs: options.timeoutMs ?? ACK_TIMEOUT_MS,
+      label: options.label || `confirmação de ${line}`,
+    });
+    try {
+      const sent = await enqueueLine(line, options);
+      if (!sent) throw cancelled(`Envio de ${line} cancelado.`);
+      return await waiter.promise;
+    } catch (error) {
+      waiter.cancel(error);
+      throw error;
     }
-    if (source === "gesture") updateDeliveryHint();
   }
 
-  function parseTelemetry(line) {
-    if (!line) return;
-    if (line === "QT:READY:V3") {
-      stateStatus.textContent = "FIRMWARE V3 PRONTO";
+  function resolveLineWaiters(line) {
+    if (line.startsWith("ERRO:")) {
+      const error = new Error(line.replaceAll("_", " "));
+      for (const waiter of [...lineWaiters]) waiter.reject(error);
       return;
     }
-    if (line.startsWith("ALERTA:")) {
-      stateStatus.textContent = line.slice(7).replaceAll("_", " ");
-      emergencyActive = true;
-      emergencyButton.textContent = "Liberar após conferir";
-      return;
-    }
-    if (!line.startsWith("QT|")) return;
+    for (const waiter of [...lineWaiters]) waiter.accept(line);
+  }
+
+  function telemetryValues(line) {
     const values = {};
     for (const part of line.split("|").slice(1)) {
       const separator = part.indexOf(":");
       if (separator > 0) values[part.slice(0, separator)] = part.slice(separator + 1);
     }
-    if (values.MODE) modeStatus.textContent = MODE_NAMES[Number(values.MODE)] || values.MODE;
-    if (values.DIST) distanceStatus.textContent = values.DIST === "ERR" ? "SEM ECO" : `${values.DIST} cm`;
-    if (values.CMD) commandStatus.textContent = values.CMD;
-    if (values.STATE) stateStatus.textContent = values.STATE.replaceAll("_", " ");
+    return values;
   }
 
-  async function readLoop() {
-    while (port?.readable && connected && !closing) {
-      reader = port.readable.getReader();
-      try {
-        while (connected && !closing) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          readBuffer += new TextDecoder().decode(value, { stream: true });
-          const lines = readBuffer.split(/\r?\n/);
-          readBuffer = lines.pop() || "";
-          lines.forEach((line) => parseTelemetry(line.trim()));
-        }
-      } catch (error) {
-        if (!closing) handleConnectionFailure(error);
-      } finally {
-        reader.releaseLock();
-        reader = null;
+  function failClosed(message) {
+    if (splitBrainHandling || !transportOpen) return;
+    splitBrainHandling = true;
+    ++operationGeneration;
+    ++modeGeneration;
+    lastIntent = "PARAR";
+    lastFreshInputAt = 0;
+    pendingMotion = null;
+    setEmergencyUi(true, "FALHA DE SINCRONIZAÇÃO · ESTOP", "fault");
+    setConnection("FALHA DE SINCRONIZAÇÃO", "ERROR", message);
+    reportError(message);
+    enqueueLine("ESTOP", { connectionToken: connectionGeneration }).catch(() => {});
+  }
+
+  function parseTelemetry(line) {
+    if (!line) return;
+    markRx(line);
+    resolveLineWaiters(line);
+
+    if (line.startsWith("QT:READY:")) {
+      if (stateStatus) stateStatus.textContent = line === REQUIRED_FIRMWARE_READY ? "FIRMWARE V3 PRONTO" : "FIRMWARE INCOMPATÍVEL";
+      return;
+    }
+    if (line.startsWith("ALERTA:")) {
+      const alert = line.slice(7).replaceAll("_", " ");
+      setEmergencyUi(true, alert, line === "ALERTA:SENSOR_BLOQUEADO" ? "sensor" : "firmware");
+      log("ERROR", "SEGURANÇA", alert);
+      return;
+    }
+    if (line.startsWith("EVENTO:")) {
+      const eventName = line.slice(7).replaceAll("_", " ");
+      if (line === "EVENTO:SENSOR_RECUPERADO" && emergencyOwner === "sensor") setEmergencyUi(false);
+      log("INFO", "ARDUINO", eventName);
+      return;
+    }
+    if (line.startsWith("ERRO:")) {
+      reportError(line.replaceAll("_", " "));
+      return;
+    }
+    if (!line.startsWith("QT|")) return;
+
+    const values = telemetryValues(line);
+    const firmwareMode = Number(values.MODE);
+    const distance = values.DIST === "ERR" ? null : Number(values.DIST);
+    const firmwareState = values.STATE?.replaceAll("_", " ") || "SEM ESTADO";
+    if (Number.isInteger(firmwareMode) && firmwareMode >= 1 && firmwareMode <= 3) {
+      if (modeStatus && !modeTransitioning) modeStatus.textContent = MODE_NAMES[firmwareMode];
+      if (connected && !modeTransitioning && firmwareMode !== activeMode) {
+        confirmedMode = firmwareMode;
+        failClosed(`O site está no modo ${MODE_NAMES[activeMode]}, mas o Arduino informou ${MODE_NAMES[firmwareMode]}.`);
+      } else if (!modeTransitioning) {
+        confirmedMode = firmwareMode;
       }
     }
+    if (distanceStatus) distanceStatus.textContent = distance === null || !Number.isFinite(distance) ? "SEM ECO" : `${distance.toFixed(1)} cm`;
+    if (values.CMD && commandStatus) commandStatus.textContent = values.CMD;
+    if (stateStatus) stateStatus.textContent = firmwareState;
+
+    if (values.STATE === "ESTOP") setEmergencyUi(true, "ESTOP", emergencyOwner || "firmware");
+    else if (values.STATE === "SENSOR_FAIL" && !["operator", "fault", "transition"].includes(emergencyOwner)) {
+      setEmergencyUi(true, "SENSOR SEM RESPOSTA · MOTORES BLOQUEADOS", "sensor");
+    } else if (emergencyActive && ["firmware", "sensor"].includes(emergencyOwner) && !modeTransitioning) {
+      setEmergencyUi(false);
+    }
+
+    const obstacle = values.STATE === "DESVIANDO"
+      ? "DESVIANDO"
+      : Number.isFinite(distance)
+        ? (distance <= 20 ? "DETECTADO" : "LIVRE")
+        : "SEM LEITURA";
+    patch("robot", {
+      connected,
+      status: splitBrainHandling || values.STATE === "SENSOR_FAIL" ? "ERROR" : connected ? "ONLINE" : "CONNECTING",
+      command: values.CMD || "PARAR",
+      firmwareState,
+      distance,
+    }, { source: "arduino-telemetry" });
+    patch("safety", {
+      emergency: emergencyActive || values.STATE === "ESTOP",
+      status: values.STATE === "SENSOR_FAIL" ? "SENSOR_FAIL" : emergencyActive || values.STATE === "ESTOP" ? "EMERGENCY" : "MONITORING",
+      obstacle,
+    }, { source: "arduino-telemetry" });
+  }
+
+  async function readLoop(connectionToken) {
+    const decoder = new TextDecoder();
+    try {
+      reader = port.readable.getReader();
+      while (transportOpen && !closing && connectionToken === connectionGeneration) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        readBuffer += decoder.decode(value, { stream: true });
+        if (readBuffer.length > MAX_READ_BUFFER && !readBuffer.includes("\n")) {
+          readBuffer = "";
+          reportError("A resposta serial excedeu o limite e foi descartada.");
+          continue;
+        }
+        const lines = readBuffer.split(/\r?\n/);
+        readBuffer = lines.pop() || "";
+        for (const line of lines) parseTelemetry(line.trim());
+      }
+      if (!closing && transportOpen && connectionToken === connectionGeneration) throw new Error("A leitura serial foi encerrada inesperadamente.");
+    } catch (error) {
+      if (!closing && connectionToken === connectionGeneration) handleConnectionFailure(error);
+    } finally {
+      try { reader?.releaseLock(); } catch { /* trava já liberada */ }
+      reader = null;
+    }
+  }
+
+  async function initializeFirmware(connectionToken, operationToken) {
+    const ready = waitForLine((line) => line.startsWith("QT:READY:"), {
+      connectionToken,
+      timeoutMs: READY_TIMEOUT_MS,
+      label: "QT:READY do firmware",
+    });
+    readTask = readLoop(connectionToken);
+    // O UNO normalmente reinicia ao abrir a porta, mas alguns cabos/clones nao
+    // fazem isso. HELLO torna o handshake deterministico nos dois casos.
+    enqueueLine("HELLO", { connectionToken, operationToken }).catch(() => {});
+    const readyLine = await ready.promise;
+    if (readyLine !== REQUIRED_FIRMWARE_READY) throw new Error(`Firmware incompatível: recebido ${readyLine}; esperado ${REQUIRED_FIRMWARE_READY}.`);
+
+    await transact("ESTOP", (line) => line === "OK:ESTOP", { connectionToken, operationToken, label: "ESTOP inicial" });
+    setEmergencyUi(true, "INICIALIZAÇÃO SEGURA", "handshake");
+    await transact("CMD:PARAR", (line) => line === "OK:CMD:PARAR", { connectionToken, operationToken });
+    const desiredMode = Number(control?.state?.mode?.id) || activeMode;
+    await transact(`MODE:${desiredMode}`, (line) => line === `OK:MODE:${desiredMode}`, { connectionToken, operationToken });
+    confirmedMode = desiredMode;
+    activeMode = desiredMode;
+    setEmergencyUi(true, `${MODE_NAMES[desiredMode]} PRONTO · CONFIRME A LIBERAÇÃO`, "handshake");
+  }
+
+  function setControlsForConnection(status) {
+    const online = status === "ONLINE";
+    const busy = status === "CONNECTING";
+    connectButton.disabled = online || busy;
+    disconnectButton.disabled = !online && !busy;
+    emergencyButton.disabled = !online;
+    for (const button of modeButtons) button.disabled = busy;
   }
 
   async function connectRobot() {
-    if (connected) return;
+    if (transportOpen || closing) return false;
     if (!window.isSecureContext || !("serial" in navigator)) {
-      setConnection("NAVEGADOR INCOMPATÍVEL", false, "Abra o site no Chrome ou Edge para computador usando HTTPS.");
-      return;
+      setConnection("NAVEGADOR INCOMPATÍVEL", "ERROR", "Abra o site no Chrome ou Edge para computador usando HTTPS.");
+      reportError("Web Serial não está disponível neste navegador.");
+      return false;
     }
-    connectButton.disabled = true;
-    setConnection("SELECIONE A PORTA", false, "Escolha Arduino UNO ou a porta USB correspondente.");
+
+    const connectionToken = ++connectionGeneration;
+    const operationToken = ++operationGeneration;
+    rejectSupersededOperationWaiters(operationToken);
+    splitBrainHandling = false;
+    connected = false;
+    confirmedMode = null;
+    setControlsForConnection("CONNECTING");
+    setConnection("SELECIONE A PORTA", "CONNECTING", "Escolha Arduino UNO ou a porta USB correspondente.");
+    log("INFO", "ARDUINO", "Seleção da porta USB solicitada");
+
     try {
       port = await navigator.serial.requestPort();
+      if (connectionToken !== connectionGeneration) throw cancelled();
       await port.open({ baudRate: 9600, bufferSize: 1024 });
+      if (connectionToken !== connectionGeneration) throw cancelled();
       writer = port.writable.getWriter();
-      connected = true;
+      transportOpen = true;
       closing = false;
       readBuffer = "";
-      disconnectButton.disabled = false;
-      emergencyButton.disabled = false;
-      setConnection("INICIALIZANDO", true, "O Arduino UNO reinicia ao abrir a porta. Aguarde cerca de 2 segundos.");
-      readLoop();
-      await delay(2300);
-      if (!connected) return;
-      setConnection("CONECTADO", true, "Comandos e telemetria ativos pelo cabo USB.");
-      await sendLine(`MODE:${currentMode}`, true);
-      await sendLine("STATUS", true);
+      writeTail = Promise.resolve();
+      setConnection("AGUARDANDO FIRMWARE", "CONNECTING", "Validando QT:READY e colocando os motores em estado seguro.");
+      await initializeFirmware(connectionToken, operationToken);
+      if (connectionToken !== connectionGeneration || operationToken !== operationGeneration) throw cancelled();
+
+      connected = true;
+      modeActivatedAt = performance.now();
+      ++modeGeneration;
+      lastIntent = "PARAR";
+      lastFreshInputAt = 0;
+      lastWrittenCommand = "";
+      lastAcknowledgedCommand = "PARAR";
+      consecutiveMotionFailures = 0;
+      pendingMotion = null;
+      setControlsForConnection("ONLINE");
+      setConnection("CONECTADO · BLOQUEADO", "ONLINE", `Firmware V3 confirmado em ${MODE_NAMES[activeMode]}. Confira as rodas e clique em “Liberar após conferir”.`);
+      renderMode(activeMode);
       updateDeliveryHint();
+      log("WARNING", "SEGURANÇA", `Arduino sincronizado em ${MODE_NAMES[activeMode]} e mantido em ESTOP até liberação explícita`);
+      return true;
     } catch (error) {
-      if (error?.name === "NotFoundError") setConnection("SELEÇÃO CANCELADA", false, "Nenhuma porta foi escolhida.");
-      else setConnection("FALHA NA CONEXÃO", false, error?.message || "Não foi possível abrir a porta USB.");
-      await closePort(false);
-    } finally {
-      connectButton.disabled = connected;
+      if (error?.name === "NotFoundError") {
+        setConnection("SELEÇÃO CANCELADA", "OFFLINE", "Nenhuma porta foi escolhida.");
+      } else if (error?.name !== "AbortError") {
+        setConnection("FALHA NA CONEXÃO", "ERROR", error?.message || "Não foi possível abrir ou validar a porta USB.");
+        reportError("Falha ao conectar ao Arduino", error);
+      }
+      await closePort({ sendEstop: transportOpen, reason: "CONNECT_FAILED", preserveStatus: true });
+      return false;
     }
   }
 
-  async function closePort(sendStop = true) {
-    if (closing) return;
-    closing = true;
-    if (sendStop && connected && writer) {
-      try { await writer.write(new TextEncoder().encode("CMD:PARAR\n")); } catch { /* porta já removida */ }
+  async function prepareModeDependencies(modeId, operationToken) {
+    if (operationToken !== operationGeneration) throw cancelled();
+    if (modeId === 2) {
+      await window.quantumGestureController?.selectView?.("face");
+      if (window.quantumCameraController && !window.quantumCameraController.active) await window.quantumCameraController.start();
+    } else if (modeId === 3) {
+      await window.quantumGestureController?.selectView?.("hand");
+      if (window.quantumGestureController?.enable) await window.quantumGestureController.enable();
+      else if (window.quantumCameraController && !window.quantumCameraController.active) await window.quantumCameraController.start();
     }
-    connected = false;
-    try { await reader?.cancel(); } catch { /* leitura já encerrada */ }
-    try { writer?.releaseLock(); } catch { /* trava já liberada */ }
-    writer = null;
-    try { await port?.close(); } catch { /* porta já desconectada */ }
-    port = null;
-    closing = false;
-    connectButton.disabled = false;
-    disconnectButton.disabled = true;
-    emergencyButton.disabled = true;
-    emergencyActive = false;
-    setConnection("DESCONECTADO", false, "Use Chrome ou Edge no computador e conecte o cabo USB.");
-    stateStatus.textContent = "SEM TELEMETRIA";
-    distanceStatus.textContent = "—";
-    commandStatus.textContent = "PARAR";
+    if (operationToken !== operationGeneration) throw cancelled();
+  }
+
+  async function executeModeTransition(detail) {
+    const nextMode = Number(detail?.next?.id);
+    const previousMode = Number(detail?.previous?.id) || activeMode;
+    if (!MODE_NAMES[nextMode]) return;
+    const operationToken = ++operationGeneration;
+    rejectSupersededOperationWaiters(operationToken);
+    const connectionToken = connectionGeneration;
+    const transitionModeToken = ++modeGeneration;
+    modeTransitioning = true;
+    lastIntent = "PARAR";
+    lastFreshInputAt = 0;
+    renderMode(previousMode, nextMode);
     updateDeliveryHint();
+
+    try {
+      const preserveEmergency = connected && emergencyActive;
+      const preservedEmergencyOwner = emergencyOwner;
+      if (connected) {
+        if (emergencyActive && ["fault", "sensor", "firmware"].includes(emergencyOwner)) {
+          throw new Error("Resolva a falha de segurança antes de trocar o modo.");
+        }
+        if (!preserveEmergency) {
+          await transact("ESTOP", (line) => line === "OK:ESTOP", { connectionToken, operationToken, label: "parada para troca de modo" });
+          setEmergencyUi(true, "TROCA DE MODO · MOTORES BLOQUEADOS", "transition");
+        }
+        await transact("CMD:PARAR", (line) => line === "OK:CMD:PARAR", { connectionToken, operationToken });
+      }
+
+      await prepareModeDependencies(nextMode, operationToken);
+      if (connected) {
+        await transact(`MODE:${nextMode}`, (line) => line === `OK:MODE:${nextMode}`, { connectionToken, operationToken });
+        confirmedMode = nextMode;
+        if (preserveEmergency) {
+          setEmergencyUi(true, `${MODE_NAMES[nextMode]} PRONTO · CONFIRME A LIBERAÇÃO`, preservedEmergencyOwner || "operator");
+        } else {
+          await transact("RESET_ESTOP", (line) => line === "OK:RESET_ESTOP", { connectionToken, operationToken });
+          setEmergencyUi(false);
+        }
+      }
+      if (operationToken !== operationGeneration || transitionModeToken !== modeGeneration) throw cancelled();
+
+      activeMode = nextMode;
+      modeActivatedAt = performance.now();
+      lastIntent = nextMode === 1 ? "FRENTE" : "PARAR";
+      lastFreshInputAt = 0;
+      modeTransitioning = false;
+      control?.commitMode?.(nextMode, detail?.source || "robot-serial");
+      renderMode(activeMode);
+      updateDeliveryHint();
+      log("INFO", "ARDUINO", connected ? `Modo ${MODE_NAMES[nextMode]} confirmado pelo firmware` : `Modo ${MODE_NAMES[nextMode]} preparado para a próxima conexão`);
+    } catch (error) {
+      if (operationToken !== operationGeneration) return;
+      modeTransitioning = false;
+      activeMode = previousMode;
+      lastIntent = "PARAR";
+      lastFreshInputAt = 0;
+      control?.rejectMode?.(error, detail?.source || "robot-serial");
+      renderMode(activeMode);
+      updateDeliveryHint();
+      if (connected) {
+        setEmergencyUi(true, "TROCA DE MODO FALHOU · ESTOP", "fault");
+        enqueueLine("ESTOP", { connectionToken }).catch(() => {});
+      }
+      reportError(`Não foi possível ativar ${MODE_NAMES[nextMode]}`, error);
+    }
   }
 
-  function handleConnectionFailure(error) {
-    console.warn("Conexão serial encerrada", error);
-    setConnection("CONEXÃO PERDIDA", false, "O cabo foi removido ou a porta deixou de responder.");
-    closePort(false);
+  function requestMode(modeId, source = "ui") {
+    const nextMode = Number(modeId);
+    if (!MODE_NAMES[nextMode]) return false;
+    if (control?.requestMode) return Boolean(control.requestMode(nextMode, source));
+    const previous = { id: activeMode, label: MODE_NAMES[activeMode] };
+    executeModeTransition({ previous, next: { id: nextMode, label: MODE_NAMES[nextMode] }, source });
+    return true;
+  }
+
+  function eventIsFresh(detail) {
+    if (detail?.modeGeneration != null && Number(detail.modeGeneration) !== modeGeneration) return false;
+    const stamp = Number(detail?.emittedAt ?? detail?.timestamp ?? detail?.detectedAt);
+    if (!Number.isFinite(stamp)) return true;
+    const now = stamp > 1e12 ? Date.now() : performance.now();
+    const activation = stamp > 1e12 ? Date.now() - (performance.now() - modeActivatedAt) : modeActivatedAt;
+    const age = now - stamp;
+    return age >= -1000 && age <= MAX_EVENT_AGE_MS && stamp >= activation;
+  }
+
+  function mayAcceptInput(expectedMode, detail) {
+    const centralMode = control?.state?.mode;
+    return connected
+      && !modeTransitioning
+      && !emergencyActive
+      && activeMode === expectedMode
+      && confirmedMode === expectedMode
+      && (!centralMode || (centralMode.phase === "ACTIVE" && Number(centralMode.id) === expectedMode))
+      && eventIsFresh(detail);
+  }
+
+  function sendMotion(command, options = {}) {
+    if (!VALID_COMMANDS.has(command) || !connected || emergencyActive || modeTransitioning) return Promise.resolve(false);
+    const modeToken = options.modeToken ?? modeGeneration;
+    if (motionAckInFlight) {
+      pendingMotion = { command, modeToken, createdAt: performance.now() };
+      return Promise.resolve(false);
+    }
+    const connectionToken = connectionGeneration;
+    const operationToken = operationGeneration;
+    motionAckInFlight = true;
+    return transact(`CMD:${command}`, (line) => {
+      if (line === `OK:CMD:${command}`) return true;
+      return line.startsWith("QT|") && telemetryValues(line).CMD === command;
+    }, {
+      connectionToken,
+      operationToken,
+      modeToken,
+      maxAgeMs: MAX_QUEUED_MOTION_AGE_MS,
+      label: `ACK do comando ${command}`,
+    }).then(() => {
+      if (connectionToken !== connectionGeneration || modeToken !== modeGeneration) return false;
+      consecutiveMotionFailures = 0;
+      lastAcknowledgedCommand = command;
+      if (commandStatus) commandStatus.textContent = command;
+      if (activeMode === 3) updateDeliveryHint();
+      return true;
+    }).catch((error) => {
+      if (error?.name === "AbortError") return false;
+      consecutiveMotionFailures += 1;
+      reportError(`Arduino não confirmou CMD:${command} (${consecutiveMotionFailures}/2)`, error);
+      if (consecutiveMotionFailures >= 2) failClosed("Dois comandos de movimento ficaram sem confirmação do Arduino.");
+      return false;
+    }).finally(() => {
+      motionAckInFlight = false;
+      const queued = pendingMotion;
+      pendingMotion = null;
+      if (queued && performance.now() - queued.createdAt <= MAX_QUEUED_MOTION_AGE_MS) {
+        sendMotion(queued.command, { modeToken: queued.modeToken });
+      }
+    });
+  }
+
+  function acceptIntent(command, source, options = {}) {
+    if (!VALID_COMMANDS.has(command) || !connected || emergencyActive || modeTransitioning) return false;
+    if (options.fresh !== false) lastFreshInputAt = performance.now();
+    lastIntent = command;
+    const changed = command !== lastWrittenCommand;
+    const due = performance.now() - lastWriteAt >= COMMAND_HEARTBEAT_MS;
+    if (command === "PARAR" || changed || due) sendMotion(command);
+    if (source === "gesture") updateDeliveryHint();
+    return true;
+  }
+
+  function watchdogTick() {
+    if (!connected || emergencyActive || modeTransitioning || activeMode === 1) return;
+    const hasFreshInput = lastFreshInputAt > 0 && performance.now() - lastFreshInputAt <= INPUT_TIMEOUT_MS;
+    if (!hasFreshInput) {
+      lastIntent = "PARAR";
+      sendMotion("PARAR");
+      return;
+    }
+    sendMotion(lastIntent);
   }
 
   async function toggleEmergency() {
-    if (!connected) return;
-    if (!emergencyActive) {
-      emergencyActive = true;
-      lastIntent = "PARAR";
-      await sendLine("ESTOP", true);
-      commandStatus.textContent = "PARAR";
-      emergencyButton.textContent = "Liberar após conferir";
-      stateStatus.textContent = "ESTOP";
-    } else if (window.confirm("As rodas estão livres e é seguro liberar a parada de emergência?")) {
-      await sendLine("RESET_ESTOP", true);
-      emergencyActive = false;
-      emergencyButton.textContent = "PARADA DE EMERGÊNCIA";
-      lastIntent = currentMode === 1 ? "FRENTE" : "PARAR";
+    if (!connected || modeTransitioning) return;
+    const operationToken = ++operationGeneration;
+    rejectSupersededOperationWaiters(operationToken);
+    const connectionToken = connectionGeneration;
+    ++modeGeneration;
+    lastIntent = "PARAR";
+    lastFreshInputAt = 0;
+    emergencyButton.disabled = true;
+    try {
+      if (splitBrainHandling) throw new Error("Modo dessincronizado. Desconecte e conecte novamente antes de liberar o robô.");
+      if (!emergencyActive) {
+        await transact("ESTOP", (line) => line === "OK:ESTOP", { connectionToken, operationToken });
+        setEmergencyUi(true, "ESTOP", "operator");
+        if (commandStatus) commandStatus.textContent = "PARAR";
+        log("WARNING", "SEGURANÇA", "Parada de emergência confirmada pelo Arduino");
+      } else if (window.confirm("As rodas estão livres e é seguro liberar a parada de emergência?")) {
+        await transact("RESET_ESTOP", (line) => line === "OK:RESET_ESTOP", { connectionToken, operationToken });
+        setEmergencyUi(false, MODE_NAMES[activeMode]);
+        lastIntent = activeMode === 1 ? "FRENTE" : "PARAR";
+        consecutiveMotionFailures = 0;
+        setConnection("CONECTADO", "ONLINE", `${MODE_NAMES[activeMode]} liberado pelo operador. O HC-SR04 continua soberano.`);
+        log("WARNING", "SEGURANÇA", "Parada de emergência liberada explicitamente pelo operador");
+      }
+    } catch (error) {
+      setEmergencyUi(true, "ESTOP SEM CONFIRMAÇÃO", "fault");
+      reportError("O Arduino não confirmou a operação de emergência", error);
+    } finally {
+      emergencyButton.disabled = !connected;
     }
+  }
+
+  async function closePort(options = {}) {
+    if (closePromise) return closePromise;
+    const sendEstop = options.sendEstop !== false;
+    const preserveStatus = options.preserveStatus === true;
+    const reason = options.reason || "USER";
+    const connectionToken = connectionGeneration;
+    closePromise = (async () => {
+      closing = true;
+      connected = false;
+      const closeOperationToken = ++operationGeneration;
+      rejectSupersededOperationWaiters(closeOperationToken);
+      ++modeGeneration;
+      modeTransitioning = false;
+      lastIntent = "PARAR";
+      lastFreshInputAt = 0;
+      pendingMotion = null;
+      motionAckInFlight = false;
+      consecutiveMotionFailures = 0;
+      lastAcknowledgedCommand = "PARAR";
+      if (control?.pendingMode) control.rejectMode?.(new Error("Transição cancelada porque a conexão serial foi encerrada."), "robot-disconnect");
+
+      if (sendEstop && transportOpen && writer) {
+        try {
+          await Promise.race([
+            enqueueLine("ESTOP", { connectionToken }),
+            delay(600).then(() => { throw new Error("Tempo de segurança esgotado."); }),
+          ]);
+        } catch (error) {
+          console.warn("Não foi possível confirmar ESTOP antes de fechar a porta", error);
+        }
+      }
+
+      transportOpen = false;
+      ++connectionGeneration;
+      rejectWaiters(cancelled("Conexão serial encerrada."), connectionToken);
+      try { await reader?.cancel(); } catch { /* leitura já encerrada */ }
+      try { await Promise.race([readTask || Promise.resolve(), delay(300)]); } catch { /* encerramento em andamento */ }
+      try { writer?.releaseLock(); } catch { /* escrita ainda encerrando */ }
+      writer = null;
+      try { await port?.close(); } catch { /* porta removida */ }
+      port = null;
+      reader = null;
+      readTask = null;
+      readBuffer = "";
+      writeTail = Promise.resolve();
+      confirmedMode = null;
+      splitBrainHandling = false;
+      setControlsForConnection("OFFLINE");
+      if (!preserveStatus) setConnection("DESCONECTADO", "OFFLINE", "Use Chrome ou Edge no computador e conecte o cabo USB.");
+      if (stateStatus) stateStatus.textContent = "SEM TELEMETRIA";
+      if (distanceStatus) distanceStatus.textContent = "—";
+      if (commandStatus) commandStatus.textContent = "PARAR";
+      patch("robot", {
+        connected: false,
+        ...(!preserveStatus && { status: "OFFLINE" }),
+        command: "PARAR",
+        firmwareState: "SEM TELEMETRIA",
+        distance: null,
+      }, { source: "robot-disconnect", reason });
+      if (!preserveStatus) patch("communication", { status: "OFFLINE" }, { source: "robot-disconnect", reason });
+      updateDeliveryHint();
+      log("INFO", "ARDUINO", `Conexão encerrada (${reason})`);
+      closing = false;
+    })().finally(() => { closePromise = null; });
+    return closePromise;
+  }
+
+  function handleConnectionFailure(error) {
+    if (closing) return;
+    console.warn("Conexão serial encerrada", error);
+    setConnection("CONEXÃO PERDIDA", "ERROR", "O cabo foi removido ou a porta deixou de responder.");
+    reportError("Conexão com o Arduino perdida", error);
+    closePort({ sendEstop: false, reason: "CONNECTION_LOST", preserveStatus: true });
   }
 
   async function connectBeacon() {
     if (!("bluetooth" in navigator)) {
-      beaconStatus.textContent = "WEB BLUETOOTH INDISPONÍVEL";
+      if (beaconStatus) beaconStatus.textContent = "WEB BLUETOOTH INDISPONÍVEL";
       return;
     }
     beaconButton.disabled = true;
@@ -249,44 +753,93 @@
       beaconDevice.addEventListener("advertisementreceived", (event) => {
         const rssi = Number(event.rssi);
         const proximity = rssi >= -60 ? "PERTO" : rssi >= -75 ? "MÉDIO" : "LONGE";
-        beaconStatus.textContent = Number.isFinite(rssi) ? `${proximity} · ${rssi} dBm` : "SINAL RECEBIDO";
+        if (beaconStatus) beaconStatus.textContent = Number.isFinite(rssi) ? `${proximity} · ${rssi} dBm` : "SINAL RECEBIDO";
         window.dispatchEvent(new CustomEvent("quantum:beacon-signal", { detail: { rssi, proximity, deviceId: beaconDevice.id } }));
       });
       await beaconDevice.watchAdvertisements();
-      beaconStatus.textContent = "AGUARDANDO ANÚNCIO BLE";
+      if (beaconStatus) beaconStatus.textContent = "AGUARDANDO ANÚNCIO BLE";
+      log("INFO", "BLE", "Monitoramento experimental de RSSI iniciado");
     } catch (error) {
-      beaconStatus.textContent = error?.name === "NotFoundError" ? "SELEÇÃO CANCELADA" : "BLE NÃO DISPONÍVEL";
-      connectionHint.textContent = error?.message || connectionHint.textContent;
+      if (beaconStatus) beaconStatus.textContent = error?.name === "NotFoundError" ? "SELEÇÃO CANCELADA" : "BLE NÃO DISPONÍVEL";
+      if (connectionHint) connectionHint.textContent = error?.message || connectionHint.textContent;
       beaconButton.disabled = false;
+      log("WARNING", "BLE", error?.message || "BLE indisponível");
     }
   }
 
+  window.addEventListener("quantum:mode-will-change", (event) => {
+    const detail = event.detail;
+    queueMicrotask(() => executeModeTransition(detail));
+  });
+
   window.addEventListener("quantum:gesture-command", (event) => {
-    if (currentMode !== 3) return;
-    deliverIntent(event.detail?.command || "PARAR", "gesture");
+    const detail = event.detail || {};
+    const command = detail.command || "PARAR";
+    if (!mayAcceptInput(3, detail)) return;
+    if (command !== "PARAR" && detail.stable !== true) return;
+    if (command !== "PARAR" && Number.isFinite(Number(detail.confidence)) && Number(detail.confidence) < 0.60) return;
+    acceptIntent(command, "gesture", { fresh: true });
   });
 
   window.addEventListener("quantum:person-tracking", (event) => {
-    if (currentMode !== 2) return;
-    deliverIntent(event.detail?.visible ? event.detail.command : "PARAR", "face");
-    if (!event.detail?.visible && beaconDevice) stateStatus.textContent = "ROSTO PERDIDO · BLE SEM DIREÇÃO · PARADO";
+    const detail = event.detail || {};
+    if (!mayAcceptInput(2, detail)) return;
+    if (detail.visible && Number.isFinite(Number(detail.confidence)) && Number(detail.confidence) < 0.45) return;
+    acceptIntent(detail.visible ? detail.command : "PARAR", "face", { fresh: true });
+    if (!detail.visible && beaconDevice && stateStatus) stateStatus.textContent = "ROSTO PERDIDO · BLE SEM DIREÇÃO · PARADO";
   });
 
-  window.setInterval(() => {
-    if (!connected || emergencyActive || currentMode === 1) return;
-    if (performance.now() - lastInputAt > INPUT_TIMEOUT_MS) lastIntent = "PARAR";
-    deliverIntent(lastIntent, currentMode === 3 ? "gesture" : "face");
-  }, COMMAND_HEARTBEAT_MS);
+  const heartbeatTimer = window.setInterval(watchdogTick, COMMAND_HEARTBEAT_MS);
+  for (const [index, button] of modeButtons.entries()) {
+    button.addEventListener("click", () => requestMode(button.dataset.robotMode, "ui"));
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      let nextIndex = index;
+      if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = modeButtons.length - 1;
+      else nextIndex = (index + (["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : -1) + modeButtons.length) % modeButtons.length;
+      const next = modeButtons[nextIndex];
+      next.focus();
+      requestMode(next.dataset.robotMode, "keyboard");
+    });
+  }
+  connectButton.addEventListener("click", () => { connectRobot(); });
+  disconnectButton.addEventListener("click", () => { closePort({ sendEstop: true, reason: "USER" }); });
+  emergencyButton.addEventListener("click", () => { toggleEmergency(); });
+  beaconButton?.addEventListener("click", connectBeacon);
+  navigator.serial?.addEventListener?.("disconnect", (event) => {
+    if (event.port === port || event.target === port) handleConnectionFailure(new Error("Arduino desconectado."));
+  });
+  window.addEventListener("pagehide", () => {
+    ++operationGeneration;
+    ++modeGeneration;
+    lastIntent = "PARAR";
+    lastFreshInputAt = 0;
+    if (transportOpen && writer) writer.write(new TextEncoder().encode("ESTOP\n")).catch(() => {});
+    window.clearInterval(heartbeatTimer);
+  });
 
-  document.querySelectorAll(".robot-mode").forEach((button) => button.addEventListener("click", () => setMode(button.dataset.robotMode)));
-  connectButton.addEventListener("click", connectRobot);
-  disconnectButton.addEventListener("click", () => closePort(true));
-  emergencyButton.addEventListener("click", toggleEmergency);
-  beaconButton.addEventListener("click", connectBeacon);
-  navigator.serial?.addEventListener?.("disconnect", (event) => { if (event.target === port) handleConnectionFailure(new Error("Arduino desconectado.")); });
-  window.addEventListener("pagehide", () => { if (connected && writer) writer.write(new TextEncoder().encode("CMD:PARAR\n")).catch(() => {}); });
+  renderMode(activeMode);
+  setControlsForConnection("OFFLINE");
+  setConnection("DESCONECTADO", "OFFLINE", "Use Chrome ou Edge no computador e conecte o cabo USB.");
+  updateDeliveryHint();
+  log("INFO", "ARDUINO", "Controlador Web Serial pronto · aguardando conexão explícita");
 
-  panel.dataset.robotMode = "1";
-  window.quantumRobot = { get connected() { return connected; }, get mode() { return currentMode; }, send: deliverIntent };
-  setMode(1, false);
+  const publicApi = {
+    connect: connectRobot,
+    disconnect: () => closePort({ sendEstop: true, reason: "API" }),
+    requestMode,
+    emergencyStop: toggleEmergency,
+    send(command) { return acceptIntent(String(command || "").toUpperCase(), "api", { fresh: true }); },
+    get connected() { return connected; },
+    get mode() { return activeMode; },
+    get confirmedMode() { return confirmedMode; },
+    get connectionGeneration() { return connectionGeneration; },
+    get modeGeneration() { return modeGeneration; },
+  };
+  if (window.__QUANTUM_ROBOT_TEST__) {
+    publicApi._test = Object.freeze({ watchdogTick, parseTelemetry, eventIsFresh, get lastFreshInputAt() { return lastFreshInputAt; } });
+  }
+  window.quantumRobot = Object.freeze(publicApi);
 })();

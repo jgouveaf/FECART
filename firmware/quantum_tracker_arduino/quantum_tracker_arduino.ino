@@ -10,12 +10,14 @@
   PROTOCOLO SERIAL (9600 baud, uma linha por comando):
   MODE:1 | MODE:2 | MODE:3
   CMD:FRENTE | CMD:TRAS | CMD:DIREITA | CMD:ESQUERDA | CMD:PARAR | CMD:GIRAR
-  ESTOP | RESET_ESTOP | PING | STATUS
+  HELLO | ESTOP | RESET_ESTOP | PING | STATUS
 
   Seguranca:
   - PARAR e ESTOP interrompem imediatamente;
-  - modos 2 e 3 param sem heartbeat por 1,5 s;
-  - cinco falhas consecutivas do sensor param o movimento;
+  - modos 2 e 3 param se nenhum novo CMD:* chegar por 1,5 s;
+  - PING testa o enlace, mas nao renova um comando de movimento antigo;
+  - cinco falhas consecutivas travam o sensor; tres leituras validas o recuperam;
+  - obstaculo frontal bloqueia frente, curvas e giro (RE e PARAR continuam permitidos);
   - cinco obstaculos em 15 s ativam parada de seguranca.
 */
 
@@ -41,6 +43,7 @@ const unsigned int TEMPO_CURVA_MS = 900;
 const unsigned int TEMPO_SAIDA_MS = 600;
 
 const byte LIMITE_FALHAS_SENSOR = 5;
+const byte LEITURAS_VALIDAS_PARA_RECUPERAR = 3;
 const byte LIMITE_OBSTACULOS = 5;
 
 enum ModoRobo { MODO_AUTONOMO = 1, MODO_SEGUIR = 2, MODO_GESTOS = 3 };
@@ -68,10 +71,12 @@ unsigned long obstaculosEm[LIMITE_OBSTACULOS];
 
 float distanciaAtualCm = -1;
 byte falhasConsecutivasSensor = 0;
+byte leiturasValidasRecuperacao = 0;
 byte obstaculosConsecutivos = 0;
 byte quantidadeObstaculos = 0;
 bool proximaCurvaDireita = true;
 bool paradaEmergencia = false;
+bool sensorBloqueado = false;
 
 char linhaSerial[34];
 byte tamanhoLinha = 0;
@@ -145,11 +150,30 @@ void atualizarSensor(unsigned long agora) {
 
   if (distanciaAtualCm < 0) {
     if (falhasConsecutivasSensor < 255) falhasConsecutivasSensor++;
+    leiturasValidasRecuperacao = 0;
     obstaculosConsecutivos = 0;
+
+    if (falhasConsecutivasSensor >= LIMITE_FALHAS_SENSOR && !sensorBloqueado) {
+      sensorBloqueado = true;
+      estadoDesvio = DESVIO_INATIVO;
+      pararMotores();
+      Serial.println(F("ALERTA:SENSOR_BLOQUEADO"));
+    }
     return;
   }
 
   falhasConsecutivasSensor = 0;
+  if (sensorBloqueado) {
+    if (leiturasValidasRecuperacao < 255) leiturasValidasRecuperacao++;
+    if (leiturasValidasRecuperacao >= LEITURAS_VALIDAS_PARA_RECUPERAR) {
+      sensorBloqueado = false;
+      leiturasValidasRecuperacao = 0;
+      Serial.println(F("EVENTO:SENSOR_RECUPERADO"));
+    }
+  } else {
+    leiturasValidasRecuperacao = 0;
+  }
+
   if (distanciaAtualCm <= DISTANCIA_OBSTACULO_CM) {
     if (obstaculosConsecutivos < 255) obstaculosConsecutivos++;
   } else {
@@ -158,11 +182,18 @@ void atualizarSensor(unsigned long agora) {
 }
 
 bool sensorSeguro() {
-  return falhasConsecutivasSensor < LIMITE_FALHAS_SENSOR;
+  return !sensorBloqueado && falhasConsecutivasSensor < LIMITE_FALHAS_SENSOR;
 }
 
 bool obstaculoConfirmado() {
   return distanciaAtualCm > 0 && obstaculosConsecutivos >= 2;
+}
+
+bool comandoExigeFrenteLivre(ComandoMovimento comando) {
+  return comando == CMD_FRENTE
+      || comando == CMD_DIREITA
+      || comando == CMD_ESQUERDA
+      || comando == CMD_GIRAR;
 }
 
 bool registrarObstaculo(unsigned long agora) {
@@ -189,6 +220,7 @@ void iniciarDesvio(unsigned long agora) {
   obstaculosConsecutivos = 0;
   if (registrarObstaculo(agora)) {
     paradaEmergencia = true;
+    estadoDesvio = DESVIO_INATIVO;
     Serial.println(F("ALERTA:5_OBSTACULOS"));
     return;
   }
@@ -217,8 +249,14 @@ void atualizarDesvio(unsigned long agora) {
       break;
     case DESVIO_PAUSA_RE:
       if (decorrido >= 150UL) {
-        if (proximaCurvaDireita) girarDireita(); else girarEsquerda();
-        estadoDesvio = DESVIO_CURVA;
+        // Se a frente ainda esta bloqueada, somente a RE continua autorizada.
+        if (obstaculoConfirmado()) {
+          andarParaTras();
+          estadoDesvio = DESVIO_RE;
+        } else {
+          if (proximaCurvaDireita) girarDireita(); else girarEsquerda();
+          estadoDesvio = DESVIO_CURVA;
+        }
         estadoDesvioDesde = agora;
       }
       break;
@@ -294,7 +332,9 @@ void selecionarModo(byte numero, unsigned long agora) {
 void receberComando(ComandoMovimento comando, unsigned long agora) {
   comandoRecebido = comando;
   ultimoComandoEm = agora;
-  if (comando == CMD_PARAR) cancelarDesvio();
+  if (comando == CMD_PARAR || (modo != MODO_AUTONOMO && comando == CMD_TRAS)) {
+    cancelarDesvio();
+  }
   Serial.print(F("OK:CMD:"));
   Serial.println(nomeComando(comando));
 }
@@ -318,9 +358,13 @@ void processarLinha(char* linha, unsigned long agora) {
     quantidadeObstaculos = 0;
     comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
     ultimoComandoEm = agora;
+    cancelarDesvio();
     Serial.println(F("OK:RESET_ESTOP"));
+  } else if (strcmp(linha, "HELLO") == 0) {
+    // Permite identificar o firmware mesmo quando abrir a porta nao reinicia o UNO.
+    Serial.println(F("QT:READY:V3"));
   } else if (strcmp(linha, "PING") == 0) {
-    ultimoComandoEm = agora;
+    // PING confirma apenas o enlace. So CMD:* renova a validade do movimento.
     Serial.println(F("PONG"));
   } else if (strcmp(linha, "STATUS") == 0) enviarStatus(agora, true);
   else Serial.println(F("ERRO:COMANDO_INVALIDO"));
@@ -378,13 +422,26 @@ void loop() {
   }
 
   if (estadoDesvio != DESVIO_INATIVO) {
+    if (obstaculoConfirmado()) {
+      if (estadoDesvio == DESVIO_PAUSA_RE) {
+        // RE e permitida mesmo com obstaculo frontal e cria espaco para a curva.
+        andarParaTras();
+        estadoDesvio = DESVIO_RE;
+        estadoDesvioDesde = agora;
+      } else if (estadoDesvio == DESVIO_CURVA
+              || estadoDesvio == DESVIO_PAUSA_CURVA
+              || estadoDesvio == DESVIO_SAIDA) {
+        // Interrompe imediatamente curva/giro/frente e reinicia o desvio seguro.
+        iniciarDesvio(agora);
+      }
+    }
     atualizarDesvio(agora);
     enviarStatus(agora);
     return;
   }
 
   const ComandoMovimento desejado = modo == MODO_AUTONOMO ? CMD_FRENTE : comandoRecebido;
-  if (desejado == CMD_FRENTE && obstaculoConfirmado()) {
+  if (comandoExigeFrenteLivre(desejado) && obstaculoConfirmado()) {
     iniciarDesvio(agora);
   } else {
     aplicarComando(desejado);

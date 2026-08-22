@@ -17,6 +17,7 @@
   </p>
 
   <p align="center">
+    <a href="https://jgouveaf.github.io/FECART/"><b>Abrir painel web</b></a> •
     <a href="#-estrutura-do-projeto"><b>Estrutura de Código</b></a> •
     <a href="#-como-rodar-desenvolvimento"><b>Como Rodar</b></a> •
     <a href="#-como-gerar-o-exe-port%C3%A1til"><b>Gerar .EXE</b></a> •
@@ -25,6 +26,20 @@
   </p>
 
 </div>
+
+---
+
+## Painel web e Arduino UNO
+
+O painel web atual funciona em navegador Chromium compatível e conecta diretamente ao **Arduino UNO por cabo USB/Web Serial**. O firmware ativo usa L298N e HC-SR04 nos pinos IN1 D7, IN2 D6, IN3 D5, IN4 D4, TRIG D3 e ECHO D2.
+
+Por segurança, conectar o cabo **não inicia os motores**: o handshake termina em ESTOP e exige o clique explícito em **“Liberar após conferir”**.
+
+- Painel publicado: <https://jgouveaf.github.io/FECART/>
+- Firmware: `firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino`
+- Relatório da revisão: `docs/RELATORIO_REVISAO_WEB_CAMERA_GESTOS.md`
+
+> O adaptador ESP32 presente em partes antigas do aplicativo desktop é legado e não participa do fluxo web/Arduino atual.
 
 ---
 
@@ -60,7 +75,7 @@
     </td>
     <td width="50%" valign="top">
       <h3>🤖 Robótica & Simulador 2D</h3>
-      <p>Integração com robôs móbiles via ESP32 Wi-Fi/Serial e um <b>Simulador Visual 2D interativo</b> com bússola direcional e telemetria.</p>
+      <p>Integração do painel web com Arduino UNO via USB/Web Serial e um <b>Simulador Visual 2D interativo</b> com telemetria.</p>
     </td>
   </tr>
   <tr>
@@ -121,7 +136,7 @@ FECART/
 │   ├── gesture_recognizer.py
 │   └── gesture_trainer.py
 │
-├── robot/                   # Controle do robô (ESP32 / simulador)
+├── robot/                   # Controle legado do app desktop / simulador
 │   ├── robot_controller.py
 │   ├── robot_state_machine.py
 │   └── esp32_adapter.py
@@ -235,7 +250,7 @@ flowchart TD
     E & F --> G[🖥️ TacticalHUD & Overlay OpenCV]
     G --> H[💻 QuantumApp PySide6 Dashboard]
     
-    H --> I[🤖 Controller ESP32 / Telemetria Robô]
+    H --> I[🤖 Arduino UNO por USB / Telemetria do robô]
     H --> J[🧠 Quantum AI Assistant - Gemini API]
 ```
 
@@ -250,7 +265,7 @@ flowchart TD
 | **`tracker/`** | `tracker_wrapper.py`, `kalman_tracker.py` | Rastreamento multialvo, estimativa de estado, cálculo de velocidade e visual Re-ID. |
 | **`hud/`** | `tactical_hud.py` | Visualizador HUD tático OpenCV com brquetes de canto, mira e cartões transparentes. |
 | **`biometrics/`**| `face_recognition.py`, `identity_resolver.py` | Extração de vetores faciais (embeddings) e resolução de banco de identidades. |
-| **`robot/`** | `robot_controller.py`, `esp32_adapter.py` | Máquina de estados de perseguição do robô e envio de dados via serial/Wi-Fi. |
+| **`robot/`** | `robot_controller.py`, `esp32_adapter.py` | Código legado do aplicativo desktop; o painel web atual usa Arduino UNO por USB/Web Serial. |
 | **`brain/`** | `quantum_brain.py`, `gemini_assistant.py` | Assistente inteligente Gemini, processamento de síntese de voz e relatórios. |
 
 ---

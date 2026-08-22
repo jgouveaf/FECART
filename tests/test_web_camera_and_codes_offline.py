@@ -19,6 +19,8 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         cls.html = (ROOT / "index.html").read_text(encoding="utf-8")
         cls.app_js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
         cls.camera_js = (ROOT / "web" / "camera-gestures.js").read_text(encoding="utf-8")
+        cls.camera_controller_js = (ROOT / "web" / "camera-controller.js").read_text(encoding="utf-8")
+        cls.control_state_js = (ROOT / "web" / "control-state.js").read_text(encoding="utf-8")
         cls.face_js = (ROOT / "web" / "face-identities.js").read_text(encoding="utf-8")
         cls.robot_js = (ROOT / "web" / "robot-control.js").read_text(encoding="utf-8")
         cls.code_bundle_js = (ROOT / "web" / "arduino-codes.js").read_text(encoding="utf-8")
@@ -38,7 +40,12 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="codigos"',
             'id="arduinoCode"',
             'web/arduino-codes.js?v=4',
-            'web/robot-control.js?v=1',
+            'web/control-state.js?v=1',
+            'web/camera-controller.js?v=1',
+            'web/robot-control.js?v=2',
+            'id="toggleGestures"',
+            'id="cameraDeviceSelect"',
+            'id="retryFaceDetection"',
         ):
             self.assertIn(required, self.html)
 
@@ -52,6 +59,12 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             self.assertIn("void setup()", code)
             self.assertIn("void loop()", code)
             self.assertEqual(self.code_bundle[relative], code)
+
+    def test_code_tabs_support_keyboard_navigation(self) -> None:
+        self.assertIn('id="codeViewer" role="tabpanel"', self.html)
+        self.assertIn('tabindex="-1"', self.html)
+        self.assertIn('["ArrowLeft", "ArrowRight", "Home", "End"]', self.app_js)
+        self.assertIn("item.tabIndex = selected ? 0 : -1", self.app_js)
 
     def test_main_firmware_pin_map_matches_declared_wiring(self) -> None:
         code = (ROOT / "firmware" / "quantum_tracker_arduino" / "quantum_tracker_arduino.ino").read_text(encoding="utf-8")
@@ -70,8 +83,8 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         for fingers, command in expected.items():
             self.assertRegex(self.camera_js, rf'{fingers}:\s*"{command}"')
         self.assertIn("HandLandmarker", self.camera_js)
-        self.assertIn("getUserMedia", self.camera_js)
-        self.assertIn("NotAllowedError", self.camera_js)
+        self.assertIn("getUserMedia", self.camera_controller_js)
+        self.assertIn("NotAllowedError", self.camera_controller_js)
         self.assertIn('quantum:gesture-command', self.camera_js)
         self.assertIn('quantum:camera-view-changed', self.camera_js)
 
@@ -98,7 +111,8 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("face-api-legacy", self.face_js)
         self.assertIn("LEGADO — RECADASTRE", self.face_js)
         self.assertIn("QT-", self.face_js)
-        self.assertIn("quantum:camera-started", self.camera_js)
+        self.assertIn("quantum:camera-started", self.camera_controller_js)
+        self.assertIn('window.addEventListener("quantum:camera-started"', self.face_js)
 
     def test_face_registration_uses_five_1024_value_embeddings(self) -> None:
         self.assertRegex(self.face_js, r"REQUIRED_SAMPLES\s*=\s*5")
@@ -125,22 +139,30 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("recognitionMemory", self.face_js)
         self.assertIn('quantum:person-tracking', self.face_js)
 
+    def test_face_inference_has_backoff_circuit_breaker_and_manual_retry(self) -> None:
+        self.assertIn("MAX_CONSECUTIVE_INFERENCE_ERRORS = 3", self.face_js)
+        self.assertIn("MAX_INFERENCE_BACKOFF_MS = 4000", self.face_js)
+        self.assertIn("inferenceSuspended = true", self.face_js)
+        self.assertIn("retryDetectionButton?.addEventListener", self.face_js)
+        self.assertIn('id="retryFaceDetection"', self.html)
+
     def test_camera_start_feedback_is_visible_on_face_tab(self) -> None:
         self.assertIn('id="cameraPlaceholderTitle"', self.html)
         self.assertIn('id="cameraPlaceholderHint"', self.html)
-        self.assertIn('startButton.textContent = "Abrindo câmera…"', self.camera_js)
-        self.assertIn('setPlaceholder("Não foi possível iniciar", message)', self.camera_js)
-        self.assertIn('new CustomEvent("quantum:camera-error"', self.camera_js)
+        self.assertIn('setBusy(true, "Ativando…")', self.camera_controller_js)
+        self.assertIn('setPlaceholder("Não foi possível iniciar", message)', self.camera_controller_js)
+        self.assertIn('new CustomEvent("quantum:camera-error"', self.camera_controller_js)
         self.assertIn('window.addEventListener("quantum:camera-error"', self.face_js)
         for error_name in ("NotAllowedError", "NotFoundError", "NotReadableError", "OverconstrainedError"):
-            self.assertIn(error_name, self.camera_js)
+            self.assertIn(error_name, self.camera_controller_js)
 
     def test_camera_controller_uses_compatible_classic_bootstrap(self) -> None:
-        self.assertIn('id="startCamera" disabled>Carregando controle…', self.html)
-        self.assertIn('src="web/camera-gestures.js?v=9" defer', self.html)
+        self.assertIn('id="startCamera">Ativar câmera', self.html)
+        self.assertIn('src="web/camera-controller.js?v=1" defer', self.html)
+        self.assertIn('src="web/camera-gestures.js?v=10" defer', self.html)
         self.assertNotIn('type="module" src="web/camera-gestures.js', self.html)
-        self.assertIn("window.quantumCameraController", self.camera_js)
-        self.assertIn('startButton.textContent = "Iniciar câmera"', self.camera_js)
+        self.assertIn("window.quantumCameraController", self.camera_controller_js)
+        self.assertIn('startButton.textContent = "Ativar câmera"', self.camera_controller_js)
         self.assertIn("FALHA AO CARREGAR CONTROLE", self.html)
 
     def test_identity_backup_can_be_exported_and_imported(self) -> None:
@@ -152,7 +174,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("URL.createObjectURL", self.face_js)
 
     def test_web_test_never_opens_serial_or_contains_secret(self) -> None:
-        public = "\n".join((self.html, self.app_js, self.camera_js, self.face_js, self.robot_js, self.code_bundle_js))
+        public = "\n".join((self.html, self.app_js, self.camera_js, self.camera_controller_js, self.control_state_js, self.face_js, self.robot_js, self.code_bundle_js))
         self.assertIn("navigator.serial", self.robot_js)
         self.assertNotIn("sk-proj-", public)
         self.assertIn("PARADA DE EMERGÊNCIA", self.html)

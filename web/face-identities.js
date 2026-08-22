@@ -2,6 +2,7 @@
   "use strict";
 
   const HumanLibrary = window.Human;
+  const control = window.QuantumControl;
   const $ = (id) => document.getElementById(id);
   const video = $("cameraVideo");
   const canvas = $("identityCanvas");
@@ -26,6 +27,9 @@
   const importButton = $("importIdentities");
   const backupFile = $("identityBackupFile");
   const cameraPanel = $("camera-gestos");
+  const trackingStateElement = $("faceTrackingState");
+  const directionElement = $("faceDirection");
+  const retryDetectionButton = $("retryFaceDetection");
 
   const checks = {
     single: $("checkSingle"),
@@ -49,6 +53,8 @@
   const MIN_REAL = 0.50;
   const MIN_LIVE = 0.50;
   const DETECTION_DELAY_MS = 70;
+  const MAX_CONSECUTIVE_INFERENCE_ERRORS = 3;
+  const MAX_INFERENCE_BACKOFF_MS = 4000;
   const MATCH_OPTIONS = { order: 2, multiplier: 25, min: 0.2, max: 0.8 };
   const MODEL_URL = new URL("web/vendor/human/models/", document.baseURI).href;
 
@@ -75,6 +81,7 @@
   };
 
   let human = null;
+  let modelsPromise = null;
   let database = null;
   let identities = [];
   let modelsReady = false;
@@ -90,10 +97,27 @@
   let temporaryTracks = [];
   let recognitionMemory = [];
   let activeView = cameraPanel?.dataset.cameraView || "face";
+  let detectionGeneration = 0;
+  let lockedTargetId = null;
+  let targetMisses = 0;
+  let lastTrackingSignature = "";
+  let lastTrackingAt = 0;
+  let faceFrames = 0;
+  let faceFpsWindowAt = 0;
+  let consecutiveInferenceErrors = 0;
+  let nextDetectionDelayMs = DETECTION_DELAY_MS;
+  let inferenceSuspended = false;
 
   function setStatus(text, active = false) {
     statusElement.textContent = text;
     statusDot.classList.toggle("idle", !active);
+  }
+
+  function resetInferenceCircuit() {
+    consecutiveInferenceErrors = 0;
+    nextDetectionDelayMs = DETECTION_DELAY_MS;
+    inferenceSuspended = false;
+    if (retryDetectionButton) retryDetectionButton.hidden = true;
   }
 
   function openDatabase() {
@@ -383,24 +407,69 @@
     }
   }
 
-  function publishPersonTracking(faces) {
-    if (activeView !== "face" || !cameraActive || !faces.length) {
-      window.dispatchEvent(new CustomEvent("quantum:person-tracking", { detail: { visible: false, command: "PARAR" } }));
-      return;
-    }
-    const target = [...faces].sort((first, second) => second.face.box[2] * second.face.box[3] - first.face.box[2] * first.face.box[3])[0];
-    const center = (target.face.box[0] + target.face.box[2] / 2) / Math.max(1, video.videoWidth);
-    const command = center < 0.38 ? "ESQUERDA" : center > 0.62 ? "DIREITA" : "FRENTE";
+  function emitPersonTracking(detail, tracking, force = false) {
+    const now = performance.now();
+    const signature = `${tracking}:${detail.visible}:${detail.command}:${detail.id || "-"}`;
+    if (!force && signature === lastTrackingSignature && now - lastTrackingAt < 400) return;
+    lastTrackingSignature = signature;
+    lastTrackingAt = now;
+    if (trackingStateElement) trackingStateElement.textContent = tracking;
+    if (directionElement) directionElement.textContent = detail.command;
+    control?.patch("vision", {
+      active: cameraActive && activeView === "face",
+      status: cameraActive && activeView === "face" ? "ONLINE" : "OFFLINE",
+      targetId: detail.id || null,
+      confidence: detail.confidence || 0,
+      tracking,
+      direction: detail.command,
+    }, { source: "face-tracking" });
     window.dispatchEvent(new CustomEvent("quantum:person-tracking", {
       detail: {
-        visible: true,
-        command,
-        center,
-        id: target.identity.id,
-        registered: target.identity.registered,
-        confidence: target.quality.confidence,
+        ...detail,
+        tracking,
+        emittedAt: performance.now(),
+        modeGeneration: window.quantumRobot?.modeGeneration,
       },
     }));
+  }
+
+  function publishPersonTracking(faces, force = false) {
+    const candidates = faces.filter((item) => item.quality.confidence >= MIN_CONFIDENCE);
+    if (activeView !== "face" || !cameraActive) {
+      lockedTargetId = null;
+      targetMisses = 0;
+      emitPersonTracking({ visible: false, command: "PARAR" }, "SEARCHING", true);
+      return;
+    }
+    let target = lockedTargetId ? candidates.find((item) => item.identity.id === lockedTargetId) : null;
+    if (!target && lockedTargetId) {
+      targetMisses += 1;
+      if (targetMisses < 4) {
+        emitPersonTracking({ visible: false, command: "PARAR", id: lockedTargetId }, "REACQUIRING", force);
+        return;
+      }
+      lockedTargetId = null;
+    }
+    if (!target && candidates.length) {
+      target = [...candidates].sort((first, second) => second.face.box[2] * second.face.box[3] - first.face.box[2] * first.face.box[3])[0];
+      lockedTargetId = target.identity.id;
+    }
+    if (!target) {
+      targetMisses = Math.min(255, targetMisses + 1);
+      emitPersonTracking({ visible: false, command: "PARAR" }, targetMisses > 3 ? "TARGET_LOST" : "SEARCHING", force);
+      return;
+    }
+    targetMisses = 0;
+    const center = (target.face.box[0] + target.face.box[2] / 2) / Math.max(1, video.videoWidth);
+    const command = center < 0.38 ? "ESQUERDA" : center > 0.62 ? "DIREITA" : "FRENTE";
+    emitPersonTracking({
+      visible: true,
+      command,
+      center,
+      id: target.identity.id,
+      registered: target.identity.registered,
+      confidence: target.quality.confidence,
+    }, lastTrackingSignature.includes(target.identity.id) ? "FOLLOWING" : "TARGET_ACQUIRED", force);
   }
 
   function setSampleProgress(value) {
@@ -459,23 +528,54 @@
 
   async function loadModels() {
     if (modelsReady) return;
+    if (modelsPromise) return modelsPromise;
     if (!HumanLibrary?.Human) throw new Error("Biblioteca Human FaceID não foi carregada.");
     setStatus("CARREGANDO FACEID", true);
-    human = new HumanLibrary.Human(humanConfig);
-    await human.load();
-    await human.warmup();
-    modelsReady = true;
+    control?.patch("vision", { active: false, status: "LOADING", tracking: "SEARCHING" }, { source: "face-model" });
+    control?.log("INFO", "VISÃO", "Carregando Human FaceID local");
+    modelsPromise = (async () => {
+      const candidate = new HumanLibrary.Human(humanConfig);
+      await candidate.load();
+      await candidate.warmup();
+      human = candidate;
+      modelsReady = true;
+      control?.log("INFO", "VISÃO", "Human FaceID pronto");
+    })();
+    try {
+      await modelsPromise;
+    } catch (error) {
+      modelsReady = false;
+      human = null;
+      control?.patch("vision", { active: false, status: "ERROR", tracking: "SEARCHING" }, { source: "face-model" });
+      control?.patch("diagnostics", { lastError: `FaceID: ${error.message}` }, { source: "face-model" });
+      control?.log("ERROR", "VISÃO", `FaceID não carregou: ${error.message}`);
+      throw error;
+    } finally {
+      modelsPromise = null;
+    }
+  }
+
+  function disposeResult(result) {
+    if (!result?.face || !human) return;
+    for (const face of result.face) if (face.tensor) human.tf.dispose(face.tensor);
   }
 
   async function detectFaces() {
     if (!cameraActive || detectionBusy || video.readyState < 2) return;
+    const generation = detectionGeneration;
     detectionBusy = true;
     try {
-      if (lastResult?.face) {
-        for (const face of lastResult.face) if (face.tensor) human.tf.dispose(face.tensor);
-      }
+      disposeResult(lastResult);
+      lastResult = null;
       const result = await human.detect(video);
+      if (generation !== detectionGeneration || !cameraActive || activeView !== "face") {
+        disposeResult(result);
+        return;
+      }
       lastResult = result;
+      consecutiveInferenceErrors = 0;
+      nextDetectionDelayMs = DETECTION_DELAY_MS;
+      if (retryDetectionButton) retryDetectionButton.hidden = true;
       const detectedAt = performance.now();
       const faces = result.face.map((face) => ({
         face,
@@ -486,12 +586,38 @@
       drawFaces(faces);
       updatePanel(faces);
       publishPersonTracking(faces);
+      faceFrames += 1;
+      if (!faceFpsWindowAt) faceFpsWindowAt = detectedAt;
+      const fpsElapsed = detectedAt - faceFpsWindowAt;
+      if (fpsElapsed >= 1000) {
+        const fps = faceFrames * 1000 / fpsElapsed;
+        faceFrames = 0;
+        faceFpsWindowAt = detectedAt;
+        control?.patch("vision", { fps }, { source: "face-fps" });
+      }
       const count = faces.length;
       setStatus(count ? `${count} ROSTO${count === 1 ? "" : "S"} DETECTADO${count === 1 ? "" : "S"}` : "PROCURANDO ROSTO", true);
     } catch (error) {
-      console.error("Falha no Human FaceID", error);
-      setStatus("ERRO NA IDENTIFICAÇÃO");
-      faceHint.textContent = `Falha na identificação: ${error.message}`;
+      if (generation !== detectionGeneration) return;
+      consecutiveInferenceErrors += 1;
+      nextDetectionDelayMs = Math.min(MAX_INFERENCE_BACKOFF_MS, 500 * (2 ** (consecutiveInferenceErrors - 1)));
+      const persistent = consecutiveInferenceErrors >= MAX_CONSECUTIVE_INFERENCE_ERRORS;
+      if (persistent) {
+        inferenceSuspended = true;
+        if (retryDetectionButton) retryDetectionButton.hidden = false;
+        console.error("FaceID suspenso após falhas consecutivas", error);
+      } else {
+        console.warn(`Falha temporária no Human FaceID (${consecutiveInferenceErrors}/${MAX_CONSECUTIVE_INFERENCE_ERRORS})`, error);
+      }
+      setStatus(persistent ? "FACEID PAUSADO APÓS ERROS" : `RECUPERANDO FACEID ${consecutiveInferenceErrors}/${MAX_CONSECUTIVE_INFERENCE_ERRORS}`);
+      faceHint.textContent = persistent
+        ? `A identificação foi pausada para proteger o navegador: ${error.message}`
+        : `Falha temporária na identificação; nova tentativa em ${nextDetectionDelayMs / 1000}s.`;
+      control?.patch("vision", { active: false, status: "ERROR" }, { source: "face-loop" });
+      control?.patch("diagnostics", { lastError: `FaceID: ${error.message}` }, { source: "face-loop" });
+      control?.log(persistent ? "ERROR" : "WARNING", "VISÃO", persistent
+        ? `FaceID pausado após ${consecutiveInferenceErrors} falhas: ${error.message}`
+        : `Falha temporária ${consecutiveInferenceErrors}/${MAX_CONSECUTIVE_INFERENCE_ERRORS}: ${error.message}`);
     } finally {
       detectionBusy = false;
     }
@@ -499,43 +625,52 @@
 
   function scheduleDetection() {
     clearTimeout(detectionTimer);
-    if (!cameraActive || activeView !== "face") return;
+    if (!cameraActive || activeView !== "face" || inferenceSuspended) return;
     detectionTimer = window.setTimeout(async () => {
       await detectFaces();
       scheduleDetection();
-    }, DETECTION_DELAY_MS);
+    }, nextDetectionDelayMs);
   }
 
   async function startIdentification() {
+    const generation = ++detectionGeneration;
     cameraActive = true;
+    resetInferenceCircuit();
     canvas.width = video.videoWidth || 960;
     canvas.height = video.videoHeight || 540;
     if (activeView !== "face") return;
     try {
       await loadModels();
       await loadIdentities();
-      if (!cameraActive) return;
+      if (generation !== detectionGeneration || !cameraActive || activeView !== "face") return;
       setStatus("HUMAN FACEID PRONTO", true);
+      control?.patch("vision", { active: true, status: "ONLINE", tracking: "SEARCHING" }, { source: "face-start" });
       await detectFaces();
       scheduleDetection();
     } catch (error) {
       console.error("Identificação indisponível", error);
       setStatus("IDENTIFICAÇÃO INDISPONÍVEL");
       faceHint.textContent = `Não foi possível iniciar o FaceID: ${error.message}`;
+      inferenceSuspended = true;
+      if (retryDetectionButton) retryDetectionButton.hidden = false;
     }
   }
 
   function stopIdentification() {
+    ++detectionGeneration;
     cameraActive = false;
     registering = false;
     clearTimeout(detectionTimer);
-    if (lastResult?.face) {
-      for (const face of lastResult.face) if (face.tensor) human?.tf.dispose(face.tensor);
-    }
+    disposeResult(lastResult);
     lastResult = null;
     context.clearRect(0, 0, canvas.width, canvas.height);
     currentFaces = [];
     temporaryTracks = [];
+    lockedTargetId = null;
+    targetMisses = 0;
+    faceFrames = 0;
+    faceFpsWindowAt = 0;
+    resetInferenceCircuit();
     registerButton.disabled = true;
     registerButton.textContent = "Validar e cadastrar rosto";
     currentFaceId.textContent = "NENHUM";
@@ -543,7 +678,8 @@
     facePreview.classList.remove("has-image");
     resetMetrics();
     setStatus("AGUARDANDO CÂMERA");
-    publishPersonTracking([]);
+    publishPersonTracking([], true);
+    control?.patch("vision", { active: false, status: "OFFLINE", targetId: null, confidence: 0, tracking: "SEARCHING", direction: "PARAR", fps: 0 }, { source: "face-stop" });
   }
 
   function waitForFreshFace(afterTimestamp, timeoutMs = 30000) {
@@ -562,6 +698,13 @@
   }
 
   personName.addEventListener("input", () => updatePanel(currentFaces));
+  retryDetectionButton?.addEventListener("click", async () => {
+    if (!cameraActive || activeView !== "face") return;
+    retryDetectionButton.disabled = true;
+    control?.log("INFO", "VISÃO", "Nova tentativa manual do FaceID");
+    await startIdentification();
+    retryDetectionButton.disabled = false;
+  });
   registerButton.addEventListener("click", async () => {
     const name = personName.value.trim();
     let item = currentFaces.length === 1 ? currentFaces[0] : null;
@@ -654,27 +797,34 @@
   window.addEventListener("quantum:camera-started", startIdentification);
   window.addEventListener("quantum:camera-stopped", stopIdentification);
   window.addEventListener("quantum:camera-error", (event) => {
-    cameraActive = false;
-    clearTimeout(detectionTimer);
+    stopIdentification();
     setStatus("CÂMERA INDISPONÍVEL");
     faceHint.textContent = event.detail?.message || "Não foi possível abrir a câmera.";
     registerButton.disabled = true;
   });
   window.addEventListener("quantum:camera-view-changed", async (event) => {
+    const generation = ++detectionGeneration;
     activeView = event.detail?.view === "hand" ? "hand" : "face";
     clearTimeout(detectionTimer);
     if (activeView !== "face") {
       context.clearRect(0, 0, canvas.width, canvas.height);
       registerButton.disabled = true;
       setStatus(cameraActive ? "PAUSADA · ABA DA MÃO" : "AGUARDANDO CÂMERA");
-      publishPersonTracking([]);
+      publishPersonTracking([], true);
+      control?.patch("vision", { active: false, status: cameraActive ? "READY" : "OFFLINE", targetId: null, confidence: 0, tracking: "SEARCHING", direction: "PARAR" }, { source: "face-view" });
       return;
     }
     if (!cameraActive) return;
+    if (inferenceSuspended) {
+      setStatus("FACEID PAUSADO APÓS ERROS");
+      if (retryDetectionButton) retryDetectionButton.hidden = false;
+      return;
+    }
     canvas.width = video.videoWidth || 960;
     canvas.height = video.videoHeight || 540;
     try {
       await loadModels();
+      if (generation !== detectionGeneration || !cameraActive || activeView !== "face") return;
       await detectFaces();
       scheduleDetection();
     } catch (error) {

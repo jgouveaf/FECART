@@ -46,6 +46,8 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn("navigator.serial.requestPort()", self.robot_js)
         self.assertIn("port.open({ baudRate: 9600", self.robot_js)
         self.assertIn('connectButton.addEventListener("click"', self.robot_js)
+        self.assertIn("event.port === port || event.target === port", self.robot_js)
+        self.assertIn('requestMode(next.dataset.robotMode, "keyboard")', self.robot_js)
         self.assertNotIn("navigator.serial.requestPort()", self.camera_js)
         self.assertNotIn("navigator.serial.requestPort()", self.face_js)
 
@@ -53,30 +55,72 @@ class TestWebRobotControlOffline(unittest.TestCase):
         for command in ("FRENTE", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"):
             self.assertIn(f'"{command}"', self.camera_js)
             self.assertIn(f'CMD:{command}', self.firmware)
-        self.assertIn('if (currentMode !== 3) return', self.robot_js)
+        self.assertIn('if (!mayAcceptInput(3, detail)) return', self.robot_js)
+        self.assertIn('detail.stable !== true', self.robot_js)
+        self.assertIn('Number(detail.confidence) < 0.60', self.robot_js)
         self.assertIn('quantum:gesture-command', self.robot_js)
 
     def test_person_tracking_drives_only_mode_two_and_stops_when_lost(self) -> None:
-        self.assertIn('if (currentMode !== 2) return', self.robot_js)
-        self.assertIn('event.detail?.visible ? event.detail.command : "PARAR"', self.robot_js)
+        self.assertIn('if (!mayAcceptInput(2, detail)) return', self.robot_js)
+        self.assertIn('acceptIntent(detail.visible ? detail.command : "PARAR"', self.robot_js)
+        self.assertIn('Number(detail.confidence) < 0.45', self.robot_js)
         self.assertIn('center < 0.38 ? "ESQUERDA"', self.face_js)
         self.assertIn('center > 0.62 ? "DIREITA"', self.face_js)
         self.assertIn('visible: false, command: "PARAR"', self.face_js)
 
     def test_command_heartbeat_is_fail_safe(self) -> None:
-        self.assertRegex(self.robot_js, r"INPUT_TIMEOUT_MS\s*=\s*900")
+        self.assertRegex(self.robot_js, r"INPUT_TIMEOUT_MS\s*=.*\|\|\s*900")
         self.assertRegex(self.firmware, r"TIMEOUT_COMANDO_MS\s*=\s*1500UL")
+        self.assertIn("lastFreshInputAt", self.robot_js)
+        watchdog = self.robot_js.split("function watchdogTick()", 1)[1].split("async function toggleEmergency", 1)[0]
+        self.assertIn("performance.now() - lastFreshInputAt <= INPUT_TIMEOUT_MS", watchdog)
+        self.assertIn('sendMotion("PARAR")', watchdog)
+        self.assertNotIn("acceptIntent(", watchdog)
         self.assertIn('lastIntent = "PARAR"', self.robot_js)
         self.assertIn("agora - ultimoComandoEm > TIMEOUT_COMANDO_MS", self.firmware)
         self.assertIn("comandoRecebido = CMD_PARAR", self.firmware)
 
     def test_emergency_stop_interrupts_web_and_firmware(self) -> None:
         self.assertIn('id="emergencyStop"', self.html)
-        self.assertIn('sendLine("ESTOP", true)', self.robot_js)
-        self.assertIn('sendLine("RESET_ESTOP", true)', self.robot_js)
+        self.assertIn('transact("ESTOP", (line) => line === "OK:ESTOP"', self.robot_js)
+        self.assertIn('transact("RESET_ESTOP", (line) => line === "OK:RESET_ESTOP"', self.robot_js)
+        self.assertIn('new TextEncoder().encode("ESTOP\\n")', self.robot_js)
         self.assertIn('strcmp(linha, "ESTOP")', self.firmware)
         self.assertIn("paradaEmergencia = true", self.firmware)
         self.assertRegex(self.firmware, r"if \(paradaEmergencia \|\| !sensorSeguro\(\)\)\s*\{\s*pararMotores\(\)")
+
+    def test_serial_handshake_and_mode_commit_require_acknowledgement(self) -> None:
+        self.assertIn('REQUIRED_FIRMWARE_READY = "QT:READY:V3"', self.robot_js)
+        self.assertIn('enqueueLine("HELLO"', self.robot_js)
+        self.assertIn('readyLine !== REQUIRED_FIRMWARE_READY', self.robot_js)
+        self.assertIn('CONFIRME A LIBERAÇÃO', self.robot_js)
+        self.assertNotIn('label: "liberação segura"', self.robot_js)
+        self.assertIn('line === `OK:MODE:${nextMode}`', self.robot_js)
+        self.assertIn('control?.commitMode?.(nextMode', self.robot_js)
+        mode_transition = self.robot_js.split("async function executeModeTransition", 1)[1].split("function requestMode", 1)[0]
+        estop_index = mode_transition.index('transact("ESTOP"')
+        stop_index = mode_transition.index('transact("CMD:PARAR"')
+        mode_ack_index = mode_transition.index('transact(`MODE:${nextMode}`')
+        commit_index = mode_transition.index('control?.commitMode?.(nextMode')
+        self.assertLess(estop_index, stop_index)
+        self.assertLess(mode_ack_index, commit_index)
+        self.assertIn("control?.rejectMode?.(error", mode_transition)
+
+    def test_motion_requires_ack_and_fails_closed(self) -> None:
+        self.assertIn('transact(`CMD:${command}`', self.robot_js)
+        self.assertIn('line === `OK:CMD:${command}`', self.robot_js)
+        self.assertIn('consecutiveMotionFailures >= 2', self.robot_js)
+        self.assertIn('Dois comandos de movimento ficaram sem confirmação', self.robot_js)
+
+    def test_stale_events_and_split_brain_fail_closed(self) -> None:
+        self.assertIn("connectionGeneration", self.robot_js)
+        self.assertIn("operationGeneration", self.robot_js)
+        self.assertIn("modeGeneration", self.robot_js)
+        self.assertIn("eventIsFresh(detail)", self.robot_js)
+        self.assertIn("firmwareMode !== activeMode", self.robot_js)
+        fail_closed = self.robot_js.split("function failClosed", 1)[1].split("function parseTelemetry", 1)[0]
+        self.assertIn('setConnection("FALHA DE SINCRONIZAÇÃO", "ERROR"', fail_closed)
+        self.assertIn('enqueueLine("ESTOP"', fail_closed)
 
     def test_ultrasonic_sensor_remains_above_external_commands(self) -> None:
         self.assertRegex(self.firmware, r"LIMITE_FALHAS_SENSOR\s*=\s*5")
@@ -99,7 +143,7 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn("registrarObstaculo(agora)", self.firmware)
 
     def test_firmware_protocol_and_telemetry_are_complete(self) -> None:
-        for token in ("MODE:1", "MODE:2", "MODE:3", "CMD:FRENTE", "CMD:PARAR", "ESTOP", "RESET_ESTOP", "PING", "STATUS"):
+        for token in ("HELLO", "MODE:1", "MODE:2", "MODE:3", "CMD:FRENTE", "CMD:PARAR", "ESTOP", "RESET_ESTOP", "PING", "STATUS"):
             self.assertIn(token, self.firmware)
         for field in ("QT|MODE:", "|DIST:", "|CMD:", "|STATE:"):
             self.assertIn(field, self.firmware)

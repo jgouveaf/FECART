@@ -1,337 +1,467 @@
-const video = document.getElementById("cameraVideo");
-const canvas = document.getElementById("gestureCanvas");
-const context = canvas.getContext("2d");
-const stage = document.getElementById("cameraStage");
-const startButton = document.getElementById("startCamera");
-const stopButton = document.getElementById("stopCamera");
-const statusElement = document.getElementById("cameraStatus");
-const statusDot = document.getElementById("cameraDot");
-const placeholderTitle = document.getElementById("cameraPlaceholderTitle");
-const placeholderHint = document.getElementById("cameraPlaceholderHint");
-const commandElement = document.getElementById("gestureCommand");
-const countElement = document.getElementById("fingerCount");
-const cameraPanel = document.getElementById("camera-gestos");
-const facePanel = document.getElementById("faceCameraPanel");
-const gesturePanel = document.getElementById("gestureCameraPanel");
-const cameraTabs = document.querySelectorAll(".camera-view-tab");
+(() => {
+  "use strict";
 
-const COMMANDS = {
-  1: "FRENTE",
-  2: "DIREITA",
-  3: "ESQUERDA",
-  4: "PARAR",
-  5: "GIRAR",
-};
+  const control = window.QuantumControl;
+  const video = document.getElementById("cameraVideo");
+  const canvas = document.getElementById("gestureCanvas");
+  const context = canvas.getContext("2d");
+  const cameraPanel = document.getElementById("camera-gestos");
+  const facePanel = document.getElementById("faceCameraPanel");
+  const gesturePanel = document.getElementById("gestureCameraPanel");
+  const cameraTabs = document.querySelectorAll(".camera-view-tab");
+  const toggleButton = document.getElementById("toggleGestures");
+  const detectorStatus = document.getElementById("gestureDetectorStatus");
+  const commandElement = document.getElementById("gestureCommand");
+  const countElement = document.getElementById("fingerCount");
+  const confidenceElement = document.getElementById("gestureConfidence");
+  const fpsElement = document.getElementById("gestureFps");
+  const deliveryStatus = document.getElementById("gestureDeliveryStatus");
 
-const VISION_SOURCES = [
-  {
-    module: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs",
-    wasm: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm",
-  },
-  {
-    module: "https://unpkg.com/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs",
-    wasm: "https://unpkg.com/@mediapipe/tasks-vision@1.0.1/wasm",
-  },
-];
+  const COMMANDS = Object.freeze({ 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "PARAR", 5: "GIRAR" });
+  const CONNECTIONS = Object.freeze([
+    [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8], [5,9],[9,10],[10,11],[11,12],
+    [9,13],[13,14],[14,15],[15,16], [13,17],[17,18],[18,19],[19,20],[0,17],
+  ]);
+  const MIN_CONFIDENCE = 0.65;
+  const CONFIRM_FRAMES = 4;
+  const STOP_CONFIRM_FRAMES = 2;
+  const CONFIRM_MS = 180;
+  const COMMAND_COOLDOWN_MS = 650;
+  const COMMAND_HEARTBEAT_MS = 400;
+  const LOST_HAND_STOP_MS = 500;
+  const UNSTABLE_GESTURE_STOP_MS = 500;
+  const INFERENCE_INTERVAL_MS = 83;
+  const MODEL_IDLE_RELEASE_MS = 60000;
 
-const CONNECTIONS = [
-  [0,1],[1,2],[2,3],[3,4],
-  [0,5],[5,6],[6,7],[7,8],
-  [5,9],[9,10],[10,11],[11,12],
-  [9,13],[13,14],[14,15],[15,16],
-  [13,17],[17,18],[18,19],[19,20],[0,17],
-];
+  let model = null;
+  let modelPromise = null;
+  let modelState = "NOT_LOADED";
+  let modelReleaseTimer = 0;
+  let enabled = false;
+  let active = false;
+  let activeView = "face";
+  let loopGeneration = 0;
+  let animationId = 0;
+  let lastVideoTime = -1;
+  let lastInferenceAt = 0;
+  let candidateCount = 0;
+  let candidateFrames = 0;
+  let candidateSince = 0;
+  let confirmedCount = 0;
+  let confirmedCommand = null;
+  let lastDispatchAt = 0;
+  let cooldownUntil = 0;
+  let lastHandAt = 0;
+  let unstableSince = 0;
+  let inferenceFrames = 0;
+  let fpsWindowAt = 0;
 
-let handLandmarker = null;
-let stream = null;
-let running = false;
-let animationId = 0;
-let lastVideoTime = -1;
-let lastInferenceAt = 0;
-let pendingCount = 0;
-let pendingFrames = 0;
-let stableCount = 0;
-let activeView = "face";
-let lastGestureAt = 0;
-let lastDispatchAt = 0;
-let lastDispatchedCommand = "";
-
-function setStatus(text, active = false) {
-  statusElement.textContent = text;
-  statusDot.classList.toggle("idle", !active);
-}
-
-function setPlaceholder(title, hint) {
-  placeholderTitle.textContent = title;
-  placeholderHint.textContent = hint;
-}
-
-function cameraErrorMessage(error) {
-  if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
-    return "A permissão foi bloqueada. Clique no cadeado ao lado do endereço, permita a câmera e tente novamente.";
+  function setDetectorStatus(status, detail = "") {
+    if (detectorStatus) detectorStatus.textContent = status;
+    if (detail) countElement.textContent = detail;
+    toggleButton.dataset.state = status;
   }
-  if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") {
-    return "Nenhuma webcam foi encontrada. Conecte ou ative a câmera e tente novamente.";
-  }
-  if (error?.name === "NotReadableError" || error?.name === "TrackStartError" || error?.name === "AbortError") {
-    return "A webcam está ocupada ou bloqueada pelo Windows. Feche Câmera, Teams, Discord e outros aplicativos e tente novamente.";
-  }
-  if (error?.name === "OverconstrainedError" || error?.name === "ConstraintNotSatisfiedError") {
-    return "A webcam não aceitou a configuração solicitada. Recarregue a página para tentar no modo compatível.";
-  }
-  return error?.message || "Não foi possível abrir a câmera neste navegador.";
-}
 
-async function requestCameraStream() {
-  try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 540 } },
+  function setToggleState(state) {
+    toggleButton.disabled = state === "LOADING" || state === "STOPPING";
+    toggleButton.setAttribute("aria-pressed", String(state === "ACTIVE"));
+    if (state === "LOADING") toggleButton.textContent = "Carregando detector…";
+    else if (state === "ACTIVE") toggleButton.textContent = "Desativar gestos";
+    else if (state === "ERROR") toggleButton.textContent = "Tentar novamente";
+    else toggleButton.textContent = "Ativar gestos";
+  }
+
+  function updateDeliveryText() {
+    const mode = control?.state.mode.id || 1;
+    if (!enabled) deliveryStatus.textContent = "Detector desligado. Ative-o para testar os gestos.";
+    else if (mode !== 3) deliveryStatus.textContent = "Detector ativo para teste. Os comandos só chegam ao robô no Modo Gestos.";
+    else if (!control?.state.robot.connected) deliveryStatus.textContent = "Gesto validado, mas o Arduino USB está desconectado.";
+    else deliveryStatus.textContent = `Modo Gestos ativo · último comando: ${confirmedCommand || "PARAR"}.`;
+  }
+
+  function clearOverlay() {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function clearCandidate() {
+    candidateCount = 0;
+    candidateFrames = 0;
+    candidateSince = 0;
+  }
+
+  function updateGestureUi(count, confidence, stable) {
+    document.querySelectorAll(".gesture-map [data-fingers]").forEach((item) => {
+      item.classList.toggle("active", stable && Number(item.dataset.fingers) === count);
     });
-  } catch (error) {
-    if (!["OverconstrainedError", "ConstraintNotSatisfiedError"].includes(error?.name)) throw error;
-    return navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+    confidenceElement.textContent = confidence ? `${Math.round(confidence * 100)}%` : "—";
+    if (!count) {
+      commandElement.textContent = "NENHUM";
+      countElement.textContent = "Nenhum gesto detectado";
+      return;
+    }
+    if (!stable) {
+      commandElement.textContent = "VALIDANDO";
+      countElement.textContent = `${count} dedo(s) · mantenha a mão firme`;
+      return;
+    }
+    commandElement.textContent = COMMANDS[count];
+    countElement.textContent = `${count} dedo(s) confirmados`;
   }
-}
 
-function setGesture(count, stable = false) {
-  document.querySelectorAll(".gesture-map [data-fingers]").forEach((item) => {
-    item.classList.toggle("active", stable && Number(item.dataset.fingers) === count);
-  });
-  if (!stable || !COMMANDS[count]) {
-    commandElement.textContent = "ANALISANDO";
-    countElement.textContent = count ? `${count} dedo(s) — mantenha a mão firme` : "Nenhuma mão detectada";
-    return;
-  }
-  commandElement.textContent = COMMANDS[count];
-  countElement.textContent = `${count} dedo(s) reconhecido(s) · comando pronto`;
-  lastGestureAt = performance.now();
-  const command = COMMANDS[count];
-  if (command !== lastDispatchedCommand || command === "PARAR" || performance.now() - lastDispatchAt >= 450) {
-    lastDispatchedCommand = command;
+  function dispatchCommand(command, count, confidence, reason = "CONFIRMED") {
     lastDispatchAt = performance.now();
-    window.dispatchEvent(new CustomEvent("quantum:gesture-command", { detail: { command, count, stable: true } }));
+    window.dispatchEvent(new CustomEvent("quantum:gesture-command", {
+      detail: {
+        command,
+        count,
+        confidence,
+        stable: reason === "CONFIRMED" || reason === "HEARTBEAT",
+        reason,
+        emittedAt: performance.now(),
+        modeGeneration: window.quantumRobot?.modeGeneration,
+      },
+    }));
   }
-}
 
-function stopGestureOutput() {
-  lastDispatchedCommand = "PARAR";
-  lastDispatchAt = performance.now();
-  window.dispatchEvent(new CustomEvent("quantum:gesture-command", { detail: { command: "PARAR", count: 0, stable: false } }));
-}
-
-function classifyFingerCount(landmarks, handedness) {
-  const fingers = [
-    landmarks[8].y < landmarks[6].y,
-    landmarks[12].y < landmarks[10].y,
-    landmarks[16].y < landmarks[14].y,
-    landmarks[20].y < landmarks[18].y,
-  ];
-  let thumb = false;
-  if (handedness === "Right") thumb = landmarks[4].x < landmarks[3].x;
-  if (handedness === "Left") thumb = landmarks[4].x > landmarks[3].x;
-  return fingers.filter(Boolean).length + Number(thumb);
-}
-
-function stabilizeCount(count) {
-  if (count === 4) {
-    pendingCount = 4;
-    pendingFrames = 3;
-    stableCount = 4;
-    return true;
+  function forceStop(reason, logEvent = true) {
+    const hadCommand = confirmedCommand && confirmedCommand !== "PARAR";
+    confirmedCount = 0;
+    confirmedCommand = null;
+    unstableSince = 0;
+    clearCandidate();
+    updateGestureUi(0, 0, false);
+    if (hadCommand || reason === "MODE_CHANGE" || reason === "DISABLED" || reason === "CAMERA_STOPPED") {
+      dispatchCommand("PARAR", 0, 1, reason);
+      if (logEvent) control?.log("INFO", "GESTOS", `Comando limpo · ${reason}`);
+    }
+    control?.patch("gestures", { gesture: null, confidence: 0, command: "PARAR" }, { source: "gesture-stop", reason });
+    updateDeliveryText();
   }
-  if (count === pendingCount) pendingFrames += 1;
-  else { pendingCount = count; pendingFrames = 1; }
-  if (pendingFrames >= 3) stableCount = count;
-  return pendingFrames >= 3 && stableCount === count;
-}
 
-function drawHand(landmarks) {
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.lineWidth = 3;
-  context.strokeStyle = "#21d4fd";
-  context.fillStyle = "#31e6a1";
-  for (const [from, to] of CONNECTIONS) {
-    context.beginPath();
-    context.moveTo(landmarks[from].x * canvas.width, landmarks[from].y * canvas.height);
-    context.lineTo(landmarks[to].x * canvas.width, landmarks[to].y * canvas.height);
-    context.stroke();
+  function classifyFingerCount(landmarks, handedness) {
+    const fingers = [
+      landmarks[8].y < landmarks[6].y,
+      landmarks[12].y < landmarks[10].y,
+      landmarks[16].y < landmarks[14].y,
+      landmarks[20].y < landmarks[18].y,
+    ];
+    let thumb = false;
+    if (handedness === "Right") thumb = landmarks[4].x < landmarks[3].x;
+    if (handedness === "Left") thumb = landmarks[4].x > landmarks[3].x;
+    return fingers.filter(Boolean).length + Number(thumb);
   }
-  for (const point of landmarks) {
-    context.beginPath();
-    context.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, Math.PI * 2);
-    context.fill();
+
+  function drawHand(landmarks) {
+    clearOverlay();
+    context.lineWidth = Math.max(2, canvas.width / 420);
+    context.strokeStyle = "#3ad8ff";
+    context.fillStyle = "#4cf2b1";
+    for (const [from, to] of CONNECTIONS) {
+      context.beginPath();
+      context.moveTo(landmarks[from].x * canvas.width, landmarks[from].y * canvas.height);
+      context.lineTo(landmarks[to].x * canvas.width, landmarks[to].y * canvas.height);
+      context.stroke();
+    }
+    for (const point of landmarks) {
+      context.beginPath();
+      context.arc(point.x * canvas.width, point.y * canvas.height, Math.max(3, canvas.width / 190), 0, Math.PI * 2);
+      context.fill();
+    }
   }
-}
 
-async function initializeModel() {
-  if (handLandmarker) return;
-  const modelAssetPath = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-  let lastError = null;
+  async function loadModel() {
+    if (model) return model;
+    if (modelPromise) return modelPromise;
+    window.clearTimeout(modelReleaseTimer);
+    modelState = "LOADING";
+    setToggleState("LOADING");
+    setDetectorStatus("LOADING", "Carregando MediaPipe local…");
+    control?.patch("gestures", { status: "LOADING", model: "LOADING" }, { source: "gesture-model" });
+    control?.log("INFO", "GESTOS", "Carregando detector local de mãos");
 
-  for (let index = 0; index < VISION_SOURCES.length; index += 1) {
-    const source = VISION_SOURCES[index];
-    setStatus(`CÂMERA ATIVA · CARREGANDO IA ${index + 1}/${VISION_SOURCES.length}`, true);
-    try {
-      const { FilesetResolver, HandLandmarker } = await import(source.module);
-      const vision = await FilesetResolver.forVisionTasks(source.wasm);
-      const options = {
-        baseOptions: { modelAssetPath, delegate: "GPU" },
-        runningMode: "VIDEO",
-        numHands: 1,
-        minHandDetectionConfidence: 0.6,
-        minHandPresenceConfidence: 0.6,
-        minTrackingConfidence: 0.55,
-      };
+    modelPromise = (async () => {
       try {
-        handLandmarker = await HandLandmarker.createFromOptions(vision, options);
-      } catch {
-        options.baseOptions.delegate = "CPU";
-        handLandmarker = await HandLandmarker.createFromOptions(vision, options);
+        const moduleUrl = new URL("web/vendor/mediapipe/vision_bundle.js", document.baseURI).href;
+        const wasmUrl = new URL("web/vendor/mediapipe/wasm", document.baseURI).href.replace(/\/$/, "");
+        const modelUrl = new URL("web/vendor/mediapipe/hand_landmarker.task", document.baseURI).href;
+        const { FilesetResolver, HandLandmarker } = await import(moduleUrl);
+        const vision = await FilesetResolver.forVisionTasks(wasmUrl);
+        const options = {
+          baseOptions: { modelAssetPath: modelUrl, delegate: "GPU" },
+          runningMode: "VIDEO",
+          numHands: 1,
+          minHandDetectionConfidence: MIN_CONFIDENCE,
+          minHandPresenceConfidence: MIN_CONFIDENCE,
+          minTrackingConfidence: 0.6,
+        };
+        try {
+          model = await HandLandmarker.createFromOptions(vision, options);
+        } catch (gpuError) {
+          control?.log("WARNING", "GESTOS", "GPU indisponível; detector alternado para CPU");
+          options.baseOptions.delegate = "CPU";
+          model = await HandLandmarker.createFromOptions(vision, options);
+        }
+        modelState = "READY";
+        control?.patch("gestures", { status: enabled ? "ONLINE" : "READY", model: "READY" }, { source: "gesture-model" });
+        control?.log("INFO", "GESTOS", "Modelo local carregado");
+        return model;
+      } catch (error) {
+        modelState = "ERROR";
+        model = null;
+        control?.patch("gestures", { status: "ERROR", model: "ERROR" }, { source: "gesture-model" });
+        control?.patch("diagnostics", { lastError: `Modelo de gestos: ${error.message}` }, { source: "gesture-model" });
+        control?.log("ERROR", "GESTOS", `Modelo não carregou: ${error.message}`);
+        throw error;
+      } finally {
+        modelPromise = null;
+      }
+    })();
+    return modelPromise;
+  }
+
+  function scheduleModelRelease() {
+    window.clearTimeout(modelReleaseTimer);
+    modelReleaseTimer = window.setTimeout(() => {
+      if (enabled || !model) return;
+      try { model.close(); } catch { /* modelo já liberado */ }
+      model = null;
+      modelState = "NOT_LOADED";
+      control?.patch("gestures", { model: "NOT_LOADED", status: "OFFLINE" }, { source: "gesture-idle-release" });
+      control?.log("INFO", "GESTOS", "Modelo liberado após 60 s inativo");
+    }, MODEL_IDLE_RELEASE_MS);
+  }
+
+  function confirmTemporal(count, confidence, now) {
+    if (confidence < MIN_CONFIDENCE || !COMMANDS[count]) {
+      clearCandidate();
+      return false;
+    }
+    if (candidateCount !== count) {
+      candidateCount = count;
+      candidateFrames = 1;
+      candidateSince = now;
+    } else {
+      candidateFrames += 1;
+    }
+    const requiredFrames = count === 4 ? STOP_CONFIRM_FRAMES : CONFIRM_FRAMES;
+    const requiredTime = count === 4 ? 80 : CONFIRM_MS;
+    return candidateFrames >= requiredFrames && now - candidateSince >= requiredTime;
+  }
+
+  function handleNoHand(now) {
+    clearOverlay();
+    clearCandidate();
+    if (!lastHandAt || now - lastHandAt >= LOST_HAND_STOP_MS) {
+      if (confirmedCommand) {
+        control?.log("WARNING", "GESTOS", "Mão perdida; comando PARAR aplicado");
+        forceStop("HAND_LOST", false);
+      } else {
+        updateGestureUi(0, 0, false);
+      }
+    }
+  }
+
+  function processResult(result, now) {
+    if (!result.landmarks?.length) {
+      handleNoHand(now);
+      return;
+    }
+    lastHandAt = now;
+    const landmarks = result.landmarks[0];
+    const category = result.handedness?.[0]?.[0] || {};
+    const confidence = Number(category.score) || 0;
+    const handedness = category.categoryName || "";
+    const count = classifyFingerCount(landmarks, handedness);
+    drawHand(landmarks);
+    const stable = confirmTemporal(count, confidence, now);
+    updateGestureUi(count, confidence, stable);
+    control?.patch("gestures", { gesture: count || null, confidence, status: "ONLINE" }, { source: "gesture-frame" });
+    if (!stable) {
+      if (!unstableSince) unstableSince = now;
+      if (confirmedCommand && now - unstableSince >= UNSTABLE_GESTURE_STOP_MS) {
+        control?.log("WARNING", "GESTOS", "Gesto deixou de ser estável; comando PARAR aplicado");
+        forceStop("GESTURE_UNSTABLE", false);
       }
       return;
+    }
+    unstableSince = 0;
+
+    const command = COMMANDS[count];
+    const changed = command !== confirmedCommand;
+    const stopCommand = command === "PARAR";
+    if (changed && (stopCommand || now >= cooldownUntil)) {
+      confirmedCount = count;
+      confirmedCommand = command;
+      cooldownUntil = now + COMMAND_COOLDOWN_MS;
+      dispatchCommand(command, count, confidence);
+      control?.patch("gestures", { command, gesture: count, confidence }, { source: "gesture-confirmed" });
+      control?.log("INFO", "GESTOS", `Confirmado: ${command} · ${Math.round(confidence * 100)}%`);
+      updateDeliveryText();
+    } else if (!changed && now - lastDispatchAt >= COMMAND_HEARTBEAT_MS) {
+      dispatchCommand(command, count, confidence, "HEARTBEAT");
+    }
+  }
+
+  function updateInferenceFps(now) {
+    inferenceFrames += 1;
+    if (!fpsWindowAt) fpsWindowAt = now;
+    const elapsed = now - fpsWindowAt;
+    if (elapsed < 1000) return;
+    const fps = inferenceFrames * 1000 / elapsed;
+    inferenceFrames = 0;
+    fpsWindowAt = now;
+    fpsElement.textContent = `${fps.toFixed(1)} FPS`;
+    control?.patch("gestures", { fps }, { source: "gesture-fps" });
+  }
+
+  function startLoop() {
+    const generation = ++loopGeneration;
+    cancelAnimationFrame(animationId);
+    lastVideoTime = -1;
+    lastInferenceAt = 0;
+    inferenceFrames = 0;
+    fpsWindowAt = performance.now();
+    const frame = (now) => {
+      if (generation !== loopGeneration || !active || !enabled || activeView !== "hand") return;
+      animationId = requestAnimationFrame(frame);
+      if (!model || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.currentTime === lastVideoTime || now - lastInferenceAt < INFERENCE_INTERVAL_MS) return;
+      lastVideoTime = video.currentTime;
+      lastInferenceAt = now;
+      try {
+        const result = model.detectForVideo(video, now);
+        processResult(result, now);
+        updateInferenceFps(now);
+      } catch (error) {
+        control?.log("ERROR", "GESTOS", `Falha durante inferência: ${error.message}`);
+        control?.patch("diagnostics", { lastError: `Gestos: ${error.message}` }, { source: "gesture-loop" });
+        disable("RUNTIME_ERROR");
+        setToggleState("ERROR");
+        setDetectorStatus("ERROR", "O detector encontrou um erro. Clique em tentar novamente.");
+      }
+    };
+    animationId = requestAnimationFrame(frame);
+  }
+
+  async function enable() {
+    if (enabled && active) return;
+    enabled = true;
+    window.clearTimeout(modelReleaseTimer);
+    setToggleState("LOADING");
+    updateDeliveryText();
+    control?.patch("gestures", { enabled: true, active: false, status: "STARTING" }, { source: "gesture-enable" });
+    control?.log("INFO", "GESTOS", "Ativação solicitada");
+    try {
+      if (activeView !== "hand") await setCameraView("hand");
+      if (!window.quantumCameraController?.active) await window.quantumCameraController.start();
+      if (!enabled || activeView !== "hand" || !window.quantumCameraController?.active) return;
+      await loadModel();
+      if (!enabled || activeView !== "hand" || !window.quantumCameraController.active) return;
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      active = true;
+      setToggleState("ACTIVE");
+      setDetectorStatus("ONLINE", "Aguardando um gesto estável…");
+      control?.patch("gestures", { enabled: true, active: true, status: "ONLINE", model: "READY" }, { source: "gesture-enable" });
+      control?.log("INFO", "GESTOS", "Reconhecimento contínuo iniciado");
+      startLoop();
+      updateDeliveryText();
     } catch (error) {
-      lastError = error;
-      console.warn(`MediaPipe não carregou por ${source.module}`, error);
+      if (!enabled) return;
+      enabled = false;
+      active = false;
+      setToggleState("ERROR");
+      setDetectorStatus("ERROR", `Não foi possível ativar: ${error.message}`);
+      control?.patch("gestures", { enabled: false, active: false, status: "ERROR" }, { source: "gesture-enable" });
+      updateDeliveryText();
     }
   }
 
-  throw new Error(lastError?.message || "Não foi possível carregar a inteligência de gestos.");
-}
-
-function processFrame(now) {
-  if (!running || activeView !== "hand") return;
-  animationId = requestAnimationFrame(processFrame);
-  if (video.readyState < 2 || video.currentTime === lastVideoTime || now - lastInferenceAt < 70) return;
-  lastVideoTime = video.currentTime;
-  lastInferenceAt = now;
-  const result = handLandmarker.detectForVideo(video, now);
-  if (!result.landmarks?.length) {
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    pendingFrames = 0;
-    stableCount = 0;
-    setGesture(0, false);
-    if (performance.now() - lastGestureAt > 700 && lastDispatchedCommand !== "PARAR") stopGestureOutput();
-    return;
+  function disable(reason = "DISABLED") {
+    const wasEnabled = enabled || active;
+    enabled = false;
+    active = false;
+    ++loopGeneration;
+    cancelAnimationFrame(animationId);
+    animationId = 0;
+    clearOverlay();
+    forceStop(reason, wasEnabled);
+    setToggleState("OFFLINE");
+    setDetectorStatus("OFFLINE", "Nenhum gesto detectado");
+    fpsElement.textContent = "— FPS";
+    control?.patch("gestures", { enabled: false, active: false, status: "OFFLINE", gesture: null, confidence: 0, command: "PARAR", fps: 0 }, { source: "gesture-disable", reason });
+    if (wasEnabled) control?.log("INFO", "GESTOS", `Detector desativado (${reason})`);
+    scheduleModelRelease();
+    updateDeliveryText();
   }
-  const landmarks = result.landmarks[0];
-  const handedness = result.handedness?.[0]?.[0]?.categoryName || "";
-  drawHand(landmarks);
-  const count = classifyFingerCount(landmarks, handedness);
-  setGesture(count, stabilizeCount(count));
-}
 
-async function setCameraView(view) {
-  activeView = view === "hand" ? "hand" : "face";
-  cameraPanel.dataset.cameraView = activeView;
-  cameraTabs.forEach((button) => {
-    const selected = button.dataset.cameraView === activeView;
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-selected", String(selected));
+  async function setCameraView(view) {
+    const nextView = view === "hand" ? "hand" : "face";
+    if (activeView === nextView && cameraPanel.dataset.cameraView === nextView) return;
+    if (activeView === "hand" && nextView !== "hand") disable("VIEW_CHANGE");
+    activeView = nextView;
+    cameraPanel.dataset.cameraView = activeView;
+    cameraTabs.forEach((button) => {
+      const selected = button.dataset.cameraView === activeView;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    facePanel.hidden = activeView !== "face";
+    gesturePanel.hidden = activeView !== "hand";
+    clearOverlay();
+    window.dispatchEvent(new CustomEvent("quantum:camera-view-changed", { detail: { view: activeView } }));
+    control?.log("INFO", "INTERFACE", `Visão selecionada: ${activeView === "face" ? "ROSTO" : "MÃO"}`);
+  }
+
+  cameraTabs.forEach((button, index) => {
+    button.addEventListener("click", () => { setCameraView(button.dataset.cameraView); });
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      let nextIndex = index;
+      if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = cameraTabs.length - 1;
+      else nextIndex = (index + (event.key === "ArrowRight" ? 1 : -1) + cameraTabs.length) % cameraTabs.length;
+      const next = cameraTabs[nextIndex];
+      setCameraView(next.dataset.cameraView);
+      next.focus();
+    });
   });
-  facePanel.hidden = activeView !== "face";
-  gesturePanel.hidden = activeView !== "hand";
-  cancelAnimationFrame(animationId);
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  window.dispatchEvent(new CustomEvent("quantum:camera-view-changed", { detail: { view: activeView } }));
-  if (!running) return;
-  if (activeView === "face") {
-    stopGestureOutput();
-    setStatus("CÂMERA FACIAL ATIVA", true);
-    return;
-  }
-  setStatus("CÂMERA ATIVA · CARREGANDO GESTOS", true);
-  commandElement.textContent = "CARREGANDO";
-  countElement.textContent = "Preparando o reconhecimento da mão…";
-  try {
-    await initializeModel();
-    if (!running || activeView !== "hand") return;
-    setStatus("CÂMERA DE GESTOS ATIVA", true);
-    animationId = requestAnimationFrame(processFrame);
-  } catch (error) {
-    setStatus("CÂMERA ATIVA · GESTOS INDISPONÍVEIS", true);
-    commandElement.textContent = "ERRO";
-    countElement.textContent = `Não foi possível carregar os gestos: ${error.message}`;
-  }
-}
+  toggleButton.addEventListener("click", () => { if (enabled) disable("USER"); else enable(); });
+  window.addEventListener("quantum:camera-stopped", () => disable("CAMERA_STOPPED"));
+  window.addEventListener("quantum:camera-error", () => disable("CAMERA_ERROR"));
+  window.addEventListener("quantum:mode-will-change", (event) => {
+    if (event.detail?.previous?.id === 3) disable("MODE_CHANGE");
+  });
+  window.addEventListener("quantum:mode-changed", (event) => {
+    const mode = event.detail?.current?.id;
+    if (mode === 2) setCameraView("face");
+    if (mode === 3) setCameraView("hand");
+    updateDeliveryText();
+  });
+  window.addEventListener("pagehide", () => {
+    disable("PAGE_HIDE");
+    window.clearTimeout(modelReleaseTimer);
+    try { model?.close(); } catch { /* modelo já liberado */ }
+    model = null;
+  });
 
-async function startCamera() {
-  if (running) return;
-  startButton.disabled = true;
-  startButton.setAttribute("aria-busy", "true");
-  startButton.textContent = "Abrindo câmera…";
-  try {
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      throw new Error("Este navegador exige HTTPS e suporte a câmera.");
-    }
-    setStatus("PERMISSÃO PENDENTE");
-    setPlaceholder("Permita o uso da câmera", "Responda à solicitação que apareceu perto da barra de endereço do navegador.");
-    stream = await requestCameraStream();
-    video.srcObject = stream;
-    await video.play();
-    canvas.width = video.videoWidth || 960;
-    canvas.height = video.videoHeight || 540;
-    stage.classList.add("active");
-    running = true;
-    stopButton.disabled = false;
-    startButton.textContent = "Câmera ligada";
-    setPlaceholder("Câmera desligada", "Clique em “Iniciar câmera” e permita o acesso.");
-    window.dispatchEvent(new CustomEvent("quantum:camera-started"));
-    setStatus("CÂMERA ATIVA", true);
-    commandElement.textContent = "CÂMERA OK";
-    countElement.textContent = "Escolha rosto ou mão nas abas acima.";
-    await setCameraView(activeView);
-  } catch (error) {
-    stream?.getTracks().forEach((track) => track.stop());
-    stream = null;
-    video.srcObject = null;
-    stage.classList.remove("active");
-    const message = cameraErrorMessage(error);
-    setStatus("CÂMERA NÃO ABRIU");
-    setPlaceholder("Não foi possível iniciar", message);
-    commandElement.textContent = "INDISPONÍVEL";
-    countElement.textContent = message;
-    window.dispatchEvent(new CustomEvent("quantum:camera-error", { detail: { name: error?.name || "Error", message } }));
-    startButton.textContent = "Tentar novamente";
-    startButton.disabled = false;
-  } finally {
-    startButton.setAttribute("aria-busy", "false");
-  }
-}
-
-function stopCamera() {
-  stopGestureOutput();
-  running = false;
-  cancelAnimationFrame(animationId);
-  stream?.getTracks().forEach((track) => track.stop());
-  stream = null;
-  video.srcObject = null;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  stage.classList.remove("active");
-  startButton.disabled = false;
-  startButton.textContent = "Iniciar câmera";
-  setPlaceholder("Câmera desligada", "Clique em “Iniciar câmera” e permita o acesso.");
-  stopButton.disabled = true;
-  commandElement.textContent = "NENHUM";
-  countElement.textContent = "Câmera desligada";
-  setStatus("AGUARDANDO");
-  document.querySelectorAll(".gesture-map .active").forEach((item) => item.classList.remove("active"));
-  window.dispatchEvent(new CustomEvent("quantum:camera-stopped"));
-}
-
-cameraTabs.forEach((button) => button.addEventListener("click", () => setCameraView(button.dataset.cameraView)));
-startButton.addEventListener("click", startCamera);
-stopButton.addEventListener("click", stopCamera);
-window.addEventListener("pagehide", stopCamera);
-cameraPanel.dataset.cameraView = "face";
-setCameraView("face");
-setStatus("PRONTO PARA INICIAR");
-startButton.disabled = false;
-startButton.textContent = "Iniciar câmera";
-window.quantumCameraController = Object.freeze({
-  start: startCamera,
-  stop: stopCamera,
-  selectView: setCameraView,
-  get running() { return running; },
-  get view() { return activeView; },
-});
+  window.quantumGestureController = Object.freeze({
+    enable,
+    disable,
+    selectView: setCameraView,
+    get enabled() { return enabled; },
+    get active() { return active; },
+    get view() { return activeView; },
+    get modelState() { return modelState; },
+  });
+  cameraPanel.dataset.cameraView = "face";
+  facePanel.hidden = false;
+  gesturePanel.hidden = true;
+  setToggleState("OFFLINE");
+  setDetectorStatus("OFFLINE", "Nenhum gesto detectado");
+  updateGestureUi(0, 0, false);
+  updateDeliveryText();
+  control?.patch("gestures", { status: "OFFLINE", model: "NOT_LOADED" }, { source: "gesture-init" });
+  control?.log("INFO", "GESTOS", "Controlador pronto · modelo local sob demanda");
+})();

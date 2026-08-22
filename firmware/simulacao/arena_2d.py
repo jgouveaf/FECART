@@ -9,7 +9,9 @@ from .simulador_robo import (
     CURVA_DIREITA,
     CURVA_ESQUERDA,
     FRENTE,
-    Estado,
+    GIRO,
+    PARADO,
+    TRAS,
     SimuladorRobo,
 )
 
@@ -123,6 +125,7 @@ class RoboNaArena:
         self.distancia_percorrida_cm = 0.0
         self.menor_distancia_cm = self.ALCANCE_SENSOR_CM
         self.colisoes = 0
+        self.proxima_leitura_sensor_ms = 0
 
     def _paredes_como_retangulos(self) -> tuple[Retangulo, ...]:
         espessura = 1.0
@@ -169,32 +172,36 @@ class RoboNaArena:
         )
 
     def passo(self, intervalo_ms: int = 20) -> None:
-        # O sensor e consultado antes do movimento, como camada de seguranca.
-        if self.controle.estado == Estado.FRENTE:
+        # O firmware consulta o sensor a cada 80 ms em qualquer modo/estado.
+        if self.controle.agora_ms >= self.proxima_leitura_sensor_ms:
             distancia = self.medir_distancia_cm()
-            leitura = max(0, round(distancia))
-            self.controle.ler_sensor([leitura, leitura, leitura])
+            self.controle.ler_sensor(distancia)
+            self.proxima_leitura_sensor_ms = (
+                self.controle.agora_ms + self.controle.INTERVALO_SENSOR_MS
+            )
 
         segundos = intervalo_ms / 1000.0
         motores = self.controle.motores
 
-        if motores == FRENTE:
+        if motores in (FRENTE, TRAS):
             angulo = radians(self.angulo_graus)
-            deslocamento = self.VELOCIDADE_CM_S * segundos
+            sentido = 1.0 if motores == FRENTE else -1.0
+            deslocamento = sentido * self.VELOCIDADE_CM_S * segundos
             novo_x = self.x + cos(angulo) * deslocamento
             novo_y = self.y + sin(angulo) * deslocamento
             if self._colidiria(novo_x, novo_y):
                 self.colisoes += 1
-                self.controle.estado = Estado.PARADO_SEGURANCA
-                self.controle.motores = self.controle.motores.__class__(0, 0, 0, 0)
+                self.controle.processar_linha("ESTOP")
             else:
                 self.x = novo_x
                 self.y = novo_y
-                self.distancia_percorrida_cm += deslocamento
+                self.distancia_percorrida_cm += abs(deslocamento)
         elif motores == CURVA_DIREITA:
-            self.angulo_graus += self.VELOCIDADE_ANGULAR_GRAUS_S * segundos
-        elif motores == CURVA_ESQUERDA:
             self.angulo_graus -= self.VELOCIDADE_ANGULAR_GRAUS_S * segundos
+        elif motores == CURVA_ESQUERDA:
+            self.angulo_graus += self.VELOCIDADE_ANGULAR_GRAUS_S * segundos
+        elif motores == GIRO:
+            self.angulo_graus -= 2 * self.VELOCIDADE_ANGULAR_GRAUS_S * segundos
 
         self.angulo_graus %= 360.0
         self.controle.avancar_tempo(intervalo_ms)
@@ -212,7 +219,9 @@ class RoboNaArena:
             menor_distancia_cm=self.menor_distancia_cm,
             desvios=self.controle.quantidade_desvios,
             colisoes=self.colisoes,
-            terminou_em_seguranca=self.controle.estado == Estado.PARADO_SEGURANCA,
+            terminou_em_seguranca=(
+                self.controle.parada_emergencia or not self.controle.sensor_seguro
+            ),
             posicao_final=(self.x, self.y),
             angulo_final_graus=self.angulo_graus,
         )

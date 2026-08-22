@@ -108,6 +108,7 @@ No firmware:
 - Câmera: `ACTIVE` e depois `OFF`, sem stream anexado após desligar.
 - Layout: sem overflow horizontal em 320, 768 e 1440 px; feed preservou 16:9 nas três larguras.
 - Zero erros de página, zero erros de console, zero requisições com falha e zero recursos externos.
+- A mesma bateria foi repetida após a publicação em `https://jgouveaf.github.io/FECART/` e passou com os mesmos estados e sem falhas.
 
 ### Web Serial
 

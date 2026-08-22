@@ -21,6 +21,7 @@ CAMERA_SOURCE = ROOT / "web" / "camera-controller.js"
 GESTURE_SOURCE = ROOT / "web" / "camera-gestures.js"
 ROBOT_SOURCE = ROOT / "web" / "robot-control.js"
 HTML_SOURCE = ROOT / "index.html"
+FILE_PROTOCOL_SCRIPT = ROOT / "tests" / "browser_file_protocol_redirect.cjs"
 
 
 PLAYWRIGHT_HARNESS = r"""
@@ -306,6 +307,40 @@ class TestCameraControllerLifecycleInBrowser(unittest.TestCase):
         self.assertTrue(retry["stageActive"])
         self.assertTrue(retry["attached"])
         self.assertEqual(retry["trackStopCalls"], 1)
+
+
+class TestFileProtocolRedirectInBrowser(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        node = find_node()
+        node_modules = find_node_modules()
+        if node is None or node_modules is None:
+            raise unittest.SkipTest("Playwright/Node não está disponível para validar file://")
+        environment = os.environ.copy()
+        environment["NODE_PATH"] = str(node_modules)
+        environment["QT_INDEX_PATH"] = str(HTML_SOURCE)
+        completed = subprocess.run(
+            [str(node), str(FILE_PROTOCOL_SCRIPT)],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise AssertionError(f"Teste file:// falhou:\n{completed.stdout}\n{completed.stderr}")
+        cls.result = json.loads(completed.stdout)
+
+    def test_local_file_redirects_to_public_https_preserving_section(self) -> None:
+        self.assertEqual(self.result["currentUrl"], "https://jgouveaf.github.io/FECART/#camera-gestos")
+        self.assertEqual(self.result["pageErrors"], [])
+
+    def test_redirect_happens_before_face_or_gesture_runtime_requests(self) -> None:
+        self.assertEqual(self.result["blockedRuntimeRequests"], [])
+        self.assertGreaterEqual(len(self.result["fileRequests"]), 1)
+        self.assertTrue(self.result["fileRequests"][0].endswith("/index.html"))
 
 
 class TestGestureAndCommandLifecycleContracts(unittest.TestCase):

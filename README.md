@@ -39,6 +39,8 @@ Por segurança, conectar o cabo **não inicia os motores**: o handshake termina 
 - Firmware: `firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino`
 - Relatório da revisão: `docs/RELATORIO_REVISAO_WEB_CAMERA_GESTOS.md`
 
+Não abra `index.html` por duplo clique (`file:///`): navegadores bloqueiam os módulos, modelos e WASM usados pelo FaceID e pelos gestos. A página detecta esse caso e encaminha para o painel HTTPS. Para desenvolvimento local, sirva a pasta por HTTP, por exemplo com `python -m http.server 8765`, e abra `http://127.0.0.1:8765/`.
+
 > O adaptador ESP32 presente em partes antigas do aplicativo desktop é legado e não participa do fluxo web/Arduino atual.
 
 ---

@@ -41,8 +41,8 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="arduinoCode"',
             'web/arduino-codes.js?v=4',
             'web/control-state.js?v=1',
-            'web/camera-controller.js?v=1',
-            'web/robot-control.js?v=2',
+            'web/camera-controller.js?v=2',
+            'web/robot-control.js?v=3',
             'id="toggleGestures"',
             'id="cameraDeviceSelect"',
             'id="retryFaceDetection"',
@@ -158,12 +158,24 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
 
     def test_camera_controller_uses_compatible_classic_bootstrap(self) -> None:
         self.assertIn('id="startCamera">Ativar câmera', self.html)
-        self.assertIn('src="web/camera-controller.js?v=1" defer', self.html)
-        self.assertIn('src="web/camera-gestures.js?v=10" defer', self.html)
+        self.assertIn('src="web/camera-controller.js?v=2" defer', self.html)
+        self.assertIn('src="web/camera-gestures.js?v=11" defer', self.html)
         self.assertNotIn('type="module" src="web/camera-gestures.js', self.html)
         self.assertIn("window.quantumCameraController", self.camera_controller_js)
         self.assertIn('startButton.textContent = "Ativar câmera"', self.camera_controller_js)
         self.assertIn("FALHA AO CARREGAR CONTROLE", self.html)
+
+    def test_file_protocol_redirects_to_https_and_features_fail_closed(self) -> None:
+        guard = self.html.index('window.location.protocol === "file:"')
+        styles = self.html.index('<link rel="stylesheet"')
+        self.assertLess(guard, styles)
+        self.assertIn('publicSiteUrl = "https://jgouveaf.github.io/FECART/"', self.html)
+        self.assertIn("window.location.replace(destination.href)", self.html)
+        self.assertIn('window.location?.protocol === "file:"', self.camera_controller_js)
+        self.assertIn('window.location?.protocol === "file:"', self.camera_js)
+        self.assertIn('window.location?.protocol === "file:"', self.face_js)
+        self.assertIn('window.location?.protocol === "file:"', self.robot_js)
+        self.assertIn("Web Serial bloqueado em página aberta diretamente pelo disco", self.robot_js)
 
     def test_identity_backup_can_be_exported_and_imported(self) -> None:
         self.assertIn('id="exportIdentities"', self.html)

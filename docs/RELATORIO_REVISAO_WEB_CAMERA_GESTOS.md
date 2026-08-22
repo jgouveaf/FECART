@@ -14,6 +14,7 @@ Esta revisão cobre o painel web, câmera, FaceID, gestos, gerenciamento dos tr�
 | --- | --- | --- | --- | --- |
 | Botão da câmera parecia não funcionar | Câmera, rosto e gestos dependiam de um mesmo bootstrap. Uma exceção em qualquer parte podia impedir a instalação dos listeners. A inicialização assíncrona também não possuía cancelamento forte; cliques rápidos podiam deixar um `getUserMedia()` antigo terminar depois do desligamento. | O controlador da câmera foi isolado em `camera-controller.js`, com máquina de estados `OFF/STARTING/ACTIVE/STOPPING/ERROR`, token de operação, timeout, descarte de streams atrasados, troca/remoção de dispositivo e mensagens específicas. | Ciclos ligar/desligar/religar, clique rápido, início cancelado, permissão negada, retry, câmera ausente, mudança de dispositivo, `pagehide` e smoke test do site completo. | Aprovado em mocks de navegador. |
 | Botão Mão & Gestos não iniciava o detector de forma confiável | O detector compartilhava o ciclo da câmera, dependia de recursos remotos e podia criar processamento concorrente ou manter eventos antigos após troca de modo. Um bundle `.mjs` também era entregue por servidores simples com MIME incompatível. | O detector foi separado em `camera-gestures.js`; MediaPipe, WASM e modelo foram empacotados localmente; o bundle passou a `.js`; o modelo é carregado sob demanda; há somente um loop por geração e liberação após inatividade. | Carregamento real do modelo no Chromium, ligar/desligar/religar, perda da mão/câmera, troca de aba/modo, verificação de recursos externos e erros de console. | Aprovado em câmera falsa 1280×720; câmera física pendente. |
+| `Failed to fetch ... file:///` e FaceID sem detectar | O painel foi aberto por duplo clique. Em `file:///`, módulos dinâmicos, WASM e os modelos `.task`, `.json` e `.bin` são bloqueados pelo navegador. O mesmo problema atingia MediaPipe e Human FaceID. | Um preflight no `<head>` detecta `file:///`, preserva a seção atual e encaminha para o painel HTTPS antes da IA. Câmera/FaceID, gestos e Web Serial também possuem bloqueios individuais nesse protocolo. | Navegação Playwright `file:///.../index.html#camera-gestos → HTTPS`, ausência de carregamentos de modelos pelo disco e teste facial completo em HTTP/HTTPS. | Aprovado; o erro original não é mais exibido. |
 | Gesto era detectado, mas não comandava o Arduino | O evento visual não tinha um caminho serial confirmado e o heartbeat podia renovar a própria validade indefinidamente. Eventos atrasados de um modo anterior também podiam sobreviver à troca. | `quantum:gesture-command` agora entra no controlador serial somente no Modo 3, com geração do modo, timestamp, confiança e estabilidade. O watchdog usa a hora da última entrada nova, não a hora do reenvio. Todo comando exige conexão V3 e confirmação do firmware. | Porta serial falsa, modo errado, evento antigo, timeout, heartbeat, confirmação ausente, desconexão e `pagehide`. | Aprovado em 9 cenários dinâmicos Web Serial. |
 | Troca de modo podia misturar comportamentos | Estado visual e firmware eram atualizados independentemente e sem confirmação transacional. | Existe uma fonte central de estado e a troca conectada executa `ESTOP → CMD:PARAR → MODE:n → RESET_ESTOP`. O modo só é confirmado após ACK; falha causa rollback e mantém ESTOP. | Todas as combinações Autônomo/Gestos/Seguir, transição rápida, timeout e divergência site/firmware. | Aprovado em testes automatizados. |
 
@@ -97,7 +98,7 @@ No firmware:
 
 ### Suíte completa
 
-- `pytest -q`: **138 testes aprovados e 31 subtestes aprovados**.
+- `pytest -q`: **141 testes aprovados e 31 subtestes aprovados**.
 - Um aviso de depreciação de uma dependência do InsightFace foi emitido; não houve falha.
 
 ### Navegador real com hardware falso
@@ -109,6 +110,7 @@ No firmware:
 - Layout: sem overflow horizontal em 320, 768 e 1440 px; feed preservou 16:9 nas três larguras.
 - Zero erros de página, zero erros de console, zero requisições com falha e zero recursos externos.
 - A mesma bateria foi repetida após a publicação em `https://jgouveaf.github.io/FECART/` e passou com os mesmos estados e sem falhas.
+- Fixture facial real: detectada como `TEMP-01`, overlay desenhado, cinco amostras cadastradas como `QT-001`, página recarregada e identidade reconhecida novamente com persistência no IndexedDB; zero falhas de página, console ou rede.
 
 ### Web Serial
 
@@ -160,7 +162,9 @@ Resultado: **9/9 cenários dinâmicos aprovados**.
 ## Limitações e bugs conhecidos
 
 - Web Serial requer navegador Chromium compatível e contexto seguro (HTTPS ou localhost).
+- Abertura por `file:///` não suporta os módulos/modelos de visão; o bootstrap agora detecta esse caso antes dos controladores, redireciona para o site HTTPS e mantém câmera, FaceID, gestos e Web Serial em modo fechado como defesa adicional.
 - O cadastro facial permanece no IndexedDB do navegador/dispositivo usado; não é sincronizado entre PCs.
+- Armazenamento pertence à origem HTTPS. Dados eventualmente criados por versões antigas em `file:///` não migram automaticamente para o site publicado.
 - Uma câmera falsa valida o pipeline, mas não valida precisão com pessoas reais.
 - RSSI Bluetooth indica proximidade aproximada, não direção nem posição através de parede. O sistema para quando perde o rosto; ele não navega às cegas usando BLE.
 - O aviso de depreciação do `SimilarityTransform.estimate` vem de uma dependência do InsightFace e deve ser acompanhado em atualização futura.
@@ -187,6 +191,8 @@ Resultado: **9/9 cenários dinâmicos aprovados**.
 - `tests/robot_control_runtime.test.cjs`
 - `tests/browser_full_site_smoke.cjs`
 - `tests/browser_face_circuit_breaker.cjs`
+- `tests/browser_file_protocol_redirect.cjs`
+- `tests/browser_face_detection_fixture.cjs`
 
 ## Referências técnicas consultadas
 

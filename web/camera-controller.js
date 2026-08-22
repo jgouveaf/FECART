@@ -192,6 +192,12 @@
   async function start(options = {}) {
     if (phase === PHASE.ACTIVE) return stream;
     if (phase === PHASE.STARTING && pendingStart) return pendingStart;
+    if (window.location?.protocol === "file:") {
+      const error = new Error("A câmera e o FaceID exigem o site HTTPS. Abra https://jgouveaf.github.io/FECART/.");
+      error.name = "SecurityError";
+      showError(error.message);
+      throw error;
+    }
     const token = ++operation;
     phase = PHASE.STARTING;
     setBusy(true, "Ativando…");

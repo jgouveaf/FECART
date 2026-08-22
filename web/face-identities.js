@@ -529,6 +529,9 @@
   async function loadModels() {
     if (modelsReady) return;
     if (modelsPromise) return modelsPromise;
+    if (window.location?.protocol === "file:") {
+      throw new Error("O FaceID exige o site HTTPS. Abra https://jgouveaf.github.io/FECART/.");
+    }
     if (!HumanLibrary?.Human) throw new Error("Biblioteca Human FaceID não foi carregada.");
     setStatus("CARREGANDO FACEID", true);
     control?.patch("vision", { active: false, status: "LOADING", tracking: "SEARCHING" }, { source: "face-model" });

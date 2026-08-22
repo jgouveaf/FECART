@@ -172,6 +172,10 @@
   async function loadModel() {
     if (model) return model;
     if (modelPromise) return modelPromise;
+    if (window.location?.protocol === "file:") {
+      const target = window.QuantumRuntime?.publicSiteUrl || "o painel HTTPS publicado";
+      throw new Error(`Gestos exigem o site HTTPS. Abra ${target}.`);
+    }
     window.clearTimeout(modelReleaseTimer);
     modelState = "LOADING";
     setToggleState("LOADING");

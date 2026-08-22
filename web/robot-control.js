@@ -403,6 +403,11 @@
 
   async function connectRobot() {
     if (transportOpen || closing) return false;
+    if (window.location?.protocol === "file:") {
+      setConnection("ABRA O SITE HTTPS", "ERROR", "O controle físico foi bloqueado. Use https://jgouveaf.github.io/FECART/.");
+      reportError("Web Serial bloqueado em página aberta diretamente pelo disco.");
+      return false;
+    }
     if (!window.isSecureContext || !("serial" in navigator)) {
       setConnection("NAVEGADOR INCOMPATÍVEL", "ERROR", "Abra o site no Chrome ou Edge para computador usando HTTPS.");
       reportError("Web Serial não está disponível neste navegador.");

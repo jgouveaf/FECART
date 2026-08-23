@@ -60,6 +60,7 @@ h1, h2, h3, p { margin-top: 0; } h1 { margin-bottom: 0; font-size: 25px; } h2 { 
 .hero-card, .progress-card, .panel, .metric-card { background: linear-gradient(145deg, rgba(14,26,42,.97), rgba(8,17,29,.97)); border: 1px solid var(--line); border-radius: var(--radius); }
 .hero-card { position: relative; overflow: hidden; min-height: 330px; display: flex; flex-direction: column; justify-content: space-between; padding: 42px; }
 .hero-card p { max-width: 590px; color: var(--muted); line-height: 1.65; }
+.hero-actions { position: relative; z-index: 2; display: flex; flex-wrap: wrap; gap: 10px; }
 .primary-button, .secondary-button, .danger-button { display: inline-flex; width: fit-content; align-items: center; justify-content: center; gap: 20px; border: 0; border-radius: 12px; padding: 13px 18px; cursor: pointer; font-weight: 800; transition: transform .2s, filter .2s; }
 .primary-button { background: linear-gradient(120deg, var(--cyan), #62a6ff); color: #04101c; box-shadow: 0 10px 30px rgba(33,212,253,.16); }.primary-button.compact { padding: 10px 14px; }.secondary-button { padding: 10px 14px; background: #142237; color: var(--text); border: 1px solid var(--line); }
 .danger-button { padding: 10px 14px; color: #fff; background: rgba(255,98,125,.16); border: 1px solid rgba(255,98,125,.5); }
@@ -698,10 +699,97 @@ footer {
   font: 700 11px/1 var(--mono);
 }
 
+/* Firmware deployment: makes the one-time IDE step explicit. */
+.firmware-workflow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.firmware-workflow article {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+  min-height: 106px;
+  padding: 16px;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(33, 212, 253, .06), transparent 58%),
+    rgba(5, 12, 21, .82);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.firmware-workflow article::after {
+  content: "";
+  position: absolute;
+  right: -28px;
+  bottom: -34px;
+  width: 86px;
+  height: 86px;
+  background: radial-gradient(circle, rgba(33, 212, 253, .09), transparent 68%);
+  border-radius: 50%;
+}
+
+.firmware-workflow b {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: var(--cyan);
+  background: rgba(33, 212, 253, .09);
+  border: 1px solid rgba(33, 212, 253, .22);
+  border-radius: 11px;
+  font: 850 11px/1 var(--mono);
+}
+
+.firmware-workflow strong,
+.firmware-workflow small,
+.firmware-assurance strong,
+.firmware-assurance small {
+  display: block;
+}
+
+.firmware-workflow strong { color: var(--text); font-size: 13px; }
+.firmware-workflow small { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+
+.firmware-assurance {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  color: #d7fff0;
+  background: rgba(49, 230, 161, .065);
+  border: 1px solid rgba(49, 230, 161, .22);
+  border-radius: 13px;
+}
+
+.firmware-assurance > span {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: #03130c;
+  background: var(--green);
+  border-radius: 50%;
+  font-weight: 900;
+  box-shadow: 0 0 20px rgba(49, 230, 161, .2);
+}
+
+.firmware-assurance strong { font-size: 12px; }
+.firmware-assurance small { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+
 @media (max-width: 1180px) {
   .operations-grid { grid-template-columns: 1fr; }
   .system-status-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .camera-panel > .section-heading { grid-template-columns: 1fr; }
+  .firmware-workflow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Switch to the compact navigation before the fixed sidebar crushes the workspace. */
@@ -756,6 +844,8 @@ footer {
   .camera-panel > .section-heading .camera-device-control {
     grid-column: 1 / -1;
   }
+  .firmware-workflow { grid-template-columns: 1fr; }
+  .firmware-workflow article { min-height: 0; }
   .camera-device-control { width: 100%; flex-direction: column; }
   .camera-view-tabs { overflow-x: auto; }
   .camera-view-tab { flex: 1 0 145px; }

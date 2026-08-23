@@ -36,6 +36,9 @@ const unsigned long INTERVALO_SENSOR_MS = 80UL;
 const unsigned long INTERVALO_TELEMETRIA_MS = 250UL;
 const unsigned long TIMEOUT_COMANDO_MS = 1500UL;
 const unsigned long JANELA_OBSTACULOS_MS = 15000UL;
+// Mantém as rodas paradas logo após o boot para o site enviar ESTOP antes
+// que o Modo 1 possa começar. Sem site, o autônomo inicia após esta janela.
+const unsigned long JANELA_COMANDO_INICIAL_MS = 750UL;
 
 const unsigned int TEMPO_PAUSA_MS = 200;
 const unsigned int TEMPO_RE_MS = 700;
@@ -388,6 +391,15 @@ void lerSerial(unsigned long agora) {
   }
 }
 
+void aguardarComandoInicial() {
+  const unsigned long inicio = millis();
+  while (millis() - inicio < JANELA_COMANDO_INICIAL_MS) {
+    pararMotores();
+    lerSerial(millis());
+    delay(1);
+  }
+}
+
 void setup() {
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
@@ -403,6 +415,7 @@ void setup() {
   ultimoComandoEm = millis();
   Serial.println(F("QT:READY:V3"));
   Serial.println(F("OK:MODE:1"));
+  aguardarComandoInicial();
 }
 
 void loop() {

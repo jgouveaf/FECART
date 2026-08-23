@@ -18,7 +18,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="web/styles.css?v=10">
+  <link rel="stylesheet" href="web/styles.css?v=11">
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
@@ -65,7 +65,10 @@
             <h2>Robótica e visão computacional em um só painel.</h2>
             <p>Conecte o Arduino por USB, escolha um dos três modos e acompanhe câmera, gestos, sensor e comandos em tempo real.</p>
           </div>
-          <a class="primary-button" href="#simulador">Abrir simulador <span>→</span></a>
+          <div class="hero-actions">
+            <a class="primary-button" href="#camera-gestos">Abrir controle <span>→</span></a>
+            <a class="secondary-button" href="#codigos">Preparar Arduino</a>
+          </div>
           <div class="orb" aria-hidden="true"><span></span><span></span><span></span></div>
         </article>
 
@@ -84,7 +87,7 @@
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>141 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>100+ aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⌁</span><div><small>Arduino</small><strong>USB Serial</strong></div></article>
@@ -138,7 +141,7 @@
             <div>
               <span class="section-tag">Arduino UNO · 9600 baud</span>
               <strong><span class="status-dot idle" id="robotConnectionDot"></span><span id="robotConnectionStatus">DESCONECTADO</span></strong>
-              <small id="robotConnectionHint">Use Chrome ou Edge no computador e conecte o cabo USB.</small>
+              <small id="robotConnectionHint">Feche o Arduino IDE e o Monitor Serial, conecte o cabo USB e use Chrome ou Edge.</small>
             </div>
             <div class="robot-actions">
               <button class="primary-button compact" id="connectRobot">Conectar Arduino USB</button>
@@ -181,7 +184,7 @@
             <div class="camera-placeholder" id="cameraPlaceholder">
               <span>◉</span>
               <strong id="cameraPlaceholderTitle">Câmera desligada</strong>
-              <small id="cameraPlaceholderHint">Clique em “Iniciar câmera” e permita o acesso.</small>
+              <small id="cameraPlaceholderHint">Clique em “Ativar câmera” e permita o acesso.</small>
             </div>
             <span class="canvas-badge"><span class="status-dot idle" id="cameraDot"></span><span id="cameraStatus">AGUARDANDO</span></span>
             <span class="camera-fps-badge" id="cameraFpsBadge">— FPS</span>
@@ -290,11 +293,21 @@
 
       <section id="codigos" class="page-section panel code-panel">
         <div class="section-heading">
-          <div><span class="section-tag">Arduino UNO</span><h2>Códigos do robô</h2><p>Abra, copie ou baixe os sketches usados no Arduino IDE.</p></div>
+          <div><span class="section-tag">Arduino UNO · instalação única</span><h2>Códigos do robô</h2><p>Grave o firmware principal uma vez. Depois disso, o IDE pode permanecer fechado e o site controla o UNO pelo cabo.</p></div>
           <div class="code-actions">
             <button class="secondary-button" id="copyCode">Copiar código</button>
             <a class="primary-button compact" id="downloadCode" download>Baixar .ino</a>
           </div>
+        </div>
+        <div class="firmware-workflow" aria-label="Como preparar e conectar o Arduino">
+          <article><b>01</b><div><strong>Gravar uma vez</strong><small>Envie o Código principal pelo Arduino IDE 2.3.10.</small></div></article>
+          <article><b>02</b><div><strong>Liberar a porta</strong><small>Feche o Monitor Serial e o Arduino IDE após o envio.</small></div></article>
+          <article><b>03</b><div><strong>Conectar por USB</strong><small>O firmware permanece salvo no UNO mesmo sem energia.</small></div></article>
+          <article><b>04</b><div><strong>Operar pelo site</strong><small>O painel envia modos e comandos; não envia sketches.</small></div></article>
+        </div>
+        <div class="firmware-assurance" role="note">
+          <span aria-hidden="true">✓</span>
+          <div><strong>Arduino IDE somente para instalar ou atualizar.</strong><small>No Modo 1, o UNO anda e desvia sozinho. Nos Modos 2 e 3, mantenha o site conectado para receber câmera ou gestos.</small></div>
         </div>
         <div class="pin-strip">
           <span><b>D7</b> IN1</span><span><b>D6</b> IN2</span><span><b>D5</b> IN3</span><span><b>D4</b> IN4</span><span><b>D3</b> TRIG</span><span><b>D2</b> ECHO</span>

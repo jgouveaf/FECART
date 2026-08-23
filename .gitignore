@@ -42,3 +42,6 @@ desktop.ini
 
 # Logs
 *.log
+
+# Capturas geradas pelos testes de navegador
+tests/artifacts/

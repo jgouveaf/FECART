@@ -719,7 +719,7 @@
       confirmedMode = null;
       splitBrainHandling = false;
       setControlsForConnection("OFFLINE");
-      if (!preserveStatus) setConnection("DESCONECTADO", "OFFLINE", "Use Chrome ou Edge no computador e conecte o cabo USB.");
+      if (!preserveStatus) setConnection("DESCONECTADO", "OFFLINE", "Feche o Arduino IDE e o Monitor Serial, conecte o cabo USB e use Chrome ou Edge.");
       if (stateStatus) stateStatus.textContent = "SEM TELEMETRIA";
       if (distanceStatus) distanceStatus.textContent = "—";
       if (commandStatus) commandStatus.textContent = "PARAR";
@@ -827,7 +827,7 @@
 
   renderMode(activeMode);
   setControlsForConnection("OFFLINE");
-  setConnection("DESCONECTADO", "OFFLINE", "Use Chrome ou Edge no computador e conecte o cabo USB.");
+  setConnection("DESCONECTADO", "OFFLINE", "Feche o Arduino IDE e o Monitor Serial, conecte o cabo USB e use Chrome ou Edge.");
   updateDeliveryHint();
   log("INFO", "ARDUINO", "Controlador Web Serial pronto · aguardando conexão explícita");
 

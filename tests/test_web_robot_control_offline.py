@@ -106,6 +106,15 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertLess(mode_ack_index, commit_index)
         self.assertIn("control?.rejectMode?.(error", mode_transition)
 
+    def test_boot_keeps_motors_stopped_during_serial_handshake_window(self) -> None:
+        self.assertRegex(self.firmware, r"JANELA_COMANDO_INICIAL_MS\s*=\s*750UL")
+        setup = self.firmware.split("void setup()", 1)[1].split("void loop()", 1)[0]
+        self.assertIn('Serial.println(F("QT:READY:V3"))', setup)
+        self.assertIn("aguardarComandoInicial()", setup)
+        guard = self.firmware.split("void aguardarComandoInicial()", 1)[1].split("void setup()", 1)[0]
+        self.assertIn("pararMotores()", guard)
+        self.assertIn("lerSerial(millis())", guard)
+
     def test_motion_requires_ack_and_fails_closed(self) -> None:
         self.assertIn('transact(`CMD:${command}`', self.robot_js)
         self.assertIn('line === `OK:CMD:${command}`', self.robot_js)

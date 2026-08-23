@@ -49,6 +49,12 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         ):
             self.assertIn(required, self.html)
 
+    def test_arduino_installation_workflow_is_explicit(self) -> None:
+        self.assertIn("Gravar uma vez", self.html)
+        self.assertIn("Liberar a porta", self.html)
+        self.assertIn("O painel envia modos e comandos; não envia sketches.", self.html)
+        self.assertIn("Arduino IDE somente para instalar ou atualizar.", self.html)
+
     def test_every_code_source_exists_and_is_an_arduino_sketch(self) -> None:
         sources = re.findall(r'data-code-source="([^"]+)"', self.html)
         self.assertEqual(len(sources), 3)

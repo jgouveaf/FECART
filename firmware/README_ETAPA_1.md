@@ -32,13 +32,19 @@ do Arduino precisam estar unidos. A alimentação dos motores entra no borne
 3. Feche o Monitor Serial e feche qualquer site/app que esteja usando essa COM.
 4. Deixe as rodas suspensas, confira a polaridade da alimentação e clique em
    **Carregar**.
-5. A compilação validada usa 6.608 bytes de flash e 407 bytes de RAM. O sketch
+5. A compilação validada usa 7.164 bytes de flash e 415 bytes de RAM. O sketch
    não precisa de biblioteca externa.
 
-Depois do envio, o Modo 1 começa automaticamente. Para usar o site, feche o
-Monitor Serial, abra o site no Chrome ou Edge para computador, clique em
-**Conectar Arduino USB** e escolha o Arduino UNO. O UNO reinicia quando a porta
-serial é aberta; por isso a interface aguarda cerca de dois segundos.
+O Arduino IDE é necessário somente para instalar ou atualizar o firmware. O
+código permanece gravado no UNO depois que o cabo ou a alimentação são
+desligados. Depois do envio, feche o Monitor Serial e o Arduino IDE para liberar
+a porta COM.
+
+Sem o site conectado, o Modo 1 começa automaticamente. Para usar o painel,
+abra-o no Chrome ou Edge para computador, clique em **Conectar Arduino USB** e
+escolha o Arduino UNO. O UNO reinicia quando a porta serial é aberta. Após
+anunciar `QT:READY:V3`, o firmware mantém as rodas paradas por mais 750 ms para
+o painel concluir o handshake e confirmar `ESTOP` antes de qualquer movimento.
 
 ## Os três modos
 

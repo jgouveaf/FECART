@@ -37,7 +37,13 @@ Por segurança, conectar o cabo **não inicia os motores**: o handshake termina 
 
 - Painel publicado: <https://jgouveaf.github.io/FECART/>
 - Firmware: `firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino`
+- Guia Arduino + site: `docs/GUIA_TECNICO_ARDUINO_SITE.md`
 - Relatório da revisão: `docs/RELATORIO_REVISAO_WEB_CAMERA_GESTOS.md`
+
+O Arduino IDE 2.3.10 é usado somente uma vez para gravar o firmware (ou quando
+houver atualização). Depois disso, o código continua salvo no UNO: feche o IDE
+e o Monitor Serial, conecte o cabo USB e controle os modos pelo painel web. O
+site envia comandos seriais; ele não recompila nem substitui o sketch.
 
 Não abra `index.html` por duplo clique (`file:///`): navegadores bloqueiam os módulos, modelos e WASM usados pelo FaceID e pelos gestos. A página detecta esse caso e encaminha para o painel HTTPS. Para desenvolvimento local, sirva a pasta por HTTP, por exemplo com `python -m http.server 8765`, e abra `http://127.0.0.1:8765/`.
 

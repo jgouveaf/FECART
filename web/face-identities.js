@@ -57,6 +57,13 @@
   const MAX_INFERENCE_BACKOFF_MS = 4000;
   const MATCH_OPTIONS = { order: 2, multiplier: 25, min: 0.2, max: 0.8 };
   const MODEL_URL = new URL("web/vendor/human/models/", document.baseURI).href;
+  const qualityStabilizer = new window.QuantumFaceQuality.FaceQualityStabilizer({
+    alpha: 0.22,
+    riseFrames: 5,
+    fallFrames: 4,
+    highEnter: 0.84,
+    highExit: 0.77,
+  });
 
   const humanConfig = {
     backend: "webgl",
@@ -265,7 +272,7 @@
     return (result?.gesture || []).map((item) => String(item.gesture || "").toLowerCase());
   }
 
-  function assessFace(face, result) {
+  function assessFace(face, result, trackingKey) {
     const gestures = gesturesFrom(result);
     if (gestures.some((gesture) => gesture.includes("blink"))) blinkSeenAt = performance.now();
     const confidence = Number(face.faceScore || face.boxScore || face.score || 0);
@@ -292,14 +299,15 @@
     const acceptable = validations.single && validations.size && validations.pose
       && validations.real && validations.live && validations.descriptor && validations.confidence;
     const combined = (confidence + Math.min(1, size / 300) + real + live) / 4;
-    const label = acceptable && combined >= 0.82 ? "ALTA" : acceptable ? "BOA" : "BAIXA";
     let reason = "Rosto válido para cadastro.";
     if (!validations.single) reason = "Deixe apenas uma pessoa na imagem.";
     else if (!validations.size) reason = "Aproxime o rosto da câmera.";
     else if (!validations.pose) reason = "Olhe de frente para a câmera.";
     else if (!validations.confidence) reason = "Melhore a iluminação e mantenha o rosto visível.";
     else if (!validations.real || !validations.live) reason = "A validação de presença não foi aprovada. Pisque e mova levemente a cabeça.";
-    return { confidence, size, real, live, embedding, validations, acceptable, combined, label, reason };
+    return qualityStabilizer.update(trackingKey, {
+      confidence, size, real, live, embedding, validations, acceptable, combined, reason,
+    });
   }
 
   function intersectionOverUnion(first, second) {
@@ -490,7 +498,8 @@
   function updatePanel(faces) {
     currentFaces = faces;
     const item = faces.length === 1 ? faces[0] : null;
-    registerButton.disabled = !(item && !item.identity.registered && item.quality.acceptable && personName.value.trim() && !registering);
+    registerButton.disabled = !(item && !item.identity.registered && item.quality.acceptable
+      && item.quality.rawAcceptable && personName.value.trim() && !registering);
     setCheck(checks.single, faces.length === 1);
     if (!item) {
       resetMetrics();
@@ -580,12 +589,15 @@
       nextDetectionDelayMs = DETECTION_DELAY_MS;
       if (retryDetectionButton) retryDetectionButton.hidden = true;
       const detectedAt = performance.now();
-      const faces = result.face.map((face) => ({
-        face,
-        identity: identifyFace(face),
-        quality: assessFace(face, result),
-        detectedAt,
-      }));
+      const faces = result.face.map((face) => {
+        const identity = identifyFace(face);
+        return {
+          face,
+          identity,
+          quality: assessFace(face, result, identity.id),
+          detectedAt,
+        };
+      });
       drawFaces(faces);
       updatePanel(faces);
       publishPersonTracking(faces);
@@ -669,6 +681,7 @@
     context.clearRect(0, 0, canvas.width, canvas.height);
     currentFaces = [];
     temporaryTracks = [];
+    qualityStabilizer.reset();
     lockedTargetId = null;
     targetMisses = 0;
     faceFrames = 0;
@@ -692,7 +705,8 @@
         if (!cameraActive) return reject(new Error("A câmera foi desligada durante o cadastro."));
         if (activeView !== "face") return reject(new Error("O cadastro foi interrompido porque a aba da câmera mudou."));
         const item = currentFaces.length === 1 ? currentFaces[0] : null;
-        if (item && item.detectedAt > afterTimestamp && !item.identity.registered && item.quality.acceptable) return resolve(item);
+        if (item && item.detectedAt > afterTimestamp && !item.identity.registered
+          && item.quality.acceptable && item.quality.rawAcceptable) return resolve(item);
         if (performance.now() - start >= timeoutMs) return reject(new Error("Não obtive uma nova amostra válida. Olhe de frente e melhore a iluminação."));
         window.setTimeout(check, 80);
       };
@@ -711,7 +725,8 @@
   registerButton.addEventListener("click", async () => {
     const name = personName.value.trim();
     let item = currentFaces.length === 1 ? currentFaces[0] : null;
-    if (!name || !item || item.identity.registered || !item.quality.acceptable || registering) return;
+    if (!name || !item || item.identity.registered || !item.quality.acceptable
+      || !item.quality.rawAcceptable || registering) return;
     registering = true;
     registerButton.disabled = true;
     const embeddings = [];

@@ -138,17 +138,8 @@
     updateDeliveryText();
   }
 
-  function classifyFingerCount(landmarks, handedness) {
-    const fingers = [
-      landmarks[8].y < landmarks[6].y,
-      landmarks[12].y < landmarks[10].y,
-      landmarks[16].y < landmarks[14].y,
-      landmarks[20].y < landmarks[18].y,
-    ];
-    let thumb = false;
-    if (handedness === "Right") thumb = landmarks[4].x < landmarks[3].x;
-    if (handedness === "Left") thumb = landmarks[4].x > landmarks[3].x;
-    return fingers.filter(Boolean).length + Number(thumb);
+  function classifyFingerCount(landmarks, worldLandmarks) {
+    return window.QuantumGestureMath?.classifyFingerCount(landmarks, worldLandmarks) || 0;
   }
 
   function drawHand(landmarks) {
@@ -235,8 +226,10 @@
     }, MODEL_IDLE_RELEASE_MS);
   }
 
-  function confirmTemporal(count, confidence, now) {
-    if (confidence < MIN_CONFIDENCE || !COMMANDS[count]) {
+  function confirmTemporal(count, now) {
+    // O score retornado em `handedness` mede apenas a certeza Left/Right, não
+    // a presença da mão. A presença já foi filtrada pelo modelo na criação.
+    if (!COMMANDS[count]) {
       clearCandidate();
       return false;
     }
@@ -274,10 +267,10 @@
     const landmarks = result.landmarks[0];
     const category = result.handedness?.[0]?.[0] || {};
     const confidence = Number(category.score) || 0;
-    const handedness = category.categoryName || "";
-    const count = classifyFingerCount(landmarks, handedness);
+    const worldLandmarks = result.worldLandmarks?.[0];
+    const count = classifyFingerCount(landmarks, worldLandmarks);
     drawHand(landmarks);
-    const stable = confirmTemporal(count, confidence, now);
+    const stable = confirmTemporal(count, now);
     updateGestureUi(count, confidence, stable);
     control?.patch("gestures", { gesture: count || null, confidence, status: "ONLINE" }, { source: "gesture-frame" });
     if (!stable) {

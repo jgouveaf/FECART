@@ -19,6 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CAMERA_SOURCE = ROOT / "web" / "camera-controller.js"
 GESTURE_SOURCE = ROOT / "web" / "camera-gestures.js"
+GESTURE_MATH_SOURCE = ROOT / "web" / "gesture-math.js"
+FACE_QUALITY_SOURCE = ROOT / "web" / "face-quality.js"
 ROBOT_SOURCE = ROOT / "web" / "robot-control.js"
 HTML_SOURCE = ROOT / "index.html"
 FILE_PROTOCOL_SCRIPT = ROOT / "tests" / "browser_file_protocol_redirect.cjs"
@@ -347,6 +349,8 @@ class TestGestureAndCommandLifecycleContracts(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.gesture = GESTURE_SOURCE.read_text(encoding="utf-8")
+        cls.gesture_math = GESTURE_MATH_SOURCE.read_text(encoding="utf-8")
+        cls.face_quality = FACE_QUALITY_SOURCE.read_text(encoding="utf-8")
         cls.robot = ROBOT_SOURCE.read_text(encoding="utf-8")
         cls.html = HTML_SOURCE.read_text(encoding="utf-8")
 
@@ -397,6 +401,16 @@ class TestGestureAndCommandLifecycleContracts(unittest.TestCase):
         self.assertIn("confirmTemporal", self.gesture)
         self.assertIn('forceStop("HAND_LOST"', self.gesture)
         self.assertIn("loopGeneration", self.gesture)
+        self.assertIn("result.worldLandmarks?.[0]", self.gesture)
+        self.assertIn("jointAngle", self.gesture_math)
+        self.assertNotIn('handedness === "Right"', self.gesture_math)
+
+    def test_face_quality_has_temporal_hysteresis(self) -> None:
+        self.assertIn("FaceQualityStabilizer", self.face_quality)
+        self.assertIn("riseFrames", self.face_quality)
+        self.assertIn("fallFrames", self.face_quality)
+        self.assertIn("highEnter", self.face_quality)
+        self.assertIn("highExit", self.face_quality)
 
     def test_command_timeout_heartbeat_cannot_refresh_its_own_input_timestamp(self) -> None:
         timeout = re.search(r"INPUT_TIMEOUT_MS[^;]*?(?:\|\||=)\s*(\d+)\s*;", self.robot)

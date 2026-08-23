@@ -110,7 +110,10 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             "liveness.json", "liveness.bin",
         ):
             self.assertGreater((models / filename).stat().st_size, 100)
-        self.assertIn('web/vendor/human/human.js?v=3.3.6', self.html)
+        self.assertNotIn('<script src="web/vendor/human/human.js?v=3.3.6"', self.html)
+        self.assertIn('web/vendor/human/human.js?v=3.3.6', self.face_js)
+        self.assertIn("loadHumanLibrary", self.face_js)
+        self.assertIn('script.dataset.quantumHumanRuntime = "true"', self.face_js)
         self.assertIn("new HumanLibrary.Human", self.face_js)
 
     def test_face_identity_uses_indexeddb_and_migrates_legacy_records(self) -> None:

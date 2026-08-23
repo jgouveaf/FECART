@@ -168,6 +168,18 @@ footer {
   scroll-margin-top: 128px;
 }
 
+/* Keep the first screen immediate while the long control panels remain available to anchors. */
+#camera-gestos,
+#diagnostico,
+#logs,
+#codigos,
+#identidades,
+#etapas,
+#sistema {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 720px;
+}
+
 .status-dot.online {
   background: var(--online);
   box-shadow: 0 0 12px rgba(49, 230, 161, .82);
@@ -215,6 +227,11 @@ footer {
   min-height: 42px;
 }
 
+.simulator-mode,
+.simulator-command-pad button {
+  min-height: 42px;
+}
+
 :where(
   a,
   button,
@@ -231,7 +248,8 @@ footer {
 .nav-link:focus-visible,
 .robot-mode:focus-visible,
 .camera-view-tab:focus-visible,
-.code-tab:focus-visible {
+.code-tab:focus-visible,
+.simulator-command-panel:focus-visible {
   position: relative;
   z-index: 2;
 }

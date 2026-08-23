@@ -19,6 +19,7 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
   const failedRequests = [];
   const externalRequests = [];
   const faceModelRequests = new Map();
+  let humanRuntimeRequests = 0;
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
@@ -29,12 +30,14 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
     if (url.pathname.includes("/web/vendor/human/models/")) {
       faceModelRequests.set(url.pathname, (faceModelRequests.get(url.pathname) || 0) + 1);
     }
+    if (url.pathname.endsWith("/web/vendor/human/human.js")) humanRuntimeRequests += 1;
     if (url.origin !== new URL(siteUrl).origin && !["data:", "blob:"].includes(url.protocol)) externalRequests.push(request.url());
   });
 
   try {
     await page.goto(siteUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForFunction(() => Boolean(window.QuantumControl && window.quantumCameraController && window.quantumGestureController && window.quantumRobot && window.QuantumSimulator));
+    const humanRuntimeBeforeCamera = humanRuntimeRequests;
     await page.locator("#simulador").scrollIntoViewIfNeeded();
     await page.locator("#simGestureMode").click();
     const simulator = {};
@@ -47,6 +50,10 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
       const after = await page.evaluate(() => window.QuantumSimulator.snapshot());
       simulator[command] = { before, applied, after };
     }
+    await page.locator("#simulatorCommandPanel").focus();
+    await page.keyboard.press("2");
+    await page.waitForTimeout(50);
+    simulator.keyboard = await page.evaluate(() => window.QuantumSimulator.snapshot());
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("quantum:gesture-command", {
       detail: { command: "FRENTE", stable: true, confidence: 0.95 },
     })));
@@ -113,12 +120,15 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
       && simulator.ESQUERDA.after.robot.angle < simulator.ESQUERDA.applied.robot.angle
       && Math.abs(simulator.PARAR.after.robot.angle - simulator.PARAR.applied.robot.angle) < 0.02
       && simulator.GIRAR.after.robot.angle > simulator.GIRAR.applied.robot.angle
+      && simulator.keyboard.command === "DIREITA"
+      && simulator.keyboard.source === "TECLADO"
       && simulator.gesture.start.source === "GESTO"
       && simulator.gesture.start.command === "FRENTE"
       && simulator.gesture.timeout.command === "PARAR";
-    const result = { face, active, stopped, simulator: { ...simulator, passed: simulatorPassed }, responsive, pageErrors, consoleErrors, failedRequests, externalRequests: [...new Set(externalRequests)], repeatedFaceModels };
+    const lazyFaceRuntime = { beforeCamera: humanRuntimeBeforeCamera, afterCamera: humanRuntimeRequests };
+    const result = { face, active, stopped, simulator: { ...simulator, passed: simulatorPassed }, lazyFaceRuntime, responsive, pageErrors, consoleErrors, failedRequests, externalRequests: [...new Set(externalRequests)], repeatedFaceModels };
     process.stdout.write(JSON.stringify(result));
-    if (pageErrors.length || consoleErrors.length || failedRequests.length || externalRequests.length || face.status !== "ONLINE" || !face.active || repeatedFaceModels.length || active.camera !== "ACTIVE" || !active.gestureActive || stopped.camera !== "OFF" || stopped.attachedStream || !simulatorPassed || responsive.some((item) => item.horizontalOverflow || Math.abs(item.cameraRatio - 16 / 9) > 0.08)) process.exitCode = 1;
+    if (pageErrors.length || consoleErrors.length || failedRequests.length || externalRequests.length || face.status !== "ONLINE" || !face.active || humanRuntimeBeforeCamera !== 0 || humanRuntimeRequests !== 1 || repeatedFaceModels.length || active.camera !== "ACTIVE" || !active.gestureActive || stopped.camera !== "OFF" || stopped.attachedStream || !simulatorPassed || responsive.some((item) => item.horizontalOverflow || Math.abs(item.cameraRatio - 16 / 9) > 0.08)) process.exitCode = 1;
   } finally {
     await browser.close();
   }

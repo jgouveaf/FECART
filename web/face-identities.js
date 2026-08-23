@@ -1,7 +1,6 @@
 (() => {
   "use strict";
 
-  const HumanLibrary = window.Human;
   const control = window.QuantumControl;
   const $ = (id) => document.getElementById(id);
   const video = $("cameraVideo");
@@ -56,6 +55,7 @@
   const MAX_CONSECUTIVE_INFERENCE_ERRORS = 3;
   const MAX_INFERENCE_BACKOFF_MS = 4000;
   const MATCH_OPTIONS = { order: 2, multiplier: 25, min: 0.2, max: 0.8 };
+  const HUMAN_RUNTIME_URL = new URL("web/vendor/human/human.js?v=3.3.6", document.baseURI).href;
   const MODEL_URL = new URL("web/vendor/human/models/", document.baseURI).href;
   const qualityStabilizer = new window.QuantumFaceQuality.FaceQualityStabilizer({
     alpha: 0.22,
@@ -88,6 +88,7 @@
   };
 
   let human = null;
+  let humanLibraryPromise = null;
   let modelsPromise = null;
   let database = null;
   let identities = [];
@@ -535,17 +536,44 @@
     }
   }
 
+  async function loadHumanLibrary() {
+    if (window.Human?.Human) return window.Human;
+    if (!humanLibraryPromise) {
+      humanLibraryPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = HUMAN_RUNTIME_URL;
+        script.async = true;
+        script.dataset.quantumHumanRuntime = "true";
+        script.addEventListener("load", () => {
+          if (window.Human?.Human) resolve(window.Human);
+          else reject(new Error("O motor facial foi baixado, mas não inicializou."));
+        }, { once: true });
+        script.addEventListener("error", () => {
+          script.remove();
+          reject(new Error("Não foi possível carregar o motor facial local."));
+        }, { once: true });
+        document.head.append(script);
+      });
+    }
+    try {
+      return await humanLibraryPromise;
+    } catch (error) {
+      humanLibraryPromise = null;
+      throw error;
+    }
+  }
+
   async function loadModels() {
     if (modelsReady) return;
     if (modelsPromise) return modelsPromise;
     if (window.location?.protocol === "file:") {
       throw new Error("O FaceID exige o site HTTPS. Abra https://jgouveaf.github.io/FECART/.");
     }
-    if (!HumanLibrary?.Human) throw new Error("Biblioteca Human FaceID não foi carregada.");
     setStatus("CARREGANDO FACEID", true);
     control?.patch("vision", { active: false, status: "LOADING", tracking: "SEARCHING" }, { source: "face-model" });
     control?.log("INFO", "VISÃO", "Carregando Human FaceID local");
     modelsPromise = (async () => {
+      const HumanLibrary = await loadHumanLibrary();
       const candidate = new HumanLibrary.Human(humanConfig);
       await candidate.load();
       await candidate.warmup();

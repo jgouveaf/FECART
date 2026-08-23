@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#07111f">
   <meta name="description" content="Quantum Tracker — painel web e laboratório de simulação do projeto FECART.">
+  <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
   <title>Quantum Tracker — Painel Web</title>
   <script>
     (() => {
@@ -18,7 +19,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="web/styles.css?v=12">
+  <link rel="stylesheet" href="web/styles.css?v=13">
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
@@ -53,7 +54,7 @@
           <h1>Centro de controle</h1>
         </div>
         <div class="top-actions">
-          <span class="pill mission-pill"><span class="status-dot idle"></span><span id="overallModeStatus">AUTÔNOMO</span></span>
+          <span class="pill mission-pill" role="status" aria-live="polite"><span class="status-dot idle"></span><span id="overallModeStatus">AUTÔNOMO</span></span>
           <a class="icon-button" href="https://github.com/jgouveaf/FECART" target="_blank" rel="noreferrer" aria-label="Abrir código no GitHub">↗</a>
         </div>
       </header>
@@ -87,7 +88,7 @@
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>625 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>635 aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⌁</span><div><small>Arduino</small><strong>USB Serial</strong></div></article>
@@ -97,27 +98,27 @@
         <div class="section-heading">
           <div><span class="section-tag">Teste sem robô</span><h2>Simulador de comandos</h2><p>Valide autonomia, gestos, parada e curvas no veículo virtual antes de conectar o Arduino.</p></div>
           <div class="controls">
-            <button class="secondary-button" id="toggleSimulation">Pausar</button>
-            <button class="primary-button compact" id="resetSimulation">Reiniciar</button>
+            <button class="secondary-button" id="toggleSimulation" type="button">Pausar</button>
+            <button class="primary-button compact" id="resetSimulation" type="button">Reiniciar</button>
           </div>
         </div>
-        <div class="simulator-command-panel" aria-label="Controle do simulador">
+        <div class="simulator-command-panel" id="simulatorCommandPanel" tabindex="0" aria-label="Controle do simulador" aria-describedby="simulatorHint">
           <div class="simulator-mode-switch" role="group" aria-label="Modo do simulador">
-            <button class="simulator-mode active" id="simAutonomousMode" aria-pressed="true">Autônomo</button>
-            <button class="simulator-mode" id="simGestureMode" aria-pressed="false">Testar gestos</button>
+            <button class="simulator-mode active" id="simAutonomousMode" type="button" aria-pressed="true">Autônomo</button>
+            <button class="simulator-mode" id="simGestureMode" type="button" aria-pressed="false">Testar gestos</button>
           </div>
           <div class="simulator-command-pad" role="group" aria-label="Comandos virtuais">
-            <button data-simulator-command="FRENTE">1 · Frente</button>
-            <button data-simulator-command="DIREITA">2 · Direita</button>
-            <button data-simulator-command="ESQUERDA">3 · Esquerda</button>
-            <button data-simulator-command="PARAR">4 · Parar</button>
-            <button data-simulator-command="GIRAR">5 · Girar</button>
+            <button type="button" data-simulator-command="FRENTE">1 · Frente</button>
+            <button type="button" data-simulator-command="DIREITA">2 · Direita</button>
+            <button type="button" data-simulator-command="ESQUERDA">3 · Esquerda</button>
+            <button type="button" data-simulator-command="PARAR">4 · Parar</button>
+            <button type="button" data-simulator-command="GIRAR">5 · Girar</button>
           </div>
-          <small id="simulatorHint">Autônomo ativo · o sensor virtual desvia dos obstáculos.</small>
+          <small id="simulatorHint" role="status" aria-live="polite">Autônomo ativo · o sensor virtual desvia dos obstáculos. Teclado: 1–5 ou setas.</small>
         </div>
         <div class="sim-layout">
           <div class="canvas-wrap">
-            <canvas id="robotCanvas" width="960" height="540" aria-label="Arena virtual do robô"></canvas>
+            <canvas id="robotCanvas" width="960" height="540" aria-label="Arena virtual do robô">A telemetria ao lado descreve os movimentos do robô virtual.</canvas>
             <span class="canvas-badge"><span class="status-dot"></span> SIMULAÇÃO ATIVA</span>
           </div>
           <aside class="telemetry" aria-live="polite">
@@ -201,7 +202,7 @@
               <strong id="cameraPlaceholderTitle">Câmera desligada</strong>
               <small id="cameraPlaceholderHint">Clique em “Ativar câmera” e permita o acesso.</small>
             </div>
-            <span class="canvas-badge"><span class="status-dot idle" id="cameraDot"></span><span id="cameraStatus">AGUARDANDO</span></span>
+            <span class="canvas-badge" role="status" aria-live="polite"><span class="status-dot idle" id="cameraDot"></span><span id="cameraStatus">AGUARDANDO</span></span>
             <span class="camera-fps-badge" id="cameraFpsBadge">— FPS</span>
           </div>
           <aside class="gesture-console camera-hand-only" id="gestureCameraPanel" role="tabpanel" aria-labelledby="handCameraTab" hidden>
@@ -234,7 +235,7 @@
             <div class="identity-heading">
               <div><span class="section-tag">Identificação local</span><h3>Cadastrar pessoa</h3></div>
               <div class="identity-status-actions">
-                <span class="identity-status"><span class="status-dot idle" id="faceStatusDot"></span><span id="faceStatus">AGUARDANDO CÂMERA</span></span>
+                <span class="identity-status" role="status" aria-live="polite"><span class="status-dot idle" id="faceStatusDot"></span><span id="faceStatus">AGUARDANDO CÂMERA</span></span>
                 <button class="secondary-button compact" id="retryFaceDetection" type="button" hidden>Tentar FaceID novamente</button>
               </div>
             </div>
@@ -333,7 +334,7 @@
           <button class="code-tab" id="codeTabSensor" role="tab" aria-selected="false" aria-controls="codeViewer" tabindex="-1" data-code-source="firmware/teste_sensor_hcsr04/teste_sensor_hcsr04.ino" data-filename="teste_sensor_hcsr04.ino">Teste do sensor</button>
         </div>
         <div class="code-window" id="codeViewer" role="tabpanel" aria-labelledby="codeTabMain">
-          <div class="code-titlebar"><span></span><span></span><span></span><strong id="codeFilename">quantum_tracker_arduino.ino</strong><em id="codeStatus">CARREGANDO</em></div>
+          <div class="code-titlebar"><span></span><span></span><span></span><strong id="codeFilename">quantum_tracker_arduino.ino</strong><em id="codeStatus" role="status" aria-live="polite">CARREGANDO</em></div>
           <pre tabindex="0"><code id="arduinoCode">Carregando código…</code></pre>
         </div>
       </section>
@@ -383,14 +384,13 @@
   </div>
   <script src="web/control-state.js?v=1" defer></script>
   <script src="web/arduino-codes.js?v=4" defer></script>
-  <script src="web/vendor/human/human.js?v=3.3.6" defer></script>
   <script src="web/simulator-controller.js?v=1" defer></script>
-  <script src="web/app.js?v=9" defer></script>
+  <script src="web/app.js?v=10" defer></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
   <script src="web/robot-control.js?v=3" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/gesture-math.js?v=1" defer></script>
-  <script src="web/face-identities.js?v=10" defer></script>
+  <script src="web/face-identities.js?v=11" defer></script>
   <script src="web/camera-gestures.js?v=12" defer></script>
 </body>
 </html>

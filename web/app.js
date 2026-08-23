@@ -14,6 +14,7 @@
   const safetyValue = document.getElementById("safetyValue");
   const simulatorSourceValue = document.getElementById("simulatorSourceValue");
   const simulatorHint = document.getElementById("simulatorHint");
+  const simulatorCommandPanel = document.getElementById("simulatorCommandPanel");
   const autonomousModeButton = document.getElementById("simAutonomousMode");
   const gestureModeButton = document.getElementById("simGestureMode");
   const simulatorCommandButtons = [...document.querySelectorAll("[data-simulator-command]")];
@@ -35,9 +36,13 @@
   const simulatorCommands = new window.QuantumSimulatorController.SimulatorCommandController(900);
   let simulatorVisible = true;
   let animationFrame = 0;
+  let lastSimulatorUiSignature = "";
 
   function renderSimulatorControls(now = performance.now()) {
     const state = simulatorCommands.snapshot(now);
+    const signature = `${state.mode}|${state.command}|${state.source}`;
+    if (signature === lastSimulatorUiSignature) return;
+    lastSimulatorUiSignature = signature;
     autonomousModeButton.classList.toggle("active", state.mode === "AUTONOMO");
     gestureModeButton.classList.toggle("active", state.mode === "GESTOS");
     autonomousModeButton.setAttribute("aria-pressed", String(state.mode === "AUTONOMO"));
@@ -48,10 +53,10 @@
     });
     simulatorSourceValue.textContent = state.source;
     simulatorHint.textContent = state.mode === "AUTONOMO"
-      ? "Autônomo ativo · o sensor virtual desvia dos obstáculos."
+      ? "Autônomo ativo · o sensor virtual desvia dos obstáculos. Teclado: 1–5 ou setas."
       : state.source === "GESTO"
         ? `Gesto recebido · ${state.command}. Sem gesto novo por 0,9 s, o simulador para.`
-        : `Teste manual · ${state.command}. Os gestos da câmera também controlam esta arena.`;
+        : `${state.source === "TECLADO" ? "Teclado" : "Teste manual"} · ${state.command}. Os gestos da câmera também controlam esta arena.`;
   }
 
   function setSimulatorMode(mode) {
@@ -199,6 +204,22 @@
   simulatorCommandButtons.forEach((button) => button.addEventListener("click", () => {
     setSimulatorCommand(button.dataset.simulatorCommand, "TESTE");
   }));
+  const simulatorKeyboardCommands = Object.freeze({
+    "1": "FRENTE", ArrowUp: "FRENTE", w: "FRENTE", W: "FRENTE",
+    "2": "DIREITA", ArrowRight: "DIREITA", d: "DIREITA", D: "DIREITA",
+    "3": "ESQUERDA", ArrowLeft: "ESQUERDA", a: "ESQUERDA", A: "ESQUERDA",
+    "4": "PARAR", ArrowDown: "PARAR", s: "PARAR", S: "PARAR", " ": "PARAR",
+    "5": "GIRAR", g: "GIRAR", G: "GIRAR",
+  });
+  simulatorCommandPanel.addEventListener("keydown", (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.target !== simulatorCommandPanel && [" ", "Enter"].includes(event.key)) return;
+    const command = simulatorKeyboardCommands[event.key];
+    if (!command) return;
+    event.preventDefault();
+    if (simulatorCommands.snapshot().mode !== "GESTOS") setSimulatorMode("GESTOS");
+    setSimulatorCommand(command, "TECLADO");
+  });
   window.addEventListener("quantum:gesture-command", (event) => {
     const detail = event.detail || {};
     if (detail.stable !== true || !detail.command) return;

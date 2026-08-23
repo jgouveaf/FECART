@@ -12,6 +12,11 @@
   const distanceValue = document.getElementById("distanceValue");
   const eventValue = document.getElementById("eventValue");
   const safetyValue = document.getElementById("safetyValue");
+  const simulatorSourceValue = document.getElementById("simulatorSourceValue");
+  const simulatorHint = document.getElementById("simulatorHint");
+  const autonomousModeButton = document.getElementById("simAutonomousMode");
+  const gestureModeButton = document.getElementById("simGestureMode");
+  const simulatorCommandButtons = [...document.querySelectorAll("[data-simulator-command]")];
 
   const world = {
     width: 960,
@@ -27,8 +32,42 @@
       { x: 790, y: 170, w: 70, h: 210 }
     ]
   };
+  const simulatorCommands = new window.QuantumSimulatorController.SimulatorCommandController(900);
   let simulatorVisible = true;
   let animationFrame = 0;
+
+  function renderSimulatorControls(now = performance.now()) {
+    const state = simulatorCommands.snapshot(now);
+    autonomousModeButton.classList.toggle("active", state.mode === "AUTONOMO");
+    gestureModeButton.classList.toggle("active", state.mode === "GESTOS");
+    autonomousModeButton.setAttribute("aria-pressed", String(state.mode === "AUTONOMO"));
+    gestureModeButton.setAttribute("aria-pressed", String(state.mode === "GESTOS"));
+    simulatorCommandButtons.forEach((button) => {
+      button.classList.toggle("active", state.mode === "GESTOS" && button.dataset.simulatorCommand === state.command);
+      button.disabled = state.mode !== "GESTOS";
+    });
+    simulatorSourceValue.textContent = state.source;
+    simulatorHint.textContent = state.mode === "AUTONOMO"
+      ? "Autônomo ativo · o sensor virtual desvia dos obstáculos."
+      : state.source === "GESTO"
+        ? `Gesto recebido · ${state.command}. Sem gesto novo por 0,9 s, o simulador para.`
+        : `Teste manual · ${state.command}. Os gestos da câmera também controlam esta arena.`;
+  }
+
+  function setSimulatorMode(mode) {
+    simulatorCommands.setMode(mode);
+    world.robot.turnUntil = 0;
+    renderSimulatorControls();
+    scheduleAnimation();
+  }
+
+  function setSimulatorCommand(command, source = "TESTE") {
+    if (!simulatorCommands.setCommand(command, source)) return false;
+    if (command === "PARAR") world.robot.turnUntil = 0;
+    renderSimulatorControls();
+    scheduleAnimation();
+    return true;
+  }
 
   function resizeCanvas() {
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -40,10 +79,12 @@
 
   function resetWorld() {
     Object.assign(world.robot, { x: 120, y: 280, angle: 0, speed: 80, turning: 0, turnUntil: 0 });
+    simulatorCommands.setMode("AUTONOMO");
     world.events = 0;
     world.running = true;
     world.lastTime = performance.now();
     toggleButton.textContent = "Pausar";
+    renderSimulatorControls();
     scheduleAnimation();
   }
 
@@ -61,24 +102,38 @@
   function update(dt, time) {
     const robot = world.robot;
     const distance = rayDistance();
-    if (robot.turnUntil > time) {
+    const command = simulatorCommands.current(time);
+    if (command === "PARAR") {
+      robot.turnUntil = 0;
+      stateValue.textContent = "PARADO";
+      commandValue.textContent = "PARAR";
+      safetyValue.textContent = "PARADA SEGURA";
+    } else if (robot.turnUntil > time) {
       robot.angle += robot.turning * dt;
       stateValue.textContent = "DESVIANDO";
       commandValue.textContent = robot.turning > 0 ? "DIREITA" : "ESQUERDA";
       safetyValue.textContent = "INTERVENÇÃO ATIVA";
-    } else if (distance <= 44) {
+    } else if (command === "FRENTE" && distance <= 44) {
       robot.turning = world.events % 2 === 0 ? 2.15 : -2.15;
       robot.turnUntil = time + 760;
       world.events += 1;
-    } else {
+    } else if (command === "FRENTE") {
       robot.x += Math.cos(robot.angle) * robot.speed * dt;
       robot.y += Math.sin(robot.angle) * robot.speed * dt;
       stateValue.textContent = "AVANÇANDO";
       commandValue.textContent = "FRENTE";
       safetyValue.textContent = "MONITORANDO";
+    } else {
+      const direction = command === "ESQUERDA" ? -1 : 1;
+      const turnSpeed = command === "GIRAR" ? 3.2 : 1.8;
+      robot.angle += direction * turnSpeed * dt;
+      stateValue.textContent = command === "GIRAR" ? "GIRANDO" : `VIRANDO ${command}`;
+      commandValue.textContent = command;
+      safetyValue.textContent = "COMANDO VIRTUAL";
     }
     distanceValue.textContent = `${Math.round(distance)} px`;
     eventValue.textContent = String(world.events);
+    renderSimulatorControls(time);
   }
 
   function drawGrid() {
@@ -139,6 +194,16 @@
     } else scheduleAnimation();
   });
   resetButton.addEventListener("click", resetWorld);
+  autonomousModeButton.addEventListener("click", () => setSimulatorMode("AUTONOMO"));
+  gestureModeButton.addEventListener("click", () => setSimulatorMode("GESTOS"));
+  simulatorCommandButtons.forEach((button) => button.addEventListener("click", () => {
+    setSimulatorCommand(button.dataset.simulatorCommand, "TESTE");
+  }));
+  window.addEventListener("quantum:gesture-command", (event) => {
+    const detail = event.detail || {};
+    if (detail.stable !== true || !detail.command) return;
+    setSimulatorCommand(detail.command, "GESTO");
+  });
   const mobileNavigation = window.matchMedia("(max-width: 920px)");
   function setMenuOpen(open) {
     sidebar.classList.toggle("open", open);
@@ -263,4 +328,10 @@
   resizeCanvas();
   resetWorld();
   setMenuOpen(false);
+  window.QuantumSimulator = Object.freeze({
+    setMode: setSimulatorMode,
+    setCommand: setSimulatorCommand,
+    reset: resetWorld,
+    snapshot: () => ({ ...simulatorCommands.snapshot(), robot: { ...world.robot }, events: world.events }),
+  });
 })();

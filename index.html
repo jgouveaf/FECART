@@ -18,7 +18,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="web/styles.css?v=11">
+  <link rel="stylesheet" href="web/styles.css?v=12">
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
@@ -87,7 +87,7 @@
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>100+ aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>625 aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⌁</span><div><small>Arduino</small><strong>USB Serial</strong></div></article>
@@ -95,11 +95,25 @@
 
       <section id="simulador" class="page-section panel simulator-panel">
         <div class="section-heading">
-          <div><span class="section-tag">Teste sem robô</span><h2>Simulador autônomo</h2><p>O veículo virtual avança, lê a distância e desvia dos obstáculos.</p></div>
+          <div><span class="section-tag">Teste sem robô</span><h2>Simulador de comandos</h2><p>Valide autonomia, gestos, parada e curvas no veículo virtual antes de conectar o Arduino.</p></div>
           <div class="controls">
             <button class="secondary-button" id="toggleSimulation">Pausar</button>
             <button class="primary-button compact" id="resetSimulation">Reiniciar</button>
           </div>
+        </div>
+        <div class="simulator-command-panel" aria-label="Controle do simulador">
+          <div class="simulator-mode-switch" role="group" aria-label="Modo do simulador">
+            <button class="simulator-mode active" id="simAutonomousMode" aria-pressed="true">Autônomo</button>
+            <button class="simulator-mode" id="simGestureMode" aria-pressed="false">Testar gestos</button>
+          </div>
+          <div class="simulator-command-pad" role="group" aria-label="Comandos virtuais">
+            <button data-simulator-command="FRENTE">1 · Frente</button>
+            <button data-simulator-command="DIREITA">2 · Direita</button>
+            <button data-simulator-command="ESQUERDA">3 · Esquerda</button>
+            <button data-simulator-command="PARAR">4 · Parar</button>
+            <button data-simulator-command="GIRAR">5 · Girar</button>
+          </div>
+          <small id="simulatorHint">Autônomo ativo · o sensor virtual desvia dos obstáculos.</small>
         </div>
         <div class="sim-layout">
           <div class="canvas-wrap">
@@ -111,6 +125,7 @@
             <dl>
               <div><dt>Estado</dt><dd id="stateValue">AVANÇANDO</dd></div>
               <div><dt>Comando</dt><dd id="commandValue">FRENTE</dd></div>
+              <div><dt>Fonte</dt><dd id="simulatorSourceValue">AUTÔNOMO</dd></div>
               <div><dt>Obstáculo</dt><dd id="distanceValue">-- cm</dd></div>
               <div><dt>Eventos</dt><dd id="eventValue">0</dd></div>
               <div><dt>Ambiente</dt><dd>VIRTUAL</dd></div>
@@ -369,7 +384,8 @@
   <script src="web/control-state.js?v=1" defer></script>
   <script src="web/arduino-codes.js?v=4" defer></script>
   <script src="web/vendor/human/human.js?v=3.3.6" defer></script>
-  <script src="web/app.js?v=8" defer></script>
+  <script src="web/simulator-controller.js?v=1" defer></script>
+  <script src="web/app.js?v=9" defer></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
   <script src="web/robot-control.js?v=3" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>

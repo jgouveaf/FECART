@@ -34,7 +34,27 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
 
   try {
     await page.goto(siteUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForFunction(() => Boolean(window.QuantumControl && window.quantumCameraController && window.quantumGestureController && window.quantumRobot));
+    await page.waitForFunction(() => Boolean(window.QuantumControl && window.quantumCameraController && window.quantumGestureController && window.quantumRobot && window.QuantumSimulator));
+    await page.locator("#simulador").scrollIntoViewIfNeeded();
+    await page.locator("#simGestureMode").click();
+    const simulator = {};
+    for (const command of ["FRENTE", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]) {
+      const before = await page.evaluate(() => window.QuantumSimulator.snapshot());
+      await page.locator(`[data-simulator-command="${command}"]`).click();
+      await page.waitForTimeout(40);
+      const applied = await page.evaluate(() => window.QuantumSimulator.snapshot());
+      await page.waitForTimeout(140);
+      const after = await page.evaluate(() => window.QuantumSimulator.snapshot());
+      simulator[command] = { before, applied, after };
+    }
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("quantum:gesture-command", {
+      detail: { command: "FRENTE", stable: true, confidence: 0.95 },
+    })));
+    const gestureStart = await page.evaluate(() => window.QuantumSimulator.snapshot());
+    await page.waitForTimeout(1050);
+    const gestureTimeout = await page.evaluate(() => window.QuantumSimulator.snapshot());
+    simulator.gesture = { start: gestureStart, timeout: gestureTimeout };
+    await page.locator("#simAutonomousMode").click();
     await page.locator("#startCamera").click();
     await page.waitForFunction(() => window.quantumCameraController.active, null, { timeout: 15000 });
     await page.waitForFunction(() => ["ONLINE", "ERROR"].includes(window.QuantumControl.state.vision.status), null, { timeout: 90000 });
@@ -87,9 +107,18 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
     }
 
     const repeatedFaceModels = [...faceModelRequests.entries()].filter(([, count]) => count > 1);
-    const result = { face, active, stopped, responsive, pageErrors, consoleErrors, failedRequests, externalRequests: [...new Set(externalRequests)], repeatedFaceModels };
+    const simulatorPassed =
+      Math.hypot(simulator.FRENTE.after.robot.x - simulator.FRENTE.applied.robot.x, simulator.FRENTE.after.robot.y - simulator.FRENTE.applied.robot.y) > 2
+      && simulator.DIREITA.after.robot.angle > simulator.DIREITA.applied.robot.angle
+      && simulator.ESQUERDA.after.robot.angle < simulator.ESQUERDA.applied.robot.angle
+      && Math.abs(simulator.PARAR.after.robot.angle - simulator.PARAR.applied.robot.angle) < 0.02
+      && simulator.GIRAR.after.robot.angle > simulator.GIRAR.applied.robot.angle
+      && simulator.gesture.start.source === "GESTO"
+      && simulator.gesture.start.command === "FRENTE"
+      && simulator.gesture.timeout.command === "PARAR";
+    const result = { face, active, stopped, simulator: { ...simulator, passed: simulatorPassed }, responsive, pageErrors, consoleErrors, failedRequests, externalRequests: [...new Set(externalRequests)], repeatedFaceModels };
     process.stdout.write(JSON.stringify(result));
-    if (pageErrors.length || consoleErrors.length || failedRequests.length || externalRequests.length || face.status !== "ONLINE" || !face.active || repeatedFaceModels.length || active.camera !== "ACTIVE" || !active.gestureActive || stopped.camera !== "OFF" || stopped.attachedStream || responsive.some((item) => item.horizontalOverflow || Math.abs(item.cameraRatio - 16 / 9) > 0.08)) process.exitCode = 1;
+    if (pageErrors.length || consoleErrors.length || failedRequests.length || externalRequests.length || face.status !== "ONLINE" || !face.active || repeatedFaceModels.length || active.camera !== "ACTIVE" || !active.gestureActive || stopped.camera !== "OFF" || stopped.attachedStream || !simulatorPassed || responsive.some((item) => item.horizontalOverflow || Math.abs(item.cameraRatio - 16 / 9) > 0.08)) process.exitCode = 1;
   } finally {
     await browser.close();
   }

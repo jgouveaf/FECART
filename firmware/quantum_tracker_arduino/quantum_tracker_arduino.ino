@@ -1,6 +1,6 @@
 /*
-  Quantum Tracker - controle integrado
-  Arduino UNO + L298N + HC-SR04 + USB Serial
+  Quantum Tracker - controle integrado com Bluetooth HC-08
+  Arduino UNO + L298N + HC-SR04 + USB Serial + HC-08 Bluetooth
 
   MODOS:
   1 - AUTONOMO: anda sempre e desvia com o HC-SR04.
@@ -20,6 +20,12 @@
   - obstaculo frontal bloqueia frente, curvas e giro (RE e PARAR continuam permitidos);
   - cinco obstaculos em 15 s ativam parada de seguranca.
 */
+
+#include <SoftwareSerial.h>
+
+// Configuração do Bluetooth nos pinos 11 (RX) e 12 (TX)
+// O TX do HC-08 vai no pino 11 do Arduino. O RX do HC-08 vai no pino 12.
+SoftwareSerial bluetooth(11, 12);
 
 // L298N: mantenha os jumpers ENA e ENB instalados.
 const byte IN1 = 7;
@@ -62,7 +68,7 @@ enum EstadoDesvio {
 };
 
 ModoRobo modo = MODO_AUTONOMO;
-ComandoMovimento comandoRecebido = CMD_PARAR;
+ComandoMovimento comandoRecebido = CMD_FRENTE;
 ComandoMovimento comandoAplicado = CMD_PARAR;
 EstadoDesvio estadoDesvio = DESVIO_INATIVO;
 
@@ -83,6 +89,11 @@ bool sensorBloqueado = false;
 
 char linhaSerial[34];
 byte tamanhoLinha = 0;
+char linhaBluetooth[34];
+byte tamanhoLinhaBluetooth = 0;
+
+// Declaração prévia da função de telemetria para uso interno do interpretador
+void enviarTelemetria();
 
 void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
   digitalWrite(IN1, in1);
@@ -161,6 +172,7 @@ void atualizarSensor(unsigned long agora) {
       estadoDesvio = DESVIO_INATIVO;
       pararMotores();
       Serial.println(F("ALERTA:SENSOR_BLOQUEADO"));
+      bluetooth.println(F("ALERTA:SENSOR_BLOQUEADO"));
     }
     return;
   }
@@ -172,6 +184,7 @@ void atualizarSensor(unsigned long agora) {
       sensorBloqueado = false;
       leiturasValidasRecuperacao = 0;
       Serial.println(F("EVENTO:SENSOR_RECUPERADO"));
+      bluetooth.println(F("EVENTO:SENSOR_RECUPERADO"));
     }
   } else {
     leiturasValidasRecuperacao = 0;
@@ -225,11 +238,13 @@ void iniciarDesvio(unsigned long agora) {
     paradaEmergencia = true;
     estadoDesvio = DESVIO_INATIVO;
     Serial.println(F("ALERTA:5_OBSTACULOS"));
+    bluetooth.println(F("ALERTA:5_OBSTACULOS"));
     return;
   }
   estadoDesvio = DESVIO_PAUSA_INICIAL;
   estadoDesvioDesde = agora;
   Serial.println(F("EVENTO:DESVIO_INICIADO"));
+  bluetooth.println(F("EVENTO:DESVIO_INICIADO"));
 }
 
 void atualizarDesvio(unsigned long agora) {
@@ -252,7 +267,6 @@ void atualizarDesvio(unsigned long agora) {
       break;
     case DESVIO_PAUSA_RE:
       if (decorrido >= 150UL) {
-        // Se a frente ainda esta bloqueada, somente a RE continua autorizada.
         if (obstaculoConfirmado()) {
           andarParaTras();
           estadoDesvio = DESVIO_RE;
@@ -281,17 +295,98 @@ void atualizarDesvio(unsigned long agora) {
     case DESVIO_SAIDA:
       if (decorrido >= TEMPO_SAIDA_MS) {
         estadoDesvio = DESVIO_INATIVO;
-        obstaculosConsecutivos = 0;
       }
       break;
-    default: break;
   }
 }
 
-const __FlashStringHelper* nomeModo() {
-  if (modo == MODO_AUTONOMO) return F("AUTONOMO");
-  if (modo == MODO_SEGUIR) return F("SEGUIR");
-  return F("GESTOS");
+// Processa o comando recebido em formato de string (seja por USB ou Bluetooth)
+void interpretarComando(char* comandoStr, unsigned long agora) {
+  if (strcmp(comandoStr, "HELLO") == 0) {
+    Serial.println(F("QT:READY:V3"));
+    bluetooth.println(F("QT:READY:V3"));
+  }
+  else if (strcmp(comandoStr, "ESTOP") == 0) {
+    paradaEmergencia = true;
+    cancelarDesvio();
+    Serial.println(F("OK:ESTOP"));
+    bluetooth.println(F("OK:ESTOP"));
+  }
+  else if (strcmp(comandoStr, "RESET_ESTOP") == 0) {
+    paradaEmergencia = false;
+    quantidadeObstaculos = 0;
+    comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
+    ultimoComandoEm = agora;
+    Serial.println(F("OK:RESET_ESTOP"));
+    bluetooth.println(F("OK:RESET_ESTOP"));
+  }
+  else if (strcmp(comandoStr, "PING") == 0) {
+    Serial.println(F("PONG"));
+    bluetooth.println(F("PONG"));
+  }
+  else if (strcmp(comandoStr, "STATUS") == 0) {
+    enviarTelemetria();
+  }
+  else if (strncmp(comandoStr, "MODE:", 5) == 0) {
+    int novoModo = atoi(&comandoStr[5]);
+    if (novoModo >= 1 && novoModo <= 3) {
+      modo = (ModoRobo)novoModo;
+      cancelarDesvio();
+      comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
+      ultimoComandoEm = agora;
+      Serial.print(F("OK:MODE:"));
+      Serial.println(novoModo);
+      bluetooth.print(F("OK:MODE:"));
+      bluetooth.println(novoModo);
+    }
+  }
+  else if (strncmp(comandoStr, "CMD:", 4) == 0) {
+    char* cmd = &comandoStr[4];
+    bool comandoValido = true;
+    if (strcmp(cmd, "FRENTE") == 0) comandoRecebido = CMD_FRENTE;
+    else if (strcmp(cmd, "TRAS") == 0) comandoRecebido = CMD_TRAS;
+    else if (strcmp(cmd, "DIREITA") == 0) comandoRecebido = CMD_DIREITA;
+    else if (strcmp(cmd, "ESQUERDA") == 0) comandoRecebido = CMD_ESQUERDA;
+    else if (strcmp(cmd, "PARAR") == 0) comandoRecebido = CMD_PARAR;
+    else if (strcmp(cmd, "GIRAR") == 0) comandoRecebido = CMD_GIRAR;
+    else comandoValido = false;
+
+    if (comandoValido) {
+      ultimoComandoEm = agora;
+      if (comandoRecebido == CMD_PARAR) cancelarDesvio();
+      Serial.print(F("OK:CMD:"));
+      Serial.println(cmd);
+      bluetooth.print(F("OK:CMD:"));
+      bluetooth.println(cmd);
+    } else {
+      Serial.println(F("ERRO:COMANDO_INVALIDO"));
+      bluetooth.println(F("ERRO:COMANDO_INVALIDO"));
+    }
+  }
+}
+
+void lerEntrada(Stream& entrada, char* buffer, byte& tamanho, unsigned long agora) {
+  while (entrada.available() > 0) {
+    char c = entrada.read();
+    if (c == '\n' || c == '\r') {
+      if (tamanho > 0) {
+        buffer[tamanho] = '\0';
+        interpretarComando(buffer, agora);
+        tamanho = 0;
+      }
+    } else if (tamanho < sizeof(linhaSerial) - 1) {
+      buffer[tamanho++] = c;
+    } else {
+      tamanho = 0;
+      Serial.println(F("ERRO:LINHA_LONGA"));
+      bluetooth.println(F("ERRO:LINHA_LONGA"));
+    }
+  }
+}
+
+void checarEntradasSeriais(unsigned long agora) {
+  lerEntrada(Serial, linhaSerial, tamanhoLinha, agora);
+  lerEntrada(bluetooth, linhaBluetooth, tamanhoLinhaBluetooth, agora);
 }
 
 const __FlashStringHelper* nomeComando(ComandoMovimento comando) {
@@ -305,160 +400,93 @@ const __FlashStringHelper* nomeComando(ComandoMovimento comando) {
   }
 }
 
-void enviarStatus(unsigned long agora, bool forcar = false) {
-  if (!forcar && agora - ultimaTelemetriaEm < INTERVALO_TELEMETRIA_MS) return;
-  ultimaTelemetriaEm = agora;
-  Serial.print(F("QT|MODE:"));
-  Serial.print((byte)modo);
-  Serial.print(F("|DIST:"));
-  if (distanciaAtualCm < 0) Serial.print(F("ERR")); else Serial.print(distanciaAtualCm, 1);
-  Serial.print(F("|CMD:"));
-  Serial.print(nomeComando(comandoAplicado));
-  Serial.print(F("|STATE:"));
-  if (paradaEmergencia) Serial.print(F("ESTOP"));
-  else if (!sensorSeguro()) Serial.print(F("SENSOR_FAIL"));
-  else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
-  else Serial.print(nomeModo());
-  Serial.println();
+void escreverTelemetria(Stream& destino) {
+  destino.print(F("QT|MODE:"));
+  destino.print((byte)modo);
+  destino.print(F("|DIST:"));
+  if (distanciaAtualCm < 0) destino.print(F("ERR"));
+  else destino.print(distanciaAtualCm, 1);
+  destino.print(F("|CMD:"));
+  destino.print(nomeComando(comandoAplicado));
+  destino.print(F("|STATE:"));
+  if (paradaEmergencia) destino.print(F("ESTOP"));
+  else if (!sensorSeguro()) destino.print(F("SENSOR_FAIL"));
+  else if (estadoDesvio != DESVIO_INATIVO) destino.print(F("DESVIANDO"));
+  else if (modo == MODO_AUTONOMO) destino.print(F("AUTONOMO"));
+  else if (modo == MODO_SEGUIR) destino.print(F("SEGUIR"));
+  else destino.print(F("GESTOS"));
+  destino.println();
 }
 
-void selecionarModo(byte numero, unsigned long agora) {
-  if (numero < 1 || numero > 3) return;
-  modo = (ModoRobo)numero;
-  comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
-  ultimoComandoEm = agora;
-  cancelarDesvio();
-  Serial.print(F("OK:MODE:"));
-  Serial.println(numero);
+void enviarTelemetria() {
+  escreverTelemetria(Serial);
+  escreverTelemetria(bluetooth);
 }
-
-void receberComando(ComandoMovimento comando, unsigned long agora) {
-  comandoRecebido = comando;
-  ultimoComandoEm = agora;
-  if (comando == CMD_PARAR || (modo != MODO_AUTONOMO && comando == CMD_TRAS)) {
-    cancelarDesvio();
-  }
-  Serial.print(F("OK:CMD:"));
-  Serial.println(nomeComando(comando));
-}
-
-void processarLinha(char* linha, unsigned long agora) {
-  if (strcmp(linha, "MODE:1") == 0) selecionarModo(1, agora);
-  else if (strcmp(linha, "MODE:2") == 0) selecionarModo(2, agora);
-  else if (strcmp(linha, "MODE:3") == 0) selecionarModo(3, agora);
-  else if (strcmp(linha, "CMD:FRENTE") == 0) receberComando(CMD_FRENTE, agora);
-  else if (strcmp(linha, "CMD:TRAS") == 0) receberComando(CMD_TRAS, agora);
-  else if (strcmp(linha, "CMD:DIREITA") == 0) receberComando(CMD_DIREITA, agora);
-  else if (strcmp(linha, "CMD:ESQUERDA") == 0) receberComando(CMD_ESQUERDA, agora);
-  else if (strcmp(linha, "CMD:PARAR") == 0) receberComando(CMD_PARAR, agora);
-  else if (strcmp(linha, "CMD:GIRAR") == 0) receberComando(CMD_GIRAR, agora);
-  else if (strcmp(linha, "ESTOP") == 0) {
-    paradaEmergencia = true;
-    cancelarDesvio();
-    Serial.println(F("OK:ESTOP"));
-  } else if (strcmp(linha, "RESET_ESTOP") == 0) {
-    paradaEmergencia = false;
-    quantidadeObstaculos = 0;
-    comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
-    ultimoComandoEm = agora;
-    cancelarDesvio();
-    Serial.println(F("OK:RESET_ESTOP"));
-  } else if (strcmp(linha, "HELLO") == 0) {
-    // Permite identificar o firmware mesmo quando abrir a porta nao reinicia o UNO.
-    Serial.println(F("QT:READY:V3"));
-  } else if (strcmp(linha, "PING") == 0) {
-    // PING confirma apenas o enlace. So CMD:* renova a validade do movimento.
-    Serial.println(F("PONG"));
-  } else if (strcmp(linha, "STATUS") == 0) enviarStatus(agora, true);
-  else Serial.println(F("ERRO:COMANDO_INVALIDO"));
-}
-
-void lerSerial(unsigned long agora) {
-  while (Serial.available() > 0) {
-    const char recebido = (char)Serial.read();
-    if (recebido == '\n' || recebido == '\r') {
-      if (tamanhoLinha > 0) {
-        linhaSerial[tamanhoLinha] = '\0';
-        processarLinha(linhaSerial, agora);
-        tamanhoLinha = 0;
-      }
-    } else if (tamanhoLinha < sizeof(linhaSerial) - 1) {
-      linhaSerial[tamanhoLinha++] = recebido;
-    } else {
-      tamanhoLinha = 0;
-      Serial.println(F("ERRO:LINHA_LONGA"));
-    }
-  }
-}
-
-void aguardarComandoInicial() {
-  const unsigned long inicio = millis();
-  while (millis() - inicio < JANELA_COMANDO_INICIAL_MS) {
-    pararMotores();
-    lerSerial(millis());
-    delay(1);
-  }
-}
-
 void setup() {
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(IN3, OUTPUT);
-  pinMode(IN4, OUTPUT);
-  pinMode(TRIG, OUTPUT);
-  pinMode(ECHO, INPUT);
-  digitalWrite(TRIG, LOW);
-  pararMotores();
-
-  Serial.begin(9600);
-  delay(2000);
-  ultimoComandoEm = millis();
-  Serial.println(F("QT:READY:V3"));
-  Serial.println(F("OK:MODE:1"));
-  aguardarComandoInicial();
+Serial.begin(9600);
+delay(500);
+Serial.println(F("QT:READY:V3"));
+Serial.flush();
+bluetooth.begin(9600); // Velocidade padrão do módulo HC-08
+pinMode(IN1, OUTPUT);
+pinMode(IN2, OUTPUT);
+pinMode(IN3, OUTPUT);
+pinMode(IN4, OUTPUT);
+pararMotores();
+pinMode(TRIG, OUTPUT);
+pinMode(ECHO, INPUT);
+digitalWrite(TRIG, LOW);
+// Toda inicializacao comeca em autonomia, sem depender do modo anterior.
+modo = MODO_AUTONOMO;
+comandoRecebido = CMD_FRENTE;
+estadoDesvio = DESVIO_INATIVO;
+paradaEmergencia = false;
+ultimoComandoEm = millis();
+Serial.println(F("QT:READY:V3"));
+bluetooth.println(F("QT:READY:V3"));
+Serial.println(F("OK:MODE:1"));
+bluetooth.println(F("OK:MODE:1"));
 }
-
 void loop() {
-  const unsigned long agora = millis();
-  lerSerial(agora);
-  atualizarSensor(agora);
-
-  if (paradaEmergencia || !sensorSeguro()) {
-    pararMotores();
-    enviarStatus(agora);
-    return;
-  }
-
-  if (modo != MODO_AUTONOMO && agora - ultimoComandoEm > TIMEOUT_COMANDO_MS) {
-    comandoRecebido = CMD_PARAR;
-    cancelarDesvio();
-  }
-
-  if (estadoDesvio != DESVIO_INATIVO) {
-    if (obstaculoConfirmado()) {
-      if (estadoDesvio == DESVIO_PAUSA_RE) {
-        // RE e permitida mesmo com obstaculo frontal e cria espaco para a curva.
-        andarParaTras();
-        estadoDesvio = DESVIO_RE;
-        estadoDesvioDesde = agora;
-      } else if (estadoDesvio == DESVIO_CURVA
-              || estadoDesvio == DESVIO_PAUSA_CURVA
-              || estadoDesvio == DESVIO_SAIDA) {
-        // Interrompe imediatamente curva/giro/frente e reinicia o desvio seguro.
-        iniciarDesvio(agora);
-      }
-    }
-    atualizarDesvio(agora);
-    enviarStatus(agora);
-    return;
-  }
-
-  const ComandoMovimento desejado = modo == MODO_AUTONOMO ? CMD_FRENTE : comandoRecebido;
-  if (comandoExigeFrenteLivre(desejado) && obstaculoConfirmado()) {
-    iniciarDesvio(agora);
-  } else {
-    aplicarComando(desejado);
-  }
-
-  enviarStatus(agora);
+unsigned long agora = millis();
+atualizarSensor(agora);
+checarEntradasSeriais(agora);
+if (agora - ultimaTelemetriaEm >= INTERVALO_TELEMETRIA_MS) {
+ultimaTelemetriaEm = agora;
+enviarTelemetria();
 }
+if (paradaEmergencia || !sensorSeguro()) {
+pararMotores();
+return;
+}
+if (modo == MODO_AUTONOMO) {
+if (agora < JANELA_COMANDO_INICIAL_MS) {
+pararMotores();
+return;
+}
+if (estadoDesvio != DESVIO_INATIVO) {
+atualizarDesvio(agora);
+} else {
+if (sensorSeguro() && obstaculoConfirmado()) {
+iniciarDesvio(agora);
+} else {
+andarParaFrente();
+}
+}
+}
+else { // MODOS 2 (SEGUIR) ou 3 (GESTOS)
+cancelarDesvio();
+// Timeout de segurança: para motores se sumir o sinal por 1.5 segundos
+if (agora - ultimoComandoEm > TIMEOUT_COMANDO_MS) {
+comandoRecebido = CMD_PARAR;
+}
+// Validação de obstáculos com o sensor soberano
+if (comandoExigeFrenteLivre(comandoRecebido) && sensorSeguro() && obstaculoConfirmado()) {
+pararMotores();
+} else {
+aplicarComando(comandoRecebido);
+}
+}
+}
+
+    

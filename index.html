@@ -383,6 +383,402 @@
     </main>
   </div>
   <script src="web/control-state.js?v=1" defer></script>
+  <script src="web/arduino-codes.js?v=5" defer></script>
+  <script src="web/simulator-controller.js?v=1" defer></script>
+  <script src="web/app.js?v=10" defer></script>
+  <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
+  <script src="web/robot-control.js?v=3" defer></script>
+  <script src="web/face-quality.js?v=1" defer></script>
+  <script src="web/gesture-math.js?v=1" defer></script>
+  <script src="web/face-identities.js?v=11" defer></script>
+  <script src="web/camera-gestures.js?v=12" defer></script>
+</body>
+</html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07111f">
+  <meta name="description" content="Quantum Tracker — painel web e laboratório de simulação do projeto FECART.">
+  <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
+  <title>Quantum Tracker — Painel Web</title>
+  <script>
+    (() => {
+      const publicSiteUrl = "https://jgouveaf.github.io/FECART/";
+      const runningFromFile = window.location.protocol === "file:";
+      window.QuantumRuntime = Object.freeze({ publicSiteUrl, runningFromFile });
+      if (runningFromFile) {
+        const destination = new URL(publicSiteUrl);
+        destination.hash = window.location.hash;
+        window.location.replace(destination.href);
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="web/styles.css?v=13">
+</head>
+<body>
+  <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebarNavigation" aria-label="Navegação principal">
+      <a class="brand" href="#visao-geral" aria-label="Quantum Tracker, início">
+        <span class="brand-mark">Q</span>
+        <span><strong>Quantum</strong><small>Tracker</small></span>
+      </a>
+      <nav>
+        <a class="nav-link active" href="#visao-geral" data-section="visao-geral"><span>⌁</span> Visão geral</a>
+        <a class="nav-link" href="#simulador" data-section="simulador"><span>◇</span> Simulador</a>
+        <a class="nav-link" href="#camera-gestos" data-section="camera-gestos"><span>◉</span> Câmera &amp; gestos</a>
+        <a class="nav-link" href="#codigos" data-section="codigos"><span>⌘</span> Códigos</a>
+        <a class="nav-link" href="#identidades" data-section="identidades"><span>◎</span> Identidades</a>
+        <a class="nav-link" href="#diagnostico" data-section="diagnostico"><span>⚡</span> Diagnóstico</a>
+        <a class="nav-link" href="#logs" data-section="logs"><span>≡</span> Logs</a>
+        <a class="nav-link" href="#etapas" data-section="etapas"><span>✓</span> Etapas</a>
+        <a class="nav-link" href="#sistema" data-section="sistema"><span>⚙</span> Sistema</a>
+      </nav>
+      <div class="sidebar-note">
+        <span class="status-dot"></span>
+        <div><strong>Controle USB</strong><small>Arduino só se move após conexão e escolha do modo</small></div>
+      </div>
+    </aside>
+
+    <main id="conteudo">
+      <header class="topbar">
+        <button class="menu-button" id="menuButton" aria-label="Abrir menu" aria-controls="sidebarNavigation" aria-expanded="false">☰</button>
+        <div>
+          <p class="eyebrow">FECART · TESTE 1.0</p>
+          <h1>Centro de controle</h1>
+        </div>
+        <div class="top-actions">
+          <span class="pill mission-pill" role="status" aria-live="polite"><span class="status-dot idle"></span><span id="overallModeStatus">AUTÔNOMO</span></span>
+          <a class="icon-button" href="https://github.com/jgouveaf/FECART" target="_blank" rel="noreferrer" aria-label="Abrir código no GitHub">↗</a>
+        </div>
+      </header>
+
+      <section id="visao-geral" class="page-section hero-grid">
+        <article class="hero-card">
+          <div>
+            <span class="section-tag">Laboratório digital</span>
+            <h2>Robótica e visão computacional em um só painel.</h2>
+            <p>Conecte o Arduino por USB, escolha um dos três modos e acompanhe câmera, gestos, sensor e comandos em tempo real.</p>
+          </div>
+          <div class="hero-actions">
+            <a class="primary-button" href="#camera-gestos">Abrir controle <span>→</span></a>
+            <a class="secondary-button" href="#codigos">Preparar Arduino</a>
+          </div>
+          <div class="orb" aria-hidden="true"><span></span><span></span><span></span></div>
+        </article>
+
+        <article class="progress-card">
+          <div class="card-heading">
+            <div><span class="section-tag">Progresso atual</span><h3>Etapa 10 em validação</h3></div>
+            <strong>95%</strong>
+          </div>
+          <div class="progress-track"><span style="width:95%"></span></div>
+          <p>Controle físico liberado somente após conexão USB e confirmação explícita do operador.</p>
+          <div class="mini-stats">
+            <div><strong>50 mil</strong><span>quadros de stress</span></div>
+            <div><strong>0</strong><span>acessos físicos</span></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="metric-grid" aria-label="Resumo de testes">
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>635 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
+        <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
+        <article class="metric-card"><span class="metric-icon amber">⌁</span><div><small>Arduino</small><strong>USB Serial</strong></div></article>
+      </section>
+
+      <section id="simulador" class="page-section panel simulator-panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Teste sem robô</span><h2>Simulador de comandos</h2><p>Valide autonomia, gestos, parada e curvas no veículo virtual antes de conectar o Arduino.</p></div>
+          <div class="controls">
+            <button class="secondary-button" id="toggleSimulation" type="button">Pausar</button>
+            <button class="primary-button compact" id="resetSimulation" type="button">Reiniciar</button>
+          </div>
+        </div>
+        <div class="simulator-command-panel" id="simulatorCommandPanel" tabindex="0" aria-label="Controle do simulador" aria-describedby="simulatorHint">
+          <div class="simulator-mode-switch" role="group" aria-label="Modo do simulador">
+            <button class="simulator-mode active" id="simAutonomousMode" type="button" aria-pressed="true">Autônomo</button>
+            <button class="simulator-mode" id="simGestureMode" type="button" aria-pressed="false">Testar gestos</button>
+          </div>
+          <div class="simulator-command-pad" role="group" aria-label="Comandos virtuais">
+            <button type="button" data-simulator-command="FRENTE">1 · Frente</button>
+            <button type="button" data-simulator-command="DIREITA">2 · Direita</button>
+            <button type="button" data-simulator-command="ESQUERDA">3 · Esquerda</button>
+            <button type="button" data-simulator-command="PARAR">4 · Parar</button>
+            <button type="button" data-simulator-command="GIRAR">5 · Girar</button>
+          </div>
+          <small id="simulatorHint" role="status" aria-live="polite">Autônomo ativo · o sensor virtual desvia dos obstáculos. Teclado: 1–5 ou setas.</small>
+        </div>
+        <div class="sim-layout">
+          <div class="canvas-wrap">
+            <canvas id="robotCanvas" width="960" height="540" aria-label="Arena virtual do robô">A telemetria ao lado descreve os movimentos do robô virtual.</canvas>
+            <span class="canvas-badge"><span class="status-dot"></span> SIMULAÇÃO ATIVA</span>
+          </div>
+          <aside class="telemetry" aria-live="polite">
+            <h3>Telemetria</h3>
+            <dl>
+              <div><dt>Estado</dt><dd id="stateValue">AVANÇANDO</dd></div>
+              <div><dt>Comando</dt><dd id="commandValue">FRENTE</dd></div>
+              <div><dt>Fonte</dt><dd id="simulatorSourceValue">AUTÔNOMO</dd></div>
+              <div><dt>Obstáculo</dt><dd id="distanceValue">-- cm</dd></div>
+              <div><dt>Eventos</dt><dd id="eventValue">0</dd></div>
+              <div><dt>Ambiente</dt><dd>VIRTUAL</dd></div>
+            </dl>
+            <div class="safety-box"><span>Escudo lógico</span><strong id="safetyValue">MONITORANDO</strong><small>Distância de parada: 44 px virtuais</small></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="camera-gestos" class="page-section panel camera-panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Controle físico supervisionado</span><h2>Câmeras &amp; robô</h2><p>Use a câmera facial para seguimento ou a câmera de mão para controlar o Arduino conectado por USB.</p></div>
+          <div class="controls camera-toolbar">
+            <label class="camera-device-control" for="cameraDeviceSelect"><span>Dispositivo</span><select id="cameraDeviceSelect" aria-label="Selecionar câmera"><option value="">Detectando câmeras…</option></select></label>
+            <button class="secondary-button" id="stopCamera" disabled>Desligar</button>
+            <button class="primary-button compact" id="startCamera">Ativar câmera</button>
+          </div>
+        </div>
+        <div class="system-status-grid" aria-label="Estado geral da operação">
+          <article class="system-indicator" data-status="offline"><span>Robô</span><strong id="overallRobotStatus">OFFLINE</strong><small>Arduino USB</small></article>
+          <article class="system-indicator" data-status="offline"><span>Câmera</span><strong id="overallCameraStatus">OFFLINE</strong><small>Dispositivo local</small></article>
+          <article class="system-indicator" data-status="offline"><span>Visão</span><strong id="overallVisionStatus">OFFLINE</strong><small>Rosto e alvo</small></article>
+          <article class="system-indicator" data-status="offline"><span>Gestos</span><strong id="overallGestureStatus">OFFLINE</strong><small>MediaPipe local</small></article>
+          <article class="system-indicator" data-status="offline"><span>Comunicação</span><strong id="overallCommunicationStatus">OFFLINE</strong><small>Handshake e ACK</small></article>
+        </div>
+        <div class="robot-control-panel" aria-label="Controle do Arduino">
+          <div class="robot-connection-row">
+            <div>
+              <span class="section-tag">Arduino UNO · 9600 baud</span>
+              <strong><span class="status-dot idle" id="robotConnectionDot"></span><span id="robotConnectionStatus">DESCONECTADO</span></strong>
+              <small id="robotConnectionHint">Feche o Arduino IDE e o Monitor Serial, conecte o cabo USB e use Chrome ou Edge.</small>
+            </div>
+            <div class="robot-actions">
+              <button class="primary-button compact" id="connectRobot">Conectar Arduino USB</button>
+              <button class="secondary-button" id="disconnectRobot" disabled>Desconectar</button>
+              <button class="danger-button" id="emergencyStop" disabled>PARADA DE EMERGÊNCIA</button>
+            </div>
+          </div>
+          <div class="robot-mode-grid" role="radiogroup" aria-label="Modo do robô">
+            <button class="robot-mode active" data-robot-mode="1" role="radio" aria-checked="true"><b>1</b><span><strong>Autônomo</strong><small>Anda sempre e desvia pelo HC-SR04.</small></span></button>
+            <button class="robot-mode" data-robot-mode="2" role="radio" aria-checked="false"><b>2</b><span><strong>Seguir pessoa</strong><small>Segue o rosto visível; sem imagem, para.</small></span></button>
+            <button class="robot-mode" data-robot-mode="3" role="radio" aria-checked="false"><b>3</b><span><strong>Gestos</strong><small>1 frente · 2 direita · 3 esquerda · 4 para · 5 gira.</small></span></button>
+          </div>
+          <div class="robot-telemetry" aria-live="polite">
+            <div><small>Modo</small><strong id="robotModeStatus">AUTÔNOMO</strong></div>
+            <div><small>Comando enviado</small><strong id="robotCommandStatus">PARAR</strong></div>
+            <div><small>Distância</small><strong id="robotDistanceStatus">—</strong></div>
+            <div><small>Arduino</small><strong id="robotStateStatus">SEM TELEMETRIA</strong></div>
+          </div>
+          <div class="mission-summary" aria-label="Resumo da missão">
+            <div><small>Modo operacional</small><strong id="missionModeStatus">AUTÔNOMO</strong></div>
+            <div><small>Alvo atual</small><strong id="overallTargetStatus">NENHUM</strong></div>
+            <div><small>Obstáculo</small><strong id="overallObstacleStatus">DESCONHECIDO</strong></div>
+            <div><small>Prioridade</small><strong>EMERGÊNCIA › SENSOR › MODO</strong></div>
+          </div>
+          <div class="beacon-row" id="beaconRow">
+            <div><strong>Celular BLE experimental</strong><small>O sinal informa proximidade, não direção. Sem rosto visível, o robô para por segurança.</small></div>
+            <span id="beaconStatus">NÃO CONECTADO</span>
+            <button class="secondary-button" id="connectBeacon">Ler sinal BLE</button>
+          </div>
+        </div>
+        <div class="camera-view-tabs" role="tablist" aria-label="Escolher câmera">
+          <button class="camera-view-tab active" id="faceCameraTab" data-camera-view="face" role="tab" aria-selected="true" aria-controls="faceCameraPanel" tabindex="0">◎ Rosto &amp; identificação</button>
+          <button class="camera-view-tab" id="handCameraTab" data-camera-view="hand" role="tab" aria-selected="false" aria-controls="gestureCameraPanel" tabindex="-1">✋ Mão &amp; gestos</button>
+        </div>
+        <div class="camera-layout">
+          <div class="camera-stage" id="cameraStage">
+            <video id="cameraVideo" playsinline muted aria-label="Prévia da câmera"></video>
+            <canvas id="gestureCanvas" aria-hidden="true"></canvas>
+            <canvas id="identityCanvas" aria-hidden="true"></canvas>
+            <div class="camera-placeholder" id="cameraPlaceholder">
+              <span>◉</span>
+              <strong id="cameraPlaceholderTitle">Câmera desligada</strong>
+              <small id="cameraPlaceholderHint">Clique em “Ativar câmera” e permita o acesso.</small>
+            </div>
+            <span class="canvas-badge" role="status" aria-live="polite"><span class="status-dot idle" id="cameraDot"></span><span id="cameraStatus">AGUARDANDO</span></span>
+            <span class="camera-fps-badge" id="cameraFpsBadge">— FPS</span>
+          </div>
+          <aside class="gesture-console camera-hand-only" id="gestureCameraPanel" role="tabpanel" aria-labelledby="handCameraTab" hidden>
+            <div class="gesture-toolbar">
+              <div><span class="section-tag">Detector de mão</span><strong id="gestureDetectorStatus">OFFLINE</strong></div>
+              <button class="primary-button compact" id="toggleGestures" type="button" aria-pressed="false">Ativar gestos</button>
+            </div>
+            <div class="gesture-metrics" aria-label="Métricas do detector">
+              <div><small>Confiança</small><strong id="gestureConfidence">—</strong></div>
+              <div><small>Inferência</small><strong id="gestureFps">— FPS</strong></div>
+              <div><small>Confirmação</small><strong>4 QUADROS</strong></div>
+            </div>
+            <div class="gesture-result" id="gestureResult">
+              <small>Comando detectado</small>
+              <strong id="gestureCommand">NENHUM</strong>
+              <span id="fingerCount">Abra a aba da mão e mostre um gesto para começar</span>
+            </div>
+            <div class="gesture-map" aria-label="Mapa de comandos por dedos">
+              <div data-fingers="1"><b>1</b><span>Frente</span></div>
+              <div data-fingers="2"><b>2</b><span>Direita</span></div>
+              <div data-fingers="3"><b>3</b><span>Esquerda</span></div>
+              <div data-fingers="4"><b>4</b><span>Parar</span></div>
+              <div data-fingers="5"><b>5</b><span>Girar</span></div>
+            </div>
+            <p class="privacy-note" id="gestureDeliveryStatus">Processamento local. Conecte o Arduino e escolha o Modo 3 para aplicar os comandos ao robô.</p>
+          </aside>
+        </div>
+        <div class="identity-lab camera-face-only" id="faceCameraPanel" role="tabpanel" aria-labelledby="faceCameraTab">
+          <div class="identity-register-card">
+            <div class="identity-heading">
+              <div><span class="section-tag">Identificação local</span><h3>Cadastrar pessoa</h3></div>
+              <div class="identity-status-actions">
+                <span class="identity-status" role="status" aria-live="polite"><span class="status-dot idle" id="faceStatusDot"></span><span id="faceStatus">AGUARDANDO CÂMERA</span></span>
+                <button class="secondary-button compact" id="retryFaceDetection" type="button" hidden>Tentar FaceID novamente</button>
+              </div>
+            </div>
+            <div class="current-face">
+              <div class="face-preview" id="facePreview"><span>◎</span><img id="facePreviewImage" alt="Rosto pronto para cadastro"></div>
+              <div>
+                <small>Rosto selecionado</small>
+                <strong id="currentFaceId">NENHUM</strong>
+                <span id="faceHint">Inicie a câmera e fique de frente, sozinho, para cadastrar.</span>
+              </div>
+            </div>
+            <div class="face-metrics" aria-live="polite">
+              <div><small>Confiança</small><strong id="faceConfidence">—</strong></div>
+              <div><small>Qualidade</small><strong id="faceQuality">—</strong></div>
+              <div><small>Similaridade</small><strong id="faceSimilarity">—</strong></div>
+              <div><small>Amostras</small><strong id="sampleProgress">0/5</strong></div>
+              <div><small>Rastreamento</small><strong id="faceTrackingState">PROCURANDO</strong></div>
+              <div><small>Direção</small><strong id="faceDirection">PARAR</strong></div>
+            </div>
+            <div class="sample-progress" aria-hidden="true"><span id="sampleProgressBar"></span></div>
+            <div class="face-validation" aria-label="Validações do rosto">
+              <span id="checkSingle">Um rosto</span>
+              <span id="checkSize">Distância</span>
+              <span id="checkPose">De frente</span>
+              <span id="checkReal">Presença</span>
+              <span id="checkLive">Rosto vivo</span>
+              <span id="checkBlink">Piscar</span>
+            </div>
+            <label class="identity-field" for="personName"><span>Nome da pessoa</span><input id="personName" maxlength="60" autocomplete="off" placeholder="Ex.: João"></label>
+            <button class="primary-button" id="registerPerson" disabled>Validar e cadastrar rosto</button>
+            <p class="privacy-note">O cadastro só acontece ao clicar no botão. A foto de perfil e cinco embeddings alinhados ficam no IndexedDB deste navegador; nada é enviado ao servidor.</p>
+          </div>
+          <div class="identity-list-card">
+            <div class="identity-heading"><div><span class="section-tag">Banco local</span><h3>Pessoas cadastradas</h3></div><span class="identity-counter" id="identityCount">0 IDs</span></div>
+            <div class="identity-empty" id="identityEmpty"><span>◇</span><p>Nenhuma pessoa cadastrada neste navegador.</p></div>
+            <div class="registered-people" id="registeredPeople"></div>
+            <div class="identity-backup-actions">
+              <button class="secondary-button" id="exportIdentities" disabled>Exportar backup</button>
+              <button class="secondary-button" id="importIdentities">Importar backup</button>
+              <input id="identityBackupFile" type="file" accept="application/json,.json" hidden>
+            </div>
+            <p class="backup-warning">O arquivo de backup contém fotos e características faciais. Guarde-o com segurança.</p>
+          </div>
+        </div>
+        <p class="notice safety-notice"><strong>Segurança:</strong> o HC-SR04 e o timeout do Arduino têm prioridade sobre câmera e gestos. Teste primeiro com as rodas levantadas; use “PARADA DE EMERGÊNCIA” se houver comportamento inesperado.</p>
+      </section>
+
+      <section id="diagnostico" class="page-section panel diagnostic-panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Saúde do sistema</span><h2>Diagnóstico em tempo real</h2><p>Estado real dos dispositivos, modelos e comunicação — sem esconder falhas atrás de mensagens genéricas.</p></div>
+          <span class="pill neutral">Atualização local</span>
+        </div>
+        <div class="diagnostic-grid">
+          <article class="diagnostic-card"><span>Câmera</span><strong id="diagnosticCamera">—</strong><small id="diagnosticResolution">—</small></article>
+          <article class="diagnostic-card"><span>FPS da câmera</span><strong id="diagnosticCameraFps">—</strong><small>Feed recebido</small></article>
+          <article class="diagnostic-card"><span>Modelo de gestos</span><strong id="diagnosticGestureModel">NOT_LOADED</strong><small id="diagnosticGestureFps">—</small></article>
+          <article class="diagnostic-card"><span>Arduino</span><strong id="diagnosticArduino">OFFLINE</strong><small id="diagnosticMode">AUTONOMOUS</small></article>
+          <article class="diagnostic-card"><span>Último TX</span><strong id="diagnosticLastTx">—</strong><small>Site → Arduino</small></article>
+          <article class="diagnostic-card"><span>Último RX</span><strong id="diagnosticLastRx">—</strong><small>Arduino → site</small></article>
+          <article class="diagnostic-card wide"><span>Último erro</span><strong id="diagnosticLastError">Nenhum</strong><small>Uma ação de recuperação será exibida junto ao módulo afetado.</small></article>
+        </div>
+      </section>
+
+      <section id="logs" class="page-section panel event-log-panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Caixa-preta</span><h2>Eventos da operação</h2><p>Histórico limitado para diagnosticar câmera, visão, gestos, modos e Arduino sem degradar o navegador.</p></div>
+          <div class="log-actions"><span id="eventLogCount">0/120</span><button class="secondary-button" id="clearEventLog" type="button">Limpar logs</button></div>
+        </div>
+        <ol class="event-log" id="eventLog" aria-label="Histórico de eventos do sistema"></ol>
+      </section>
+
+      <section id="codigos" class="page-section panel code-panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Arduino UNO · instalação única</span><h2>Códigos do robô</h2><p>Grave o firmware principal uma vez. Depois disso, o IDE pode permanecer fechado e o site controla o UNO pelo cabo.</p></div>
+          <div class="code-actions">
+            <button class="secondary-button" id="copyCode">Copiar código</button>
+            <a class="primary-button compact" id="downloadCode" download>Baixar .ino</a>
+          </div>
+        </div>
+        <div class="firmware-workflow" aria-label="Como preparar e conectar o Arduino">
+          <article><b>01</b><div><strong>Gravar uma vez</strong><small>Envie o Código principal pelo Arduino IDE 2.3.10.</small></div></article>
+          <article><b>02</b><div><strong>Liberar a porta</strong><small>Feche o Monitor Serial e o Arduino IDE após o envio.</small></div></article>
+          <article><b>03</b><div><strong>Conectar por USB</strong><small>O firmware permanece salvo no UNO mesmo sem energia.</small></div></article>
+          <article><b>04</b><div><strong>Operar pelo site</strong><small>O painel envia modos e comandos; não envia sketches.</small></div></article>
+        </div>
+        <div class="firmware-assurance" role="note">
+          <span aria-hidden="true">✓</span>
+          <div><strong>Arduino IDE somente para instalar ou atualizar.</strong><small>No Modo 1, o UNO anda e desvia sozinho. Nos Modos 2 e 3, mantenha o site conectado para receber câmera ou gestos.</small></div>
+        </div>
+        <div class="pin-strip">
+          <span><b>D7</b> IN1</span><span><b>D6</b> IN2</span><span><b>D5</b> IN3</span><span><b>D4</b> IN4</span><span><b>D3</b> TRIG</span><span><b>D2</b> ECHO</span>
+        </div>
+        <div class="code-tabs" role="tablist" aria-label="Sketches disponíveis">
+          <button class="code-tab active" id="codeTabMain" role="tab" aria-selected="true" aria-controls="codeViewer" tabindex="0" data-code-source="firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino" data-filename="quantum_tracker_arduino.ino">Código principal</button>
+          <button class="code-tab" id="codeTabMotors" role="tab" aria-selected="false" aria-controls="codeViewer" tabindex="-1" data-code-source="firmware/teste_motores/teste_motores.ino" data-filename="teste_motores.ino">Teste dos motores</button>
+          <button class="code-tab" id="codeTabSensor" role="tab" aria-selected="false" aria-controls="codeViewer" tabindex="-1" data-code-source="firmware/teste_sensor_hcsr04/teste_sensor_hcsr04.ino" data-filename="teste_sensor_hcsr04.ino">Teste do sensor</button>
+        </div>
+        <div class="code-window" id="codeViewer" role="tabpanel" aria-labelledby="codeTabMain">
+          <div class="code-titlebar"><span></span><span></span><span></span><strong id="codeFilename">quantum_tracker_arduino.ino</strong><em id="codeStatus" role="status" aria-live="polite">CARREGANDO</em></div>
+          <pre tabindex="0"><code id="arduinoCode">Carregando código…</code></pre>
+        </div>
+      </section>
+
+      <section id="identidades" class="page-section panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Etapas 2 e 3</span><h2>Visão e identidades</h2><p>Resultados comprovados com arquivos locais, sem abrir webcam.</p></div>
+          <span class="pill neutral">Offline validado</span>
+        </div>
+        <div class="feature-grid">
+          <article><span>01</span><h3>Detecção de pessoas</h3><p>YOLO testado em variações de luz, desfoque, escala e resolução.</p><strong>13/13 IDs persistentes</strong></article>
+          <article><span>02</span><h3>Reconhecimento facial</h3><p>Cadastro com uma única face, bloqueio de duplicatas e rollback seguro.</p><strong>InsightFace validado</strong></article>
+          <article><span>03</span><h3>Dados persistentes</h3><p>Fotos, embeddings e registros sobrevivem ao reinício e só somem ao excluir.</p><strong>SQLite + arquivos locais</strong></article>
+        </div>
+        <p class="notice">Esta página pública não envia rostos ao servidor. Os cadastros feitos na câmera ficam somente no armazenamento local deste navegador.</p>
+      </section>
+
+      <section id="etapas" class="page-section panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Roteiro oficial</span><h2>Etapas do projeto</h2><p>As Etapas 1–9 são validadas sem o robô físico.</p></div>
+        </div>
+        <ol class="roadmap">
+          <li class="done"><span>1</span><div><strong>Autonomia básica</strong><small>Simulação, sensor e desvio</small></div><em>Concluída</em></li>
+          <li class="done"><span>2</span><div><strong>Detecção e IDs</strong><small>Pessoas e rastreamento</small></div><em>Concluída</em></li>
+          <li class="done"><span>3</span><div><strong>Cadastro persistente</strong><small>Fotos e reconhecimento</small></div><em>Concluída</em></li>
+          <li class="done"><span>4</span><div><strong>Seguir humano</strong><small>Segurança tem prioridade</small></div><em>Concluída</em></li>
+          <li class="done"><span>5</span><div><strong>Controle de movimento</strong><small>Auditoria e stress</small></div><em>Concluída</em></li>
+          <li class="done"><span>6</span><div><strong>Controle de câmera</strong><small>Qualidade e estabilidade</small></div><em>Concluída</em></li>
+          <li class="done"><span>7</span><div><strong>Gestos</strong><small>Prioridade de comandos</small></div><em>Concluída</em></li>
+          <li class="done"><span>8</span><div><strong>Localização indireta</strong><small>RSSI aproximado</small></div><em>Concluída</em></li>
+          <li class="done"><span>9</span><div><strong>Integração geral</strong><small>Todos os módulos</small></div><em>Concluída</em></li>
+          <li class="current"><span>10</span><div><strong>Aplicação física</strong><small>Arduino UNO por USB e três modos</small></div><em>Em validação</em></li>
+        </ol>
+      </section>
+
+      <section id="sistema" class="page-section panel system-panel">
+        <div><span class="section-tag">Arquitetura segura</span><h2>O que funciona neste site?</h2></div>
+        <div class="system-grid">
+          <div><strong>No navegador</strong><p>Câmera facial, gestos, cadastro local e Web Serial para o Arduino UNO.</p></div>
+          <div><strong>No Arduino</strong><p>Três modos, timeout de comandos, HC-SR04 e parada de emergência.</p></div>
+          <div><strong>Limite do Bluetooth</strong><p>Um único RSSI indica proximidade, mas não fornece direção atrás de paredes.</p></div>
+        </div>
+      </section>
+
+      <footer><span>Quantum Tracker · FECART 2026</span><span>João · Gustavo · Renato</span></footer>
+    </main>
+  </div>
+  <script src="web/control-state.js?v=1" defer></script>
   <script src="web/arduino-codes.js?v=4" defer></script>
   <script src="web/simulator-controller.js?v=1" defer></script>
   <script src="web/app.js?v=10" defer></script>

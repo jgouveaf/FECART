@@ -32,7 +32,7 @@ do Arduino precisam estar unidos. A alimentação dos motores entra no borne
 3. Feche o Monitor Serial e feche qualquer site/app que esteja usando essa COM.
 4. Deixe as rodas suspensas, confira a polaridade da alimentação e clique em
    **Carregar**.
-5. A compilação validada usa 7.164 bytes de flash e 415 bytes de RAM. O sketch
+5. A compilação validada usa 7.278 bytes de flash e 418 bytes de RAM. O sketch
    não precisa de biblioteca externa.
 
 O Arduino IDE é necessário somente para instalar ou atualizar o firmware. O
@@ -43,16 +43,18 @@ a porta COM.
 Sem o site conectado, o Modo 1 começa automaticamente. Para usar o painel,
 abra-o no Chrome ou Edge para computador, clique em **Conectar Arduino USB** e
 escolha o Arduino UNO. O UNO reinicia quando a porta serial é aberta. Após
-anunciar `QT:READY:V3`, o firmware mantém as rodas paradas por mais 750 ms para
+anunciar `QT:READY:V5`, o firmware mantém as rodas paradas por mais 750 ms para
 o painel concluir o handshake e confirmar `ESTOP` antes de qualquer movimento.
 
 ## Os três modos
 
 ### Modo 1 — autônomo
 
-O Arduino anda continuamente. Duas leituras consecutivas de até 20 cm iniciam
-o desvio: parar, recuar, virar, sair da curva e continuar. O lado da curva é
-alternado. Esse modo continua funcionando mesmo sem site conectado.
+O Arduino anda continuamente depois da primeira leitura válida do HC-SR04.
+Duas leituras consecutivas de até 20 cm iniciam o desvio: parar, recuar uma
+única vez, virar, confirmar duas leituras livres na nova direção e continuar.
+O lado da curva é alternado. Esse modo continua funcionando mesmo sem site
+conectado.
 
 ### Modo 2 — seguir pessoa
 
@@ -84,10 +86,15 @@ comando novo por 1,5 s, o próprio Arduino também para.
 ## Camadas de segurança
 
 - `PARAR` e `ESTOP` cancelam um desvio em andamento.
+- Nenhum motor é liberado antes da primeira leitura válida do HC-SR04.
 - O HC-SR04 é verificado nos três modos e sempre vence um comando da câmera.
+- Após uma curva, duas leituras livres confirmam o novo caminho antes do avanço.
 - Cinco leituras inválidas consecutivas do sensor travam os motores.
 - Cinco obstáculos em 15 segundos ativam a parada de emergência.
 - Nos Modos 2 e 3, ausência de comandos por 1,5 segundo para os motores.
+- O site bloqueia o robô se a comunicação USB ficar silenciosa por 2,2 segundos.
+- Linhas seriais corrompidas ou longas são descartadas até o próximo fim de linha.
+- Somente `OK:CMD:...` confirma um comando; telemetria antiga nunca vale como ACK.
 - O botão de emergência só deve ser liberado depois de conferir o entorno e as
   rodas.
 

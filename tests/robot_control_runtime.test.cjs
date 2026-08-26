@@ -53,21 +53,27 @@ class FakeReader {
   constructor() {
     this.queue = [];
     this.pending = [];
+    this.errors = [];
     this.closed = false;
   }
   read() {
+    if (this.errors.length) return Promise.reject(this.errors.shift());
     if (this.queue.length) return Promise.resolve({ value: this.queue.shift(), done: false });
     if (this.closed) return Promise.resolve({ value: undefined, done: true });
-    return new Promise((resolve) => this.pending.push(resolve));
+    return new Promise((resolve, reject) => this.pending.push({ resolve, reject }));
   }
   push(value) {
     if (this.closed) return;
-    const resolve = this.pending.shift();
-    if (resolve) resolve({ value, done: false }); else this.queue.push(value);
+    const waiter = this.pending.shift();
+    if (waiter) waiter.resolve({ value, done: false }); else this.queue.push(value);
+  }
+  fail(error) {
+    const waiter = this.pending.shift();
+    if (waiter) waiter.reject(error); else this.errors.push(error);
   }
   cancel() {
     this.closed = true;
-    for (const resolve of this.pending.splice(0)) resolve({ value: undefined, done: true });
+    for (const waiter of this.pending.splice(0)) waiter.resolve({ value: undefined, done: true });
     return Promise.resolve();
   }
   releaseLock() {}
@@ -99,7 +105,7 @@ class FakePort {
     this.configuration = configuration;
     this.opened = true;
     if (this.options.ready !== false) {
-      setTimeout(() => this.emit(this.options.readyLine || "QT:READY:V3"), this.options.readyDelayMs || 0);
+      setTimeout(() => this.emit(this.options.readyLine || "QT:READY:V5"), this.options.readyDelayMs || 0);
     }
   }
   async close() {
@@ -107,12 +113,13 @@ class FakePort {
     await this.reader.cancel();
   }
   emit(line) { this.reader.push(this.encoder.encode(`${line}\n`)); }
+  emitRaw(value) { this.reader.push(this.encoder.encode(value)); }
   ackFor(line) {
     if (this.options.acks === false) return null;
     if (this.options.noAckFor?.includes(line)) return null;
     if (line === "ESTOP") return "OK:ESTOP";
     if (line === "RESET_ESTOP") return "OK:RESET_ESTOP";
-    if (line === "HELLO" && this.options.helloReady) return this.options.readyLine || "QT:READY:V3";
+    if (line === "HELLO" && this.options.helloReady) return this.options.readyLine || "QT:READY:V5";
     if (line.startsWith("MODE:")) return `OK:${line}`;
     if (line.startsWith("CMD:")) return `OK:${line}`;
     if (line === "STATUS") return "QT|MODE:1|DIST:50.0|CMD:PARAR|STATE:AUTONOMO";
@@ -135,7 +142,7 @@ async function waitFor(predicate, timeoutMs = 800) {
 function makeControl(windowObject) {
   const state = {
     mode: { id: 1, key: "AUTONOMOUS", label: "AUTÔNOMO", phase: "ACTIVE", requestedId: null },
-    robot: { connected: false, status: "OFFLINE" },
+    robot: { connected: false, status: "OFFLINE", statusLabel: "DESCONECTADO" },
     communication: { status: "OFFLINE" },
     safety: { emergency: false, status: "MONITORING" },
     diagnostics: { lastError: "Nenhum" },
@@ -281,6 +288,17 @@ async function testHandshakeAndAcknowledgements() {
   await cleanup(environment);
 }
 
+async function testRobotStatusKeepsTechnicalStateAndReadableLabel() {
+  const environment = createEnvironment();
+  assert.equal(environment.control.state.robot.status, "OFFLINE");
+  assert.equal(environment.control.state.robot.statusLabel, "DESCONECTADO");
+
+  await environment.robot.connect();
+  assert.equal(environment.control.state.robot.status, "ONLINE");
+  assert.equal(environment.control.state.robot.statusLabel, "CONECTADO · BLOQUEADO");
+  await cleanup(environment);
+}
+
 async function testModeTransitionAndStaleInputWatchdog() {
   const environment = createEnvironment();
   assert.equal(await environment.robot.connect(), true);
@@ -366,6 +384,67 @@ async function testRepeatedMotionAckFailureTriggersEstop() {
   await cleanup(environment);
 }
 
+async function testOldTelemetryCannotConfirmANewMotionCommand() {
+  const environment = createEnvironment(
+    { noAckFor: ["CMD:FRENTE"] },
+    { ackTimeoutMs: 18, commandHeartbeatMs: 8, inputTimeoutMs: 500 },
+  );
+  await environment.robot.connect();
+  await releaseSafety(environment);
+  environment.robot.requestMode(3, "test");
+  await waitFor(() => environment.robot.confirmedMode === 3 && !environment.control.state.safety.emergency);
+  environment.window.dispatchEvent(new TestCustomEvent("quantum:gesture-command", {
+    detail: { command: "FRENTE", stable: true, confidence: 0.99 },
+  }));
+  await waitFor(() => environment.port.writes.includes("CMD:FRENTE"));
+  environment.port.emit("QT|MODE:3|DIST:50.0|CMD:FRENTE|STATE:GESTOS");
+
+  await waitFor(() => environment.control.state.robot.status === "ERROR", 300);
+  assert.equal(environment.control.state.safety.emergency, true);
+  assert.equal(environment.port.writes.at(-1), "ESTOP");
+  await cleanup(environment);
+}
+
+async function testSilentUsbConnectionTriggersEmergencyStop() {
+  const environment = createEnvironment({}, { serialSilenceTimeoutMs: 35, commandHeartbeatMs: 8 });
+  await environment.robot.connect();
+  await releaseSafety(environment);
+
+  await waitFor(() => environment.control.state.robot.status === "ERROR", 250);
+  assert.equal(environment.control.state.safety.emergency, true);
+  assert.match(environment.control.state.diagnostics.lastError, /deixou de responder/);
+  assert.equal(environment.port.writes.at(-1), "ESTOP");
+  await cleanup(environment);
+}
+
+async function testRecoverableReadErrorDoesNotDisconnectArduino() {
+  const environment = createEnvironment();
+  await environment.robot.connect();
+  await releaseSafety(environment);
+  environment.port.reader.fail(new Error("erro de enquadramento transitório"));
+  await waitFor(() => environment.control.logs.some((entry) => /Falha transitória/.test(entry.message)));
+  environment.port.emit("QT|MODE:1|DIST:75.0|CMD:FRENTE|STATE:AUTONOMO");
+
+  await waitFor(() => environment.control.state.robot.distance === 75);
+  assert.equal(environment.robot.connected, true);
+  assert.equal(environment.control.state.safety.emergency, false);
+  await cleanup(environment);
+}
+
+async function testOversizedSerialLineIsDiscardedUntilNewline() {
+  const environment = createEnvironment();
+  await environment.robot.connect();
+  await releaseSafety(environment);
+  environment.port.emitRaw("X".repeat(513));
+  await waitFor(() => /descartada/.test(environment.control.state.diagnostics.lastError));
+  environment.port.emitRaw("OK:CMD:FRENTE\nQT|MODE:1|DIST:82.0|CMD:FRENTE|STATE:AUTONOMO\n");
+
+  await waitFor(() => environment.control.state.robot.distance === 82);
+  assert.equal(environment.control.state.communication.lastRx, "QT|MODE:1|DIST:82.0|CMD:FRENTE|STATE:AUTONOMO");
+  assert.equal(environment.robot.connected, true);
+  await cleanup(environment);
+}
+
 async function testSensorFailureRemainsBlockedUntilRecovery() {
   const environment = createEnvironment();
   await environment.robot.connect();
@@ -437,11 +516,16 @@ async function testHandshakeTimeoutAndVersionMismatch() {
 
 async function main() {
   const tests = [
+    testRobotStatusKeepsTechnicalStateAndReadableLabel,
     testHandshakeAndAcknowledgements,
     testModeTransitionAndStaleInputWatchdog,
     testWrongModeAndSplitBrainFailClosed,
     testModeAckTimeoutRollsBackAndStaysStopped,
     testRepeatedMotionAckFailureTriggersEstop,
+    testOldTelemetryCannotConfirmANewMotionCommand,
+    testSilentUsbConnectionTriggersEmergencyStop,
+    testRecoverableReadErrorDoesNotDisconnectArduino,
+    testOversizedSerialLineIsDiscardedUntilNewline,
     testSensorFailureRemainsBlockedUntilRecovery,
     testDisconnectAndPageHideEndWithEstop,
     testKeyboardTransitionAndScopedSerialDisconnect,

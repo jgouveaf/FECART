@@ -13,11 +13,16 @@
   HELLO | ESTOP | RESET_ESTOP | PING | STATUS
 
   Seguranca:
+  - nenhum motor e liberado antes da primeira leitura valida do HC-SR04;
   - PARAR e ESTOP interrompem imediatamente;
   - modos 2 e 3 param se nenhum novo CMD:* chegar por 1,5 s;
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
   - cinco falhas consecutivas travam o sensor; tres leituras validas o recuperam;
-  - obstaculo frontal bloqueia frente, curvas e giro (RE e PARAR continuam permitidos);
+  - obstaculo frontal inicia um desvio completo; a leitura e ignorada somente
+    enquanto o chassi esta girando, pois nesse momento o sensor ainda aponta
+    por alguns instantes para o obstaculo que originou a manobra;
+  - apos a curva, duas leituras livres confirmam a nova direcao antes de avancar;
+  - mensagens seriais longas sao descartadas integralmente ate a proxima linha;
   - cinco obstaculos em 15 s ativam parada de seguranca.
 */
 
@@ -47,6 +52,7 @@ const unsigned int TEMPO_SAIDA_MS = 600;
 
 const byte LIMITE_FALHAS_SENSOR = 5;
 const byte LEITURAS_VALIDAS_PARA_RECUPERAR = 3;
+const byte LEITURAS_CAMINHO_LIVRE = 2;
 const byte LIMITE_OBSTACULOS = 5;
 
 enum ModoRobo { MODO_AUTONOMO = 1, MODO_SEGUIR = 2, MODO_GESTOS = 3 };
@@ -75,11 +81,14 @@ unsigned long obstaculosEm[LIMITE_OBSTACULOS];
 float distanciaAtualCm = -1;
 byte falhasConsecutivasSensor = 0;
 byte leiturasValidasRecuperacao = 0;
+byte leiturasLivresAposCurva = 0;
 byte obstaculosConsecutivos = 0;
 byte quantidadeObstaculos = 0;
 bool proximaCurvaDireita = true;
 bool paradaEmergencia = false;
 bool sensorBloqueado = false;
+bool sensorInicializado = false;
+bool descartandoLinhaSerial = false;
 
 char linhaSerial[34];
 byte tamanhoLinha = 0;
@@ -154,6 +163,7 @@ void atualizarSensor(unsigned long agora) {
   if (distanciaAtualCm < 0) {
     if (falhasConsecutivasSensor < 255) falhasConsecutivasSensor++;
     leiturasValidasRecuperacao = 0;
+    leiturasLivresAposCurva = 0;
     obstaculosConsecutivos = 0;
 
     if (falhasConsecutivasSensor >= LIMITE_FALHAS_SENSOR && !sensorBloqueado) {
@@ -165,6 +175,7 @@ void atualizarSensor(unsigned long agora) {
     return;
   }
 
+  sensorInicializado = true;
   falhasConsecutivasSensor = 0;
   if (sensorBloqueado) {
     if (leiturasValidasRecuperacao < 255) leiturasValidasRecuperacao++;
@@ -177,15 +188,30 @@ void atualizarSensor(unsigned long agora) {
     leiturasValidasRecuperacao = 0;
   }
 
-  if (distanciaAtualCm <= DISTANCIA_OBSTACULO_CM) {
+  // Durante a curva o HC-SR04 ainda pode enxergar o obstaculo antigo. Contar
+  // essas leituras reiniciaria o desvio antes de o robo conseguir mudar de
+  // direcao. Assim que a curva termina, a confirmacao por duas leituras volta
+  // a funcionar normalmente antes da saida para frente.
+  if (estadoDesvio == DESVIO_CURVA) {
+    obstaculosConsecutivos = 0;
+    leiturasLivresAposCurva = 0;
+  } else if (distanciaAtualCm <= DISTANCIA_OBSTACULO_CM) {
+    leiturasLivresAposCurva = 0;
     if (obstaculosConsecutivos < 255) obstaculosConsecutivos++;
   } else {
     obstaculosConsecutivos = 0;
+    if (estadoDesvio == DESVIO_PAUSA_CURVA) {
+      if (leiturasLivresAposCurva < 255) leiturasLivresAposCurva++;
+    } else {
+      leiturasLivresAposCurva = 0;
+    }
   }
 }
 
 bool sensorSeguro() {
-  return !sensorBloqueado && falhasConsecutivasSensor < LIMITE_FALHAS_SENSOR;
+  return sensorInicializado
+      && !sensorBloqueado
+      && falhasConsecutivasSensor < LIMITE_FALHAS_SENSOR;
 }
 
 bool obstaculoConfirmado() {
@@ -215,12 +241,14 @@ bool registrarObstaculo(unsigned long agora) {
 
 void cancelarDesvio() {
   estadoDesvio = DESVIO_INATIVO;
+  leiturasLivresAposCurva = 0;
   pararMotores();
 }
 
 void iniciarDesvio(unsigned long agora) {
   pararMotores();
   obstaculosConsecutivos = 0;
+  leiturasLivresAposCurva = 0;
   if (registrarObstaculo(agora)) {
     paradaEmergencia = true;
     estadoDesvio = DESVIO_INATIVO;
@@ -252,14 +280,12 @@ void atualizarDesvio(unsigned long agora) {
       break;
     case DESVIO_PAUSA_RE:
       if (decorrido >= 150UL) {
-        // Se a frente ainda esta bloqueada, somente a RE continua autorizada.
-        if (obstaculoConfirmado()) {
-          andarParaTras();
-          estadoDesvio = DESVIO_RE;
-        } else {
-          if (proximaCurvaDireita) girarDireita(); else girarEsquerda();
-          estadoDesvio = DESVIO_CURVA;
-        }
+        // O robo possui sensor apenas na frente. Recuar repetidamente sem um
+        // sensor traseiro seria inseguro; depois de uma unica re, ele executa
+        // a curva completa e volta a avaliar a nova direcao.
+        obstaculosConsecutivos = 0;
+        if (proximaCurvaDireita) girarDireita(); else girarEsquerda();
+        estadoDesvio = DESVIO_CURVA;
         estadoDesvioDesde = agora;
       }
       break;
@@ -268,11 +294,12 @@ void atualizarDesvio(unsigned long agora) {
         pararMotores();
         proximaCurvaDireita = !proximaCurvaDireita;
         estadoDesvio = DESVIO_PAUSA_CURVA;
+        leiturasLivresAposCurva = 0;
         estadoDesvioDesde = agora;
       }
       break;
     case DESVIO_PAUSA_CURVA:
-      if (decorrido >= 150UL) {
+      if (decorrido >= 150UL && leiturasLivresAposCurva >= LEITURAS_CAMINHO_LIVRE) {
         andarParaFrente();
         estadoDesvio = DESVIO_SAIDA;
         estadoDesvioDesde = agora;
@@ -316,6 +343,10 @@ void enviarStatus(unsigned long agora, bool forcar = false) {
   Serial.print(nomeComando(comandoAplicado));
   Serial.print(F("|STATE:"));
   if (paradaEmergencia) Serial.print(F("ESTOP"));
+  else if (sensorBloqueado || falhasConsecutivasSensor >= LIMITE_FALHAS_SENSOR) {
+    Serial.print(F("SENSOR_FAIL"));
+  }
+  else if (!sensorInicializado) Serial.print(F("SENSOR_INIT"));
   else if (!sensorSeguro()) Serial.print(F("SENSOR_FAIL"));
   else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
   else Serial.print(nomeModo());
@@ -330,6 +361,20 @@ void selecionarModo(byte numero, unsigned long agora) {
   cancelarDesvio();
   Serial.print(F("OK:MODE:"));
   Serial.println(numero);
+}
+
+ComandoMovimento comandoDesejadoPeloModo() {
+  // Um unico sketch executa os tres modos. O Arduino sempre resolve o modo
+  // localmente; o site apenas seleciona o estado e renova os comandos dos
+  // modos 2 e 3 pela porta USB.
+  switch (modo) {
+    case MODO_AUTONOMO:
+      return CMD_FRENTE;
+    case MODO_SEGUIR:
+    case MODO_GESTOS:
+    default:
+      return comandoRecebido;
+  }
 }
 
 void receberComando(ComandoMovimento comando, unsigned long agora) {
@@ -365,7 +410,7 @@ void processarLinha(char* linha, unsigned long agora) {
     Serial.println(F("OK:RESET_ESTOP"));
   } else if (strcmp(linha, "HELLO") == 0) {
     // Permite identificar o firmware mesmo quando abrir a porta nao reinicia o UNO.
-    Serial.println(F("QT:READY:V3"));
+    Serial.println(F("QT:READY:V5"));
   } else if (strcmp(linha, "PING") == 0) {
     // PING confirma apenas o enlace. So CMD:* renova a validade do movimento.
     Serial.println(F("PONG"));
@@ -377,15 +422,22 @@ void lerSerial(unsigned long agora) {
   while (Serial.available() > 0) {
     const char recebido = (char)Serial.read();
     if (recebido == '\n' || recebido == '\r') {
-      if (tamanhoLinha > 0) {
+      if (descartandoLinhaSerial) {
+        descartandoLinhaSerial = false;
+        tamanhoLinha = 0;
+      } else if (tamanhoLinha > 0) {
         linhaSerial[tamanhoLinha] = '\0';
         processarLinha(linhaSerial, agora);
         tamanhoLinha = 0;
       }
+    } else if (descartandoLinhaSerial) {
+      // Um sufixo valido de uma linha corrompida nunca pode virar comando.
+      continue;
     } else if (tamanhoLinha < sizeof(linhaSerial) - 1) {
       linhaSerial[tamanhoLinha++] = recebido;
     } else {
       tamanhoLinha = 0;
+      descartandoLinhaSerial = true;
       Serial.println(F("ERRO:LINHA_LONGA"));
     }
   }
@@ -413,7 +465,7 @@ void setup() {
   Serial.begin(9600);
   delay(2000);
   ultimoComandoEm = millis();
-  Serial.println(F("QT:READY:V3"));
+  Serial.println(F("QT:READY:V5"));
   Serial.println(F("OK:MODE:1"));
   aguardarComandoInicial();
 }
@@ -435,25 +487,18 @@ void loop() {
   }
 
   if (estadoDesvio != DESVIO_INATIVO) {
-    if (obstaculoConfirmado()) {
-      if (estadoDesvio == DESVIO_PAUSA_RE) {
-        // RE e permitida mesmo com obstaculo frontal e cria espaco para a curva.
-        andarParaTras();
-        estadoDesvio = DESVIO_RE;
-        estadoDesvioDesde = agora;
-      } else if (estadoDesvio == DESVIO_CURVA
-              || estadoDesvio == DESVIO_PAUSA_CURVA
-              || estadoDesvio == DESVIO_SAIDA) {
-        // Interrompe imediatamente curva/giro/frente e reinicia o desvio seguro.
-        iniciarDesvio(agora);
-      }
+    if (obstaculoConfirmado()
+        && (estadoDesvio == DESVIO_PAUSA_CURVA || estadoDesvio == DESVIO_SAIDA)) {
+      // A curva terminou e a nova frente continua bloqueada: inicia outra
+      // tentativa antes de manter o avanco.
+      iniciarDesvio(agora);
     }
     atualizarDesvio(agora);
     enviarStatus(agora);
     return;
   }
 
-  const ComandoMovimento desejado = modo == MODO_AUTONOMO ? CMD_FRENTE : comandoRecebido;
+  const ComandoMovimento desejado = comandoDesejadoPeloModo();
   if (comandoExigeFrenteLivre(desejado) && obstaculoConfirmado()) {
     iniciarDesvio(agora);
   } else {

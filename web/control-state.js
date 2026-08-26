@@ -15,7 +15,7 @@
 
   const state = {
     mode: { ...MODES[1], phase: "ACTIVE", requestedId: null, changedAt: Date.now() },
-    robot: { connected: false, status: "OFFLINE", command: "PARAR", firmwareState: "SEM TELEMETRIA", distance: null },
+    robot: { connected: false, status: "OFFLINE", statusLabel: "DESCONECTADO", command: "PARAR", firmwareState: "SEM TELEMETRIA", distance: null },
     camera: { active: false, status: "OFFLINE", deviceId: null, deviceLabel: "—", width: null, height: null, fps: 0, error: null },
     gestures: { enabled: false, active: false, status: "OFFLINE", model: "NOT_LOADED", gesture: null, confidence: 0, command: "PARAR", fps: 0 },
     vision: { active: false, status: "OFFLINE", targetId: null, confidence: 0, tracking: "SEARCHING", direction: "PARAR", fps: 0 },
@@ -37,11 +37,11 @@
     return "offline";
   }
 
-  function setIndicator(element, value) {
+  function setIndicator(element, value, status = value) {
     if (!element) return;
     element.textContent = value;
     const parent = element.closest(".system-indicator");
-    if (parent) parent.dataset.status = statusClass(value);
+    if (parent) parent.dataset.status = statusClass(status);
   }
 
   function renderLogs() {
@@ -70,7 +70,7 @@
 
   function render() {
     renderQueued = false;
-    setIndicator(document.getElementById("overallRobotStatus"), state.robot.status);
+    setIndicator(document.getElementById("overallRobotStatus"), state.robot.statusLabel || state.robot.status, state.robot.status);
     setIndicator(document.getElementById("overallCameraStatus"), state.camera.status);
     setIndicator(document.getElementById("overallVisionStatus"), state.vision.status);
     setIndicator(document.getElementById("overallGestureStatus"), state.gestures.status);

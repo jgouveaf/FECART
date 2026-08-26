@@ -28,12 +28,14 @@
   const VALID_COMMANDS = new Set(["FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]);
   const COMMAND_HEARTBEAT_MS = Number(testConfig.commandHeartbeatMs) || 500;
   const INPUT_TIMEOUT_MS = Number(testConfig.inputTimeoutMs) || 900;
+  const SERIAL_SILENCE_TIMEOUT_MS = Number(testConfig.serialSilenceTimeoutMs) || 2200;
   const READY_TIMEOUT_MS = Number(testConfig.readyTimeoutMs) || 6500;
   const ACK_TIMEOUT_MS = Number(testConfig.ackTimeoutMs) || 1000;
   const MAX_EVENT_AGE_MS = Number(testConfig.maxEventAgeMs) || 1200;
   const MAX_QUEUED_MOTION_AGE_MS = Number(testConfig.maxQueuedMotionAgeMs) || 350;
   const MAX_READ_BUFFER = 512;
-  const REQUIRED_FIRMWARE_READY = "QT:READY:V3";
+  const MAX_RECOVERABLE_READ_ERRORS = Number(testConfig.maxRecoverableReadErrors) || 2;
+  const REQUIRED_FIRMWARE_READY = "QT:READY:V5";
 
   let port = null;
   let reader = null;
@@ -43,6 +45,7 @@
   let closing = false;
   let closePromise = null;
   let readBuffer = "";
+  let discardingReadLine = false;
   let readTask = null;
   let connectionGeneration = 0;
   let operationGeneration = 0;
@@ -55,6 +58,7 @@
   let emergencyOwner = null;
   let lastIntent = "PARAR";
   let lastFreshInputAt = 0;
+  let lastSerialRxAt = 0;
   let lastWriteAt = 0;
   let lastWrittenCommand = "";
   let lastAcknowledgedCommand = "PARAR";
@@ -98,7 +102,7 @@
     }
     if (hint && connectionHint) connectionHint.textContent = hint;
     patch("communication", { status }, { source: "robot-serial" });
-    patch("robot", { connected: status === "ONLINE", status }, { source: "robot-serial" });
+    patch("robot", { connected: status === "ONLINE", status, statusLabel: text }, { source: "robot-serial" });
   }
 
   function markTx(line) {
@@ -106,6 +110,7 @@
   }
 
   function markRx(line) {
+    lastSerialRxAt = performance.now();
     patch("communication", { lastRx: line, status: splitBrainHandling ? "ERROR" : connected ? "ONLINE" : "CONNECTING" }, { source: "serial-rx" });
   }
 
@@ -279,7 +284,7 @@
     resolveLineWaiters(line);
 
     if (line.startsWith("QT:READY:")) {
-      if (stateStatus) stateStatus.textContent = line === REQUIRED_FIRMWARE_READY ? "FIRMWARE V3 PRONTO" : "FIRMWARE INCOMPATÍVEL";
+      if (stateStatus) stateStatus.textContent = line === REQUIRED_FIRMWARE_READY ? "FIRMWARE V5 PRONTO" : "FIRMWARE INCOMPATÍVEL";
       return;
     }
     if (line.startsWith("ALERTA:")) {
@@ -318,6 +323,9 @@
     if (stateStatus) stateStatus.textContent = firmwareState;
 
     if (values.STATE === "ESTOP") setEmergencyUi(true, "ESTOP", emergencyOwner || "firmware");
+    else if (values.STATE === "SENSOR_INIT" && stateStatus) {
+      stateStatus.textContent = "AGUARDANDO PRIMEIRA LEITURA DO SENSOR";
+    }
     else if (values.STATE === "SENSOR_FAIL" && !["operator", "fault", "transition"].includes(emergencyOwner)) {
       setEmergencyUi(true, "SENSOR SEM RESPOSTA · MOTORES BLOQUEADOS", "sensor");
     } else if (emergencyActive && ["firmware", "sensor"].includes(emergencyOwner) && !modeTransitioning) {
@@ -343,29 +351,62 @@
     }, { source: "arduino-telemetry" });
   }
 
+  function consumeSerialChunk(value, decoder) {
+    let text = decoder.decode(value, { stream: true });
+    if (discardingReadLine) {
+      const newline = text.indexOf("\n");
+      if (newline < 0) return;
+      text = text.slice(newline + 1);
+      discardingReadLine = false;
+    }
+
+    const lines = (readBuffer + text).split(/\r?\n/);
+    readBuffer = lines.pop() || "";
+    for (const line of lines) {
+      if (line.length > MAX_READ_BUFFER) {
+        reportError("Uma resposta serial longa foi descartada integralmente.");
+        continue;
+      }
+      parseTelemetry(line.trim());
+    }
+    if (readBuffer.length > MAX_READ_BUFFER) {
+      readBuffer = "";
+      discardingReadLine = true;
+      reportError("Uma resposta serial longa foi descartada até o próximo fim de linha.");
+    }
+  }
+
   async function readLoop(connectionToken) {
     const decoder = new TextDecoder();
+    let recoverableErrors = 0;
     try {
-      reader = port.readable.getReader();
       while (transportOpen && !closing && connectionToken === connectionGeneration) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        readBuffer += decoder.decode(value, { stream: true });
-        if (readBuffer.length > MAX_READ_BUFFER && !readBuffer.includes("\n")) {
-          readBuffer = "";
-          reportError("A resposta serial excedeu o limite e foi descartada.");
-          continue;
+        if (!port?.readable) throw new Error("A leitura USB deixou de estar disponível.");
+        const currentReader = port.readable.getReader();
+        reader = currentReader;
+        try {
+          while (transportOpen && !closing && connectionToken === connectionGeneration) {
+            const { value, done } = await currentReader.read();
+            if (done) {
+              if (!closing && transportOpen) throw new Error("A leitura serial foi encerrada inesperadamente.");
+              break;
+            }
+            if (!value) continue;
+            recoverableErrors = 0;
+            consumeSerialChunk(value, decoder);
+          }
+        } catch (error) {
+          if (closing || !transportOpen || connectionToken !== connectionGeneration) break;
+          if (!port?.readable || recoverableErrors >= MAX_RECOVERABLE_READ_ERRORS) throw error;
+          recoverableErrors += 1;
+          log("WARNING", "ARDUINO", `Falha transitória na leitura USB; recuperação ${recoverableErrors}/${MAX_RECOVERABLE_READ_ERRORS}`);
+        } finally {
+          try { currentReader.releaseLock(); } catch { /* trava já liberada */ }
+          if (reader === currentReader) reader = null;
         }
-        const lines = readBuffer.split(/\r?\n/);
-        readBuffer = lines.pop() || "";
-        for (const line of lines) parseTelemetry(line.trim());
       }
-      if (!closing && transportOpen && connectionToken === connectionGeneration) throw new Error("A leitura serial foi encerrada inesperadamente.");
     } catch (error) {
       if (!closing && connectionToken === connectionGeneration) handleConnectionFailure(error);
-    } finally {
-      try { reader?.releaseLock(); } catch { /* trava já liberada */ }
-      reader = null;
     }
   }
 
@@ -433,12 +474,14 @@
       transportOpen = true;
       closing = false;
       readBuffer = "";
+      discardingReadLine = false;
       writeTail = Promise.resolve();
       setConnection("AGUARDANDO FIRMWARE", "CONNECTING", "Validando QT:READY e colocando os motores em estado seguro.");
       await initializeFirmware(connectionToken, operationToken);
       if (connectionToken !== connectionGeneration || operationToken !== operationGeneration) throw cancelled();
 
       connected = true;
+      lastSerialRxAt = performance.now();
       modeActivatedAt = performance.now();
       ++modeGeneration;
       lastIntent = "PARAR";
@@ -448,7 +491,7 @@
       consecutiveMotionFailures = 0;
       pendingMotion = null;
       setControlsForConnection("ONLINE");
-      setConnection("CONECTADO · BLOQUEADO", "ONLINE", `Firmware V3 confirmado em ${MODE_NAMES[activeMode]}. Confira as rodas e clique em “Liberar após conferir”.`);
+      setConnection("CONECTADO · BLOQUEADO", "ONLINE", `Firmware V5 confirmado em ${MODE_NAMES[activeMode]}. Confira as rodas e clique em “Liberar após conferir”.`);
       renderMode(activeMode);
       updateDeliveryHint();
       log("WARNING", "SEGURANÇA", `Arduino sincronizado em ${MODE_NAMES[activeMode]} e mantido em ESTOP até liberação explícita`);
@@ -585,10 +628,9 @@
     const connectionToken = connectionGeneration;
     const operationToken = operationGeneration;
     motionAckInFlight = true;
-    return transact(`CMD:${command}`, (line) => {
-      if (line === `OK:CMD:${command}`) return true;
-      return line.startsWith("QT|") && telemetryValues(line).CMD === command;
-    }, {
+    // Telemetria pode representar um movimento anterior. Somente a resposta
+    // explicita do firmware confirma que este CMD acabou de ser recebido.
+    return transact(`CMD:${command}`, (line) => line === `OK:CMD:${command}`, {
       connectionToken,
       operationToken,
       modeToken,
@@ -629,7 +671,12 @@
   }
 
   function watchdogTick() {
-    if (!connected || emergencyActive || modeTransitioning || activeMode === 1) return;
+    if (!connected || emergencyActive || modeTransitioning) return;
+    if (lastSerialRxAt > 0 && performance.now() - lastSerialRxAt > SERIAL_SILENCE_TIMEOUT_MS) {
+      failClosed("O Arduino deixou de responder pela USB; motores bloqueados por segurança.");
+      return;
+    }
+    if (activeMode === 1) return;
     const hasFreshInput = lastFreshInputAt > 0 && performance.now() - lastFreshInputAt <= INPUT_TIMEOUT_MS;
     if (!hasFreshInput) {
       lastIntent = "PARAR";
@@ -715,6 +762,8 @@
       reader = null;
       readTask = null;
       readBuffer = "";
+      discardingReadLine = false;
+      lastSerialRxAt = 0;
       writeTail = Promise.resolve();
       confirmedMode = null;
       splitBrainHandling = false;
@@ -726,6 +775,7 @@
       patch("robot", {
         connected: false,
         ...(!preserveStatus && { status: "OFFLINE" }),
+        ...(!preserveStatus && { statusLabel: "DESCONECTADO" }),
         command: "PARAR",
         firmwareState: "SEM TELEMETRIA",
         distance: null,
@@ -816,6 +866,11 @@
   navigator.serial?.addEventListener?.("disconnect", (event) => {
     if (event.port === port || event.target === port) handleConnectionFailure(new Error("Arduino desconectado."));
   });
+  navigator.serial?.addEventListener?.("connect", () => {
+    if (!connected && !transportOpen && connectionHint) {
+      connectionHint.textContent = "Dispositivo USB detectado. Clique em Conectar Arduino USB e selecione a porta.";
+    }
+  });
   window.addEventListener("pagehide", () => {
     ++operationGeneration;
     ++modeGeneration;
@@ -844,7 +899,13 @@
     get modeGeneration() { return modeGeneration; },
   };
   if (window.__QUANTUM_ROBOT_TEST__) {
-    publicApi._test = Object.freeze({ watchdogTick, parseTelemetry, eventIsFresh, get lastFreshInputAt() { return lastFreshInputAt; } });
+    publicApi._test = Object.freeze({
+      watchdogTick,
+      parseTelemetry,
+      eventIsFresh,
+      get lastFreshInputAt() { return lastFreshInputAt; },
+      get lastSerialRxAt() { return lastSerialRxAt; },
+    });
   }
   window.quantumRobot = Object.freeze(publicApi);
 })();

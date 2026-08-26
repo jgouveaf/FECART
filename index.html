@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#07111f">
+  <meta name="theme-color" content="#17324d">
   <meta name="description" content="Quantum Tracker — painel web e laboratório de simulação do projeto FECART.">
   <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
   <title>Quantum Tracker — Painel Web</title>
@@ -19,7 +19,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="web/styles.css?v=13">
+  <link rel="stylesheet" href="web/styles.css?v=14">
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
@@ -62,9 +62,9 @@
       <section id="visao-geral" class="page-section hero-grid">
         <article class="hero-card">
           <div>
-            <span class="section-tag">Laboratório digital</span>
-            <h2>Robótica e visão computacional em um só painel.</h2>
-            <p>Conecte o Arduino por USB, escolha um dos três modos e acompanhe câmera, gestos, sensor e comandos em tempo real.</p>
+            <span class="section-tag">Projeto FECART</span>
+            <h2>Operação, testes e controle do robô.</h2>
+            <p>Um ambiente único para preparar o Arduino, testar a lógica e acompanhar câmera, sensor e comandos durante a operação.</p>
           </div>
           <div class="hero-actions">
             <a class="primary-button" href="#camera-gestos">Abrir controle <span>→</span></a>
@@ -75,20 +75,20 @@
 
         <article class="progress-card">
           <div class="card-heading">
-            <div><span class="section-tag">Progresso atual</span><h3>Etapa 10 em validação</h3></div>
-            <strong>95%</strong>
+            <div><span class="section-tag">Situação do sistema</span><h3>Validação física pendente</h3></div>
+            <strong>ETAPA 10</strong>
           </div>
-          <div class="progress-track"><span style="width:95%"></span></div>
-          <p>Controle físico liberado somente após conexão USB e confirmação explícita do operador.</p>
+          <div class="progress-track"><span style="width:70%"></span></div>
+          <p>O software passou nos testes automatizados. O carrinho real ainda precisa concluir os ensaios de motor, sensor e desconexão.</p>
           <div class="mini-stats">
-            <div><strong>50 mil</strong><span>quadros de stress</span></div>
-            <div><strong>0</strong><span>acessos físicos</span></div>
+            <div><strong>671</strong><span>testes Python</span></div>
+            <div><strong>0</strong><span>ensaios físicos</span></div>
           </div>
         </article>
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>635 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>671 aprovados</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⌁</span><div><small>Arduino</small><strong>USB Serial</strong></div></article>
@@ -146,7 +146,7 @@
           </div>
         </div>
         <div class="system-status-grid" aria-label="Estado geral da operação">
-          <article class="system-indicator" data-status="offline"><span>Robô</span><strong id="overallRobotStatus">OFFLINE</strong><small>Arduino USB</small></article>
+          <article class="system-indicator" data-status="offline"><span>Robô</span><strong id="overallRobotStatus">DESCONECTADO</strong><small>Arduino USB</small></article>
           <article class="system-indicator" data-status="offline"><span>Câmera</span><strong id="overallCameraStatus">OFFLINE</strong><small>Dispositivo local</small></article>
           <article class="system-indicator" data-status="offline"><span>Visão</span><strong id="overallVisionStatus">OFFLINE</strong><small>Rosto e alvo</small></article>
           <article class="system-indicator" data-status="offline"><span>Gestos</span><strong id="overallGestureStatus">OFFLINE</strong><small>MediaPipe local</small></article>
@@ -383,11 +383,11 @@
     </main>
   </div>
   <script src="web/control-state.js?v=1" defer></script>
-  <script src="web/arduino-codes.js?v=4" defer></script>
+  <script src="web/arduino-codes.js?v=5" defer></script>
   <script src="web/simulator-controller.js?v=1" defer></script>
   <script src="web/app.js?v=10" defer></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
-  <script src="web/robot-control.js?v=3" defer></script>
+  <script src="web/robot-control.js?v=5" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/gesture-math.js?v=1" defer></script>
   <script src="web/face-identities.js?v=11" defer></script>

@@ -42,7 +42,7 @@ USB por ATmega16U2. A compilação atual ocupa uma fração da memória disponí
 
 - abre a webcam e executa FaceID ou gestos localmente;
 - solicita ao usuário a porta do Arduino;
-- confirma o firmware `QT:READY:V3`;
+- confirma o firmware `QT:READY:V5`;
 - envia `ESTOP` antes de permitir movimento supervisionado;
 - envia modos e comandos e exige confirmação do UNO;
 - mostra telemetria, distância, estado e falhas.
@@ -88,7 +88,7 @@ o GND do L298N e o GND do Arduino precisam ser comuns.
 5. Ligue a alimentação correta dos motores.
 6. Abra <https://jgouveaf.github.io/FECART/> em Chrome ou Edge no computador.
 7. Clique em **Conectar Arduino USB** e escolha a porta do UNO.
-8. Aguarde `Firmware V3 confirmado`.
+8. Aguarde `Firmware V5 confirmado`.
 9. Confira rodas, fios e espaço livre; só então clique em
    **Liberar após conferir**.
 

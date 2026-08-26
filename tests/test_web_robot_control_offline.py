@@ -90,7 +90,7 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertRegex(self.firmware, r"if \(paradaEmergencia \|\| !sensorSeguro\(\)\)\s*\{\s*pararMotores\(\)")
 
     def test_serial_handshake_and_mode_commit_require_acknowledgement(self) -> None:
-        self.assertIn('REQUIRED_FIRMWARE_READY = "QT:READY:V3"', self.robot_js)
+        self.assertIn('REQUIRED_FIRMWARE_READY = "QT:READY:V5"', self.robot_js)
         self.assertIn('enqueueLine("HELLO"', self.robot_js)
         self.assertIn('readyLine !== REQUIRED_FIRMWARE_READY', self.robot_js)
         self.assertIn('CONFIRME A LIBERAÇÃO', self.robot_js)
@@ -109,7 +109,7 @@ class TestWebRobotControlOffline(unittest.TestCase):
     def test_boot_keeps_motors_stopped_during_serial_handshake_window(self) -> None:
         self.assertRegex(self.firmware, r"JANELA_COMANDO_INICIAL_MS\s*=\s*750UL")
         setup = self.firmware.split("void setup()", 1)[1].split("void loop()", 1)[0]
-        self.assertIn('Serial.println(F("QT:READY:V3"))', setup)
+        self.assertIn('Serial.println(F("QT:READY:V5"))', setup)
         self.assertIn("aguardarComandoInicial()", setup)
         guard = self.firmware.split("void aguardarComandoInicial()", 1)[1].split("void setup()", 1)[0]
         self.assertIn("pararMotores()", guard)
@@ -118,8 +118,35 @@ class TestWebRobotControlOffline(unittest.TestCase):
     def test_motion_requires_ack_and_fails_closed(self) -> None:
         self.assertIn('transact(`CMD:${command}`', self.robot_js)
         self.assertIn('line === `OK:CMD:${command}`', self.robot_js)
+        sender = self.robot_js.split("function sendMotion(command", 1)[1].split("function acceptIntent", 1)[0]
+        self.assertNotIn("telemetryValues(line).CMD", sender)
         self.assertIn('consecutiveMotionFailures >= 2', self.robot_js)
         self.assertIn('Dois comandos de movimento ficaram sem confirmação', self.robot_js)
+
+    def test_sensor_must_initialize_before_any_motor_is_released(self) -> None:
+        self.assertIn("bool sensorInicializado = false", self.firmware)
+        self.assertIn("sensorInicializado = true", self.firmware)
+        safety = self.firmware.split("bool sensorSeguro()", 1)[1].split("bool obstaculoConfirmado()", 1)[0]
+        self.assertIn("sensorInicializado", safety)
+        self.assertIn('Serial.print(F("SENSOR_INIT"))', self.firmware)
+
+    def test_new_direction_requires_two_clear_ultrasonic_measurements(self) -> None:
+        self.assertRegex(self.firmware, r"LEITURAS_CAMINHO_LIVRE\s*=\s*2")
+        self.assertIn("leiturasLivresAposCurva >= LEITURAS_CAMINHO_LIVRE", self.firmware)
+        self.assertIn("estadoDesvio == DESVIO_PAUSA_CURVA", self.firmware)
+
+    def test_corrupted_serial_frames_are_discarded_completely(self) -> None:
+        self.assertIn("bool descartandoLinhaSerial = false", self.firmware)
+        parser = self.firmware.split("void lerSerial(unsigned long agora)", 1)[1].split("void aguardarComandoInicial", 1)[0]
+        self.assertIn("descartandoLinhaSerial = true", parser)
+        self.assertIn("descartandoLinhaSerial = false", parser)
+        self.assertIn("discardingReadLine", self.robot_js)
+
+    def test_silent_serial_connection_fails_closed(self) -> None:
+        self.assertRegex(self.robot_js, r"SERIAL_SILENCE_TIMEOUT_MS\s*=.*\|\|\s*2200")
+        self.assertIn("lastSerialRxAt", self.robot_js)
+        self.assertIn("performance.now() - lastSerialRxAt > SERIAL_SILENCE_TIMEOUT_MS", self.robot_js)
+        self.assertIn("deixou de responder pela USB", self.robot_js)
 
     def test_stale_events_and_split_brain_fail_closed(self) -> None:
         self.assertIn("connectionGeneration", self.robot_js)

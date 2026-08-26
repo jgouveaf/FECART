@@ -20,6 +20,20 @@ from .simulador_robo import (
 
 
 class TesteFirmwareIntegrado(unittest.TestCase):
+    def test_motores_permanecem_parados_ate_primeira_leitura_valida(self) -> None:
+        robo = SimuladorRobo()
+        robo.avancar_tempo(500)
+        self.assertEqual(robo.motores, PARADO)
+        self.assertEqual(robo.estado_operacional, EstadoOperacional.SENSOR_INIT)
+
+        robo.processar_linha("MODE:3")
+        robo.processar_linha("CMD:FRENTE")
+        self.assertEqual(robo.motores, PARADO)
+
+        robo.ler_sensor(80)
+        self.assertTrue(robo.sensor_inicializado)
+        self.assertEqual(robo.motores, FRENTE)
+
     def test_modo_autonomo_mantem_frente_em_caminho_livre(self) -> None:
         robo = SimuladorRobo()
         for _ in range(20):
@@ -57,6 +71,8 @@ class TesteFirmwareIntegrado(unittest.TestCase):
         self.assertEqual((robo.estado_desvio, robo.motores), (EstadoDesvio.CURVA, CURVA_DIREITA))
         robo.avancar_tempo(900)
         self.assertEqual((robo.estado_desvio, robo.motores), (EstadoDesvio.PAUSA_CURVA, PARADO))
+        robo.ler_sensor(50)
+        robo.ler_sensor(50)
         robo.avancar_tempo(150)
         self.assertEqual((robo.estado_desvio, robo.motores), (EstadoDesvio.SAIDA, FRENTE))
         robo.avancar_tempo(600)
@@ -93,6 +109,7 @@ class TesteFirmwareIntegrado(unittest.TestCase):
 
     def test_ping_responde_mas_nao_renova_comando_antigo(self) -> None:
         robo = SimuladorRobo()
+        robo.ler_sensor(100)
         robo.processar_linha("MODE:2")
         robo.processar_linha("CMD:FRENTE")
         robo.avancar_tempo(1_000)
@@ -103,10 +120,11 @@ class TesteFirmwareIntegrado(unittest.TestCase):
 
     def test_hello_identifica_firmware_sem_depender_de_reset(self) -> None:
         robo = SimuladorRobo()
-        self.assertEqual(robo.processar_linha("HELLO"), ["QT:READY:V3"])
+        self.assertEqual(robo.processar_linha("HELLO"), ["QT:READY:V5"])
 
     def test_novo_cmd_renova_validade(self) -> None:
         robo = SimuladorRobo()
+        robo.ler_sensor(100)
         robo.processar_linha("MODE:3")
         robo.processar_linha("CMD:FRENTE")
         robo.avancar_tempo(1_000)
@@ -181,11 +199,12 @@ class TesteFirmwareIntegrado(unittest.TestCase):
         self.assertEqual(robo.motores, TRAS)
 
         autonomo = SimuladorRobo()
+        autonomo.ler_sensor(100)
         autonomo.processar_linha("CMD:TRAS")
         self.assertEqual(autonomo.modo, Modo.AUTONOMO)
         self.assertEqual(autonomo.motores, FRENTE)
 
-    def test_obstaculo_durante_curva_interrompe_e_reinicia_desvio(self) -> None:
+    def test_leitura_do_obstaculo_antigo_nao_reinicia_a_curva(self) -> None:
         robo = SimuladorRobo()
         robo.ler_sensor(10)
         robo.ler_sensor(10)
@@ -196,13 +215,72 @@ class TesteFirmwareIntegrado(unittest.TestCase):
 
         robo.ler_sensor(8)
         robo.ler_sensor(8)
+        self.assertEqual(robo.estado_desvio, EstadoDesvio.CURVA)
+        self.assertEqual(robo.motores, CURVA_DIREITA)
+        self.assertEqual(robo.obstaculos_consecutivos, 0)
+        self.assertEqual(robo.quantidade_obstaculos, 1)
+
+    def test_nova_frente_bloqueada_apos_curva_inicia_outro_desvio(self) -> None:
+        robo = SimuladorRobo()
+        robo.ler_sensor(10)
+        robo.ler_sensor(10)
+        robo.avancar_tempo(200)
+        robo.ler_sensor(50)
+        robo.avancar_tempo(700 + 150 + 900)
+        self.assertEqual(robo.estado_desvio, EstadoDesvio.PAUSA_CURVA)
+
+        robo.ler_sensor(8)
+        robo.ler_sensor(8)
         self.assertEqual(robo.estado_desvio, EstadoDesvio.PAUSA_INICIAL)
         self.assertEqual(robo.motores, PARADO)
         self.assertEqual(robo.quantidade_obstaculos, 2)
 
+    def test_nova_frente_precisa_de_duas_leituras_livres_antes_de_avancar(self) -> None:
+        robo = SimuladorRobo()
+        robo.ler_sensor(10)
+        robo.ler_sensor(10)
+        robo.avancar_tempo(200)
+        robo.ler_sensor(50)
+        robo.avancar_tempo(700 + 150 + 900)
+        self.assertEqual(robo.estado_desvio, EstadoDesvio.PAUSA_CURVA)
+
+        robo.avancar_tempo(300)
+        self.assertEqual(robo.motores, PARADO)
+        robo.ler_sensor(45)
+        self.assertEqual(robo.motores, PARADO)
+        self.assertEqual(robo.leituras_livres_apos_curva, 1)
+        robo.ler_sensor(60)
+        self.assertEqual(robo.estado_desvio, EstadoDesvio.SAIDA)
+        self.assertEqual(robo.motores, FRENTE)
+
+    def test_linha_serial_longa_nao_executa_um_sufixo_valido(self) -> None:
+        robo = SimuladorRobo()
+        robo.ler_sensor(100)
+        robo.processar_linha("MODE:3")
+
+        respostas = robo.receber_bytes("X" * 34 + "CMD:FRENTE\n")
+        self.assertEqual(respostas, ["ERRO:LINHA_LONGA"])
+        self.assertEqual(robo.motores, PARADO)
+        self.assertEqual(robo.comando_recebido, Comando.PARAR)
+
+        respostas = robo.receber_bytes("CMD:FRENTE\n")
+        self.assertEqual(respostas, ["OK:CMD:FRENTE"])
+        self.assertEqual(robo.motores, FRENTE)
+
+    def test_linha_serial_fragmentada_e_reconstituida_sem_antecipacao(self) -> None:
+        robo = SimuladorRobo()
+        robo.ler_sensor(100)
+        self.assertEqual(robo.receber_bytes("MODE:"), [])
+        self.assertEqual(robo.modo, Modo.AUTONOMO)
+        self.assertEqual(robo.receber_bytes("3\r\nCMD:FRE"), ["OK:MODE:3"])
+        self.assertEqual(robo.motores, PARADO)
+        self.assertEqual(robo.receber_bytes("NTE\n"), ["OK:CMD:FRENTE"])
+        self.assertEqual(robo.motores, FRENTE)
+
     def test_modos_e_estop_preservam_protocolo(self) -> None:
         robo = SimuladorRobo()
-        self.assertEqual(robo.saida_serial[:2], ["QT:READY:V3", "OK:MODE:1"])
+        self.assertEqual(robo.saida_serial[:2], ["QT:READY:V5", "OK:MODE:1"])
+        robo.ler_sensor(80)
         self.assertEqual(robo.processar_linha("MODE:2"), ["OK:MODE:2"])
         self.assertEqual(robo.processar_linha("CMD:DIREITA"), ["OK:CMD:DIREITA"])
         self.assertEqual(robo.motores, CURVA_DIREITA)
@@ -257,6 +335,7 @@ class TesteFirmwareIntegrado(unittest.TestCase):
             "TEMPO_SAIDA_MS": 600,
             "LIMITE_FALHAS_SENSOR": 5,
             "LEITURAS_VALIDAS_PARA_RECUPERAR": 3,
+            "LEITURAS_CAMINHO_LIVRE": 2,
             "LIMITE_OBSTACULOS": 5,
         }
         for nome, valor in esperados.items():

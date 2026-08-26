@@ -58,7 +58,7 @@ Somente um modo fica `ACTIVE`. Eventos de outra geração ou de outro modo são 
 
 ### Comunicação e segurança
 
-`web/robot-control.js` usa Web Serial a 9600 baud e considera o Arduino online somente após `QT:READY:V3`. O comando `HELLO` permite repetir o handshake mesmo quando abrir a porta não reinicia o UNO. A conexão termina bloqueada por `ESTOP`; mover o robô requer o clique consciente em **Liberar após conferir**. Comandos de movimento e modos exigem confirmação. Duas falhas consecutivas de confirmação de movimento, divergência de modo, perda serial, timeout ou falha de transição fecham o sistema em segurança.
+`web/robot-control.js` usa Web Serial a 9600 baud e considera o Arduino online somente após `QT:READY:V5`. O comando `HELLO` permite repetir o handshake mesmo quando abrir a porta não reinicia o UNO. A conexão termina bloqueada por `ESTOP`; mover o robô requer o clique consciente em **Liberar após conferir**. Comandos de movimento e modos exigem confirmação explícita. Duas falhas consecutivas de confirmação de movimento, divergência de modo, perda serial, silêncio da USB, timeout ou falha de transição fecham o sistema em segurança.
 
 No firmware:
 

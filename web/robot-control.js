@@ -439,6 +439,26 @@
     for (const button of modeButtons) button.disabled = busy;
   }
 
+  function describeConnectionError(error) {
+    const name = String(error?.name || "");
+    const message = String(error?.message || "");
+    const normalized = message.toLowerCase();
+    if (name === "NotFoundError") {
+      return { label: "SELEÇÃO CANCELADA", status: "OFFLINE", hint: "Nenhuma porta foi escolhida. Clique em conectar e selecione a porta do Arduino UNO." };
+    }
+    if (name === "SecurityError") {
+      return { label: "PERMISSÃO USB BLOQUEADA", status: "ERROR", hint: "Libere o acesso à porta serial nas permissões do Chrome/Edge e tente novamente." };
+    }
+    if (["InvalidStateError", "NetworkError"].includes(name)
+      || /access denied|acesso negado|in use|ocupad|could not open|failed to open/.test(normalized)) {
+      return { label: "PORTA USB OCUPADA", status: "ERROR", hint: "Feche o Monitor Serial e o Arduino IDE, retire e recoloque o cabo USB e tente novamente." };
+    }
+    if (/qt:ready|firmware incompatível|firmware incompativel|aguardando qt:ready/.test(normalized)) {
+      return { label: "FIRMWARE NÃO RESPONDE", status: "ERROR", hint: "Grave novamente o Código principal no UNO, feche o Arduino IDE e reconecte pelo site." };
+    }
+    return { label: "CONEXÃO USB FALHOU", status: "ERROR", hint: message || "Não foi possível abrir ou validar o Arduino UNO." };
+  }
+
   async function connectRobot() {
     if (transportOpen || closing) return false;
     if (window.location?.protocol === "file:") {
@@ -463,15 +483,9 @@
     log("INFO", "ARDUINO", "Seleção da porta USB solicitada");
 
     try {
-      const authorizedPorts = typeof navigator.serial.getPorts === "function"
-        ? await navigator.serial.getPorts()
-        : [];
-      // Reutiliza automaticamente a única porta que o operador já autorizou.
-      // Com nenhuma ou várias portas, o navegador continua pedindo a escolha
-      // explícita para nunca conectar o robô errado.
-      port = authorizedPorts.length === 1
-        ? authorizedPorts[0]
-        : await navigator.serial.requestPort();
+      // A escolha é sempre explícita. Reutilizar automaticamente uma porta
+      // autorizada no passado pode selecionar uma COM antiga ou outro USB.
+      port = await navigator.serial.requestPort();
       if (connectionToken !== connectionGeneration) throw cancelled();
       await port.open({ baudRate: 9600, bufferSize: 1024 });
       if (connectionToken !== connectionGeneration) throw cancelled();
@@ -502,11 +516,10 @@
       log("WARNING", "SEGURANÇA", `Arduino sincronizado em ${MODE_NAMES[activeMode]} e mantido em ESTOP até liberação explícita`);
       return true;
     } catch (error) {
-      if (error?.name === "NotFoundError") {
-        setConnection("SELEÇÃO CANCELADA", "OFFLINE", "Nenhuma porta foi escolhida.");
-      } else if (error?.name !== "AbortError") {
-        setConnection("FALHA NA CONEXÃO", "ERROR", error?.message || "Não foi possível abrir ou validar a porta USB.");
-        reportError("Falha ao conectar ao Arduino", error);
+      if (error?.name !== "AbortError") {
+        const description = describeConnectionError(error);
+        setConnection(description.label, description.status, description.hint);
+        if (description.status === "ERROR") reportError(description.hint, error);
       }
       await closePort({ sendEstop: transportOpen, reason: "CONNECT_FAILED", preserveStatus: true });
       return false;
@@ -885,6 +898,7 @@
     publicApi._test = Object.freeze({
       watchdogTick,
       parseTelemetry,
+      describeConnectionError,
       eventIsFresh,
       get lastFreshInputAt() { return lastFreshInputAt; },
       get lastSerialRxAt() { return lastSerialRxAt; },

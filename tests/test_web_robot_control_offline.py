@@ -44,6 +44,7 @@ class TestWebRobotControlOffline(unittest.TestCase):
 
     def test_web_serial_requires_explicit_user_selection_and_9600_baud(self) -> None:
         self.assertIn("navigator.serial.requestPort()", self.robot_js)
+        self.assertNotIn("navigator.serial.getPorts()", self.robot_js)
         self.assertIn("port.open({ baudRate: 9600", self.robot_js)
         self.assertIn('connectButton.addEventListener("click"', self.robot_js)
         self.assertIn("event.port === port || event.target === port", self.robot_js)

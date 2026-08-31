@@ -519,6 +519,21 @@ async function testHandshakeTimeoutAndVersionMismatch() {
   await cleanup(versionEnvironment);
 }
 
+async function testConnectionErrorsAreActionable() {
+  const environment = createEnvironment();
+  const describe = environment.robot._test.describeConnectionError;
+
+  const cancelled = describe({ name: "NotFoundError", message: "No port selected" });
+  assert.equal(cancelled.label, "SELEÇÃO CANCELADA");
+  assert.equal(cancelled.status, "OFFLINE");
+  assert.match(cancelled.hint, /selecione a porta do Arduino UNO/);
+  assert.equal(describe({ name: "SecurityError", message: "Permission denied" }).label, "PERMISSÃO USB BLOQUEADA");
+  assert.equal(describe({ name: "NetworkError", message: "Failed to open serial port" }).label, "PORTA USB OCUPADA");
+  assert.equal(describe({ name: "Error", message: "Tempo esgotado aguardando QT:READY do firmware." }).label, "FIRMWARE NÃO RESPONDE");
+
+  await cleanup(environment);
+}
+
 async function main() {
   const tests = [
     testRobotStatusKeepsTechnicalStateAndReadableLabel,
@@ -535,6 +550,7 @@ async function main() {
     testDisconnectAndPageHideEndWithEstop,
     testKeyboardTransitionAndScopedSerialDisconnect,
     testHandshakeTimeoutAndVersionMismatch,
+    testConnectionErrorsAreActionable,
   ];
   for (const test of tests) {
     await test();

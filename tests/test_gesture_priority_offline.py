@@ -121,11 +121,15 @@ class TestGesturePriorityOffline(unittest.TestCase):
                 gesture_command=gesture,
                 obstacle_distance_cm=distance,
             )
-            self.assertFalse(controller.esp32.connected)
+            self.assertFalse(controller.arduino.connected)
             if distance <= 20 and controller.state_machine.enabled:
                 self.assertNotEqual(telemetry.command, RobotCommand.FORWARD)
 
     def test_trained_gesture_model_persists_and_reloads(self) -> None:
+        try:
+            import sklearn  # noqa: F401
+        except ImportError:
+            self.skipTest("scikit-learn não está instalado neste ambiente")
         with tempfile.TemporaryDirectory(prefix="quantum_gestures_") as temp:
             assets = Path(temp)
             with patch.object(GestureTrainer, "_init_mediapipe", lambda instance: setattr(instance, "_hands", None)):

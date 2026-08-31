@@ -87,7 +87,7 @@ class TestWebDeliveryQuality(unittest.TestCase):
         self.assertNotRegex(HTML, r"\son(?:click|keydown|submit)=")
 
     def test_asset_versions_force_the_professional_release(self) -> None:
-        for marker in ("web/styles.css?v=14", "web/app.js?v=10", "web/face-identities.js?v=11"):
+        for marker in ("web/styles.css?v=15", "web/app.js?v=11", "web/face-identities.js?v=12"):
             self.assertIn(marker, HTML)
 
 

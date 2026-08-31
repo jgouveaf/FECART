@@ -109,11 +109,11 @@ class TesteSeguimentoHumanoOffline(unittest.TestCase):
         self.assertEqual(telemetry.command, RobotCommand.STOP)
 
     def test_transporte_fisico_permanece_bloqueado(self) -> None:
-        self.assertEqual(self.controller.esp32.available_ports(), [])
-        ok, message = self.controller.esp32.connect("COM5")
+        self.assertEqual(self.controller.arduino.available_ports(), [])
+        ok, message = self.controller.arduino.connect("COM5")
         self.assertFalse(ok)
         self.assertIn("Etapa 10", message)
-        self.assertFalse(self.controller.esp32.connected)
+        self.assertFalse(self.controller.arduino.connected)
 
     def test_stress_10000_quadros_sem_movimento_na_ausencia_de_humano(self) -> None:
         for frame in range(10_000):

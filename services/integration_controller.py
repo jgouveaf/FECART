@@ -67,7 +67,7 @@ class SoftwareIntegrationController:
             warnings.append("seguranca_obstaculo_ativa")
         if telemetry.ghost_active:
             warnings.append("alvo_em_previsao_ghost")
-        if self.robot.esp32.connected:
+        if self.robot.arduino.connected:
             raise RuntimeError("Violacao: transporte fisico ativo antes da Etapa 10")
 
         output = IntegrationOutput(

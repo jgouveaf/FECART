@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Iterable, Optional
 
 from core.models import TrackedTarget
-from robot.esp32_adapter import ESP32Adapter
+from robot.arduino_usb_adapter import ArduinoUSBAdapter
 from robot.motion_planner import MotionPlanner
 from robot.robot_models import FrameSize, RobotCommand, RobotTelemetry
 from robot.robot_simulator import RobotSimulator
@@ -20,7 +20,7 @@ class RobotController:
         self.planner = MotionPlanner()
         self.state_machine = RobotStateMachine()
         self.simulator = RobotSimulator()
-        self.esp32 = ESP32Adapter(allow_hardware=allow_hardware)
+        self.arduino = ArduinoUSBAdapter(allow_hardware=allow_hardware)
         self.safety = ObstacleSafetySupervisor()
         self.last_telemetry: Optional[RobotTelemetry] = None
         self.manual_override: Optional[RobotCommand] = None
@@ -97,8 +97,8 @@ class RobotController:
             angular_speed = 0.45 if command == RobotCommand.RIGHT else -0.45
         target_id = target.track_id if target else self.selector.lock.track_id if self.selector.lock else None
         pose = self.simulator.update(command, linear_speed, angular_speed)
-        payload = self.esp32.build_payload(command, state, target_id, linear_speed, angular_speed)
-        self.esp32.send(payload)
+        payload = self.arduino.build_payload(command, state, target_id, linear_speed, angular_speed)
+        self.arduino.send(payload)
         telemetry = RobotTelemetry(
             state=state,
             command=command,
@@ -113,7 +113,7 @@ class RobotController:
             gesture_override=gesture_command,
             reason=reason,
             pose=pose,
-            esp32_payload=payload,
+            arduino_payload=payload,
             obstacle_distance_cm=obstacle_distance_cm,
             safety_active=safety.active,
         )

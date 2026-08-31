@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const VALID_COMMANDS = new Set(["FRENTE", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]);
+  const VALID_COMMANDS = new Set(["FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]);
 
   class SimulatorCommandController {
     constructor(timeoutMs = 900) {
@@ -13,7 +13,7 @@
     }
 
     setMode(mode, now = performance.now()) {
-      this.mode = mode === "GESTOS" ? "GESTOS" : "AUTONOMO";
+      this.mode = ["AUTONOMO", "SEGUIR", "GESTOS"].includes(mode) ? mode : "AUTONOMO";
       this.command = this.mode === "AUTONOMO" ? "FRENTE" : "PARAR";
       this.source = this.mode;
       this.lastInputAt = now;
@@ -23,7 +23,6 @@
     setCommand(command, source = "TESTE", now = performance.now()) {
       const normalized = String(command || "").toUpperCase();
       if (!VALID_COMMANDS.has(normalized)) return false;
-      this.mode = "GESTOS";
       this.command = normalized;
       this.source = source;
       this.lastInputAt = now;

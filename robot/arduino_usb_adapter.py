@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Optional
 
 from robot.robot_models import RobotCommand, RobotState
 
 
-class ESP32Adapter:
-    """USB serial transport for the Arduino UNO robot (name retained for compatibility)."""
+class ArduinoUSBAdapter:
+    """Transporte USB do Arduino UNO usando o protocolo Quantum Tracker V5."""
 
     _COMMANDS = {
-        "FRENTE": "F",
-        "PARAR": "S",
-        "RE": "B",
-        "ESQUERDA": "L",
-        "DIREITA": "R",
+        "FRENTE": "CMD:FRENTE",
+        "PARAR": "CMD:PARAR",
+        "RE": "CMD:TRAS",
+        "ESQUERDA": "CMD:ESQUERDA",
+        "DIREITA": "CMD:DIREITA",
     }
 
     def __init__(self, allow_hardware: bool = False) -> None:
@@ -28,14 +29,7 @@ class ESP32Adapter:
             return []
         try:
             from serial.tools import list_ports
-
-            # Bluetooth virtual COM ports are not Arduino USB devices and
-            # commonly remain busy, causing confusing connection errors.
-            return [
-                port.device
-                for port in list_ports.comports()
-                if "bluetooth" not in f"{port.description} {port.hwid}".lower()
-            ]
+            return [port.device for port in list_ports.comports()]
         except Exception:
             return []
 
@@ -43,19 +37,23 @@ class ESP32Adapter:
     def connected(self) -> bool:
         return bool(self._serial and self._serial.is_open)
 
-    def connect(self, port: str, baudrate: int = 115200) -> tuple[bool, str]:
+    def connect(self, port: str, baudrate: int = 9600) -> tuple[bool, str]:
         if not self.allow_hardware:
-            self.last_status = "Hardware bloqueado ate a Etapa 10"
+            self.last_status = "Hardware bloqueado até a Etapa 10"
             return False, self.last_status
         self.disconnect()
         try:
             import serial
-
             self._serial = serial.Serial(port, baudrate, timeout=0.15, write_timeout=0.5)
             self.port = port
+            # A abertura reinicia a maioria dos UNO. Mantém tudo parado enquanto
+            # o firmware termina o boot e prepara o modo supervisionado.
+            time.sleep(2.1)
             self._serial.reset_input_buffer()
-            self._serial.write(b"S\n")  # Always connect in a safe stopped state.
-            self.last_status = f"Arduino conectado em {port}"
+            for line in ("HELLO", "ESTOP", "CMD:PARAR", "MODE:2"):
+                self._serial.write(f"{line}\n".encode("ascii"))
+            self._serial.flush()
+            self.last_status = f"Arduino UNO conectado em {port} · bloqueado por ESTOP"
             return True, self.last_status
         except Exception as exc:
             self._serial = None
@@ -63,10 +61,23 @@ class ESP32Adapter:
             self.last_status = f"Falha ao conectar: {exc}"
             return False, self.last_status
 
+    def release_emergency_stop(self) -> bool:
+        if not self.connected:
+            return False
+        try:
+            self._serial.write(b"RESET_ESTOP\nCMD:PARAR\n")
+            self._serial.flush()
+            return True
+        except Exception as exc:
+            self.last_status = f"Erro serial: {exc}"
+            self.disconnect()
+            return False
+
     def disconnect(self) -> None:
         if self._serial:
             try:
-                self._serial.write(b"S\n")
+                self._serial.write(b"ESTOP\n")
+                self._serial.flush()
                 self._serial.close()
             except Exception:
                 pass
@@ -82,23 +93,21 @@ class ESP32Adapter:
         linear_speed: float,
         angular_speed: float,
     ) -> str:
-        return json.dumps(
-            {
-                "command": command.value,
-                "state": state.value,
-                "target_id": target_id,
-                "speed": round(linear_speed, 3),
-                "turn": round(angular_speed, 3),
-            },
-            ensure_ascii=True,
-        )
+        return json.dumps({
+            "command": command.value,
+            "state": state.value,
+            "target_id": target_id,
+            "speed": round(linear_speed, 3),
+            "turn": round(angular_speed, 3),
+            "transport": "ARDUINO_UNO_USB_V5",
+        }, ensure_ascii=True)
 
     def send(self, payload: str) -> None:
         if not self.connected:
             return
         try:
             command = json.loads(payload).get("command", "PARAR")
-            serial_command = self._COMMANDS.get(command, "S")
+            serial_command = self._COMMANDS.get(command, "CMD:PARAR")
             self._serial.write(f"{serial_command}\n".encode("ascii"))
             self._serial.flush()
             while self._serial.in_waiting:

@@ -15,8 +15,6 @@
   const distanceStatus = document.getElementById("robotDistanceStatus");
   const stateStatus = document.getElementById("robotStateStatus");
   const gestureDeliveryStatus = document.getElementById("gestureDeliveryStatus");
-  const beaconButton = document.getElementById("connectBeacon");
-  const beaconStatus = document.getElementById("beaconStatus");
   const modeButtons = [...document.querySelectorAll(".robot-mode")];
 
   if (!panel || !connectButton || !disconnectButton || !emergencyButton) {
@@ -68,7 +66,6 @@
   let writeTail = Promise.resolve();
   let lineWaiters = new Set();
   let splitBrainHandling = false;
-  let beaconDevice = null;
 
   function delay(milliseconds) {
     return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -466,7 +463,15 @@
     log("INFO", "ARDUINO", "Seleção da porta USB solicitada");
 
     try {
-      port = await navigator.serial.requestPort();
+      const authorizedPorts = typeof navigator.serial.getPorts === "function"
+        ? await navigator.serial.getPorts()
+        : [];
+      // Reutiliza automaticamente a única porta que o operador já autorizou.
+      // Com nenhuma ou várias portas, o navegador continua pedindo a escolha
+      // explícita para nunca conectar o robô errado.
+      port = authorizedPorts.length === 1
+        ? authorizedPorts[0]
+        : await navigator.serial.requestPort();
       if (connectionToken !== connectionGeneration) throw cancelled();
       await port.open({ baudRate: 9600, bufferSize: 1024 });
       if (connectionToken !== connectionGeneration) throw cancelled();
@@ -676,7 +681,13 @@
       failClosed("O Arduino deixou de responder pela USB; motores bloqueados por segurança.");
       return;
     }
-    if (activeMode === 1) return;
+    if (activeMode === 1) {
+      // O modo autônomo também depende de uma concessão viva do site. O UNO
+      // para em até 1,5 s se a página travar, o cabo cair ou o navegador fechar.
+      lastIntent = "FRENTE";
+      sendMotion("FRENTE");
+      return;
+    }
     const hasFreshInput = lastFreshInputAt > 0 && performance.now() - lastFreshInputAt <= INPUT_TIMEOUT_MS;
     if (!hasFreshInput) {
       lastIntent = "PARAR";
@@ -796,32 +807,6 @@
     closePort({ sendEstop: false, reason: "CONNECTION_LOST", preserveStatus: true });
   }
 
-  async function connectBeacon() {
-    if (!("bluetooth" in navigator)) {
-      if (beaconStatus) beaconStatus.textContent = "WEB BLUETOOTH INDISPONÍVEL";
-      return;
-    }
-    beaconButton.disabled = true;
-    try {
-      beaconDevice = await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
-      if (typeof beaconDevice.watchAdvertisements !== "function") throw new Error("Este navegador não fornece leitura de anúncios/RSSI.");
-      beaconDevice.addEventListener("advertisementreceived", (event) => {
-        const rssi = Number(event.rssi);
-        const proximity = rssi >= -60 ? "PERTO" : rssi >= -75 ? "MÉDIO" : "LONGE";
-        if (beaconStatus) beaconStatus.textContent = Number.isFinite(rssi) ? `${proximity} · ${rssi} dBm` : "SINAL RECEBIDO";
-        window.dispatchEvent(new CustomEvent("quantum:beacon-signal", { detail: { rssi, proximity, deviceId: beaconDevice.id } }));
-      });
-      await beaconDevice.watchAdvertisements();
-      if (beaconStatus) beaconStatus.textContent = "AGUARDANDO ANÚNCIO BLE";
-      log("INFO", "BLE", "Monitoramento experimental de RSSI iniciado");
-    } catch (error) {
-      if (beaconStatus) beaconStatus.textContent = error?.name === "NotFoundError" ? "SELEÇÃO CANCELADA" : "BLE NÃO DISPONÍVEL";
-      if (connectionHint) connectionHint.textContent = error?.message || connectionHint.textContent;
-      beaconButton.disabled = false;
-      log("WARNING", "BLE", error?.message || "BLE indisponível");
-    }
-  }
-
   window.addEventListener("quantum:mode-will-change", (event) => {
     const detail = event.detail;
     queueMicrotask(() => executeModeTransition(detail));
@@ -841,7 +826,6 @@
     if (!mayAcceptInput(2, detail)) return;
     if (detail.visible && Number.isFinite(Number(detail.confidence)) && Number(detail.confidence) < 0.45) return;
     acceptIntent(detail.visible ? detail.command : "PARAR", "face", { fresh: true });
-    if (!detail.visible && beaconDevice && stateStatus) stateStatus.textContent = "ROSTO PERDIDO · BLE SEM DIREÇÃO · PARADO";
   });
 
   const heartbeatTimer = window.setInterval(watchdogTick, COMMAND_HEARTBEAT_MS);
@@ -862,7 +846,6 @@
   connectButton.addEventListener("click", () => { connectRobot(); });
   disconnectButton.addEventListener("click", () => { closePort({ sendEstop: true, reason: "USER" }); });
   emergencyButton.addEventListener("click", () => { toggleEmergency(); });
-  beaconButton?.addEventListener("click", connectBeacon);
   navigator.serial?.addEventListener?.("disconnect", (event) => {
     if (event.port === port || event.target === port) handleConnectionFailure(new Error("Arduino desconectado."));
   });

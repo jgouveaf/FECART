@@ -1821,7 +1821,7 @@ class QuantumMainWindow(QMainWindow):
     def _send_robot_heartbeat(self) -> None:
         """Keep a manual Arduino command alive even when the camera is off."""
         controller = self.robot_controller
-        if not controller.esp32.connected or controller.manual_override is None:
+        if not controller.arduino.connected or controller.manual_override is None:
             return
         telemetry = controller.update([], (640, 480))
         self.current_robot_telemetry = telemetry
@@ -2149,15 +2149,15 @@ class QuantumMainWindow(QMainWindow):
     def refresh_arduino_ports(self) -> None:
         if not hasattr(self, "arduino_port_combo"):
             return
-        ports = self.robot_controller.esp32.available_ports()
-        current = self.robot_controller.esp32.port
+        ports = self.robot_controller.arduino.available_ports()
+        current = self.robot_controller.arduino.port
         self.arduino_port_combo.clear()
         self.arduino_port_combo.addItems(ports or ["Nenhuma porta encontrada"])
         if current and current in ports:
             self.arduino_port_combo.setCurrentText(current)
 
     def toggle_arduino_connection(self) -> None:
-        adapter = self.robot_controller.esp32
+        adapter = self.robot_controller.arduino
         if adapter.connected:
             adapter.disconnect()
             self.robot_status_chip.setText("MODO: SIMULADOR")
@@ -2171,13 +2171,17 @@ class QuantumMainWindow(QMainWindow):
         ok, message = adapter.connect(port)
         self._append_robot_log(message)
         if ok:
+            if not adapter.release_emergency_stop():
+                adapter.disconnect()
+                self._message("O Arduino conectou, mas não confirmou a liberação segura. Verifique o firmware V5.")
+                return
             self.robot_status_chip.setText(f"ARDUINO: {port}")
             self.arduino_connect_btn.setText("DESCONECTAR")
         else:
             self._message(message)
 
     def robot_manual_command(self, command: RobotCommand) -> None:
-        if not self.robot_controller.esp32.connected and (self.mode == "simulator" or not self.running):
+        if not self.robot_controller.arduino.connected and (self.mode == "simulator" or not self.running):
             self.world.send_robot_command(command)
         telemetry = self.robot_controller.manual_command(command)
         self.current_robot_telemetry = telemetry
@@ -2187,9 +2191,9 @@ class QuantumMainWindow(QMainWindow):
     def _update_robot_dashboard(self, telemetry: RobotTelemetry) -> None:
         if not hasattr(self, "robot_dashboard"):
             return
-        hardware_connected = self.robot_controller.esp32.connected
+        hardware_connected = self.robot_controller.arduino.connected
         mode_label = (
-            f"MODO: ARDUINO UNO CONECTADO ({self.robot_controller.esp32.port})"
+            f"MODO: ARDUINO UNO CONECTADO ({self.robot_controller.arduino.port})"
             if hardware_connected
             else "MODO: SIMULADOR (nenhum Arduino conectado)"
         )
@@ -2216,7 +2220,7 @@ class QuantumMainWindow(QMainWindow):
             f"Motivo: {telemetry.reason}",
             "",
             "Último comando USB Arduino:",
-            telemetry.esp32_payload,
+            telemetry.arduino_payload,
         ]
         self.robot_dashboard.setText("\n".join(lines))
 
@@ -2376,7 +2380,7 @@ class QuantumMainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.stop()
-        self.robot_controller.esp32.disconnect()
+        self.robot_controller.arduino.disconnect()
         self.register_timer.stop()
         if self.register_capture is not None:
             self.register_capture.release()

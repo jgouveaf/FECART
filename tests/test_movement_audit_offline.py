@@ -43,7 +43,7 @@ class TestMovementAuditOffline(unittest.TestCase):
                 telemetry = controller.manual_command(command)
                 self.assertEqual(telemetry.command, command)
                 self.assertEqual(telemetry.state, expected_state)
-                self.assertFalse(controller.esp32.connected)
+                self.assertFalse(controller.arduino.connected)
 
     def test_invalid_frame_or_detection_always_stops(self) -> None:
         planner = MotionPlanner()
@@ -85,7 +85,7 @@ class TestMovementAuditOffline(unittest.TestCase):
             self.assertTrue(math.isfinite(telemetry.pose.x))
             self.assertTrue(math.isfinite(telemetry.pose.y))
             self.assertTrue(math.isfinite(telemetry.pose.heading_degrees))
-            self.assertFalse(controller.esp32.connected)
+            self.assertFalse(controller.arduino.connected)
             if not has_person:
                 self.assertEqual(telemetry.command, RobotCommand.STOP)
             elif distance <= 20:

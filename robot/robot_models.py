@@ -67,7 +67,7 @@ class RobotTelemetry:
     gesture_override: Optional[str]
     reason: str
     pose: RobotPose
-    esp32_payload: str
+    arduino_payload: str
     obstacle_distance_cm: Optional[float] = None
     safety_active: bool = False
 

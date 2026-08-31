@@ -107,7 +107,10 @@
   let activeView = cameraPanel?.dataset.cameraView || "face";
   let detectionGeneration = 0;
   let lockedTargetId = null;
+  let selectedTargetId = null;
   let targetMisses = 0;
+  let smoothedTargetCenter = null;
+  let lastFollowCommand = "PARAR";
   let lastTrackingSignature = "";
   let lastTrackingAt = 0;
   let faceFrames = 0;
@@ -252,9 +255,33 @@
         await deleteRecord(identity.id);
         identities = identities.filter((item) => item.id !== identity.id);
         recognitionMemory = recognitionMemory.filter((item) => item.id !== identity.id);
+        if (selectedTargetId === identity.id) {
+          selectedTargetId = null;
+          lockedTargetId = null;
+          publishPersonTracking([], true);
+        }
         renderIdentities();
       });
-      card.append(image, text, remove);
+      const actions = document.createElement("div");
+      actions.className = "person-actions";
+      const follow = document.createElement("button");
+      follow.type = "button";
+      follow.className = "follow-person";
+      follow.textContent = selectedTargetId === identity.id ? "Alvo ativo" : "Seguir";
+      follow.setAttribute("aria-pressed", String(selectedTargetId === identity.id));
+      follow.disabled = legacy;
+      follow.addEventListener("click", () => {
+        selectedTargetId = selectedTargetId === identity.id ? null : identity.id;
+        lockedTargetId = selectedTargetId;
+        targetMisses = 0;
+        smoothedTargetCenter = null;
+        lastFollowCommand = "PARAR";
+        renderIdentities();
+        publishPersonTracking(currentFaces, true);
+      });
+      actions.append(follow, remove);
+      card.classList.toggle("target-active", selectedTargetId === identity.id);
+      card.append(image, text, actions);
       registeredPeople.append(card);
     }
   }
@@ -443,38 +470,42 @@
   }
 
   function publishPersonTracking(faces, force = false) {
-    const candidates = faces.filter((item) => item.quality.confidence >= MIN_CONFIDENCE);
+    const candidates = faces.filter((item) => item.identity.registered
+      && item.quality.confidence >= MIN_CONFIDENCE);
     if (activeView !== "face" || !cameraActive) {
-      lockedTargetId = null;
       targetMisses = 0;
       emitPersonTracking({ visible: false, command: "PARAR" }, "SEARCHING", true);
       return;
     }
-    let target = lockedTargetId ? candidates.find((item) => item.identity.id === lockedTargetId) : null;
-    if (!target && lockedTargetId) {
-      targetMisses += 1;
-      if (targetMisses < 4) {
-        emitPersonTracking({ visible: false, command: "PARAR", id: lockedTargetId }, "REACQUIRING", force);
-        return;
-      }
+    if (!selectedTargetId) {
       lockedTargetId = null;
+      emitPersonTracking({ visible: false, command: "PARAR" }, "SELECT_TARGET", force);
+      return;
     }
-    if (!target && candidates.length) {
-      target = [...candidates].sort((first, second) => second.face.box[2] * second.face.box[3] - first.face.box[2] * first.face.box[3])[0];
-      lockedTargetId = target.identity.id;
-    }
+    lockedTargetId = selectedTargetId;
+    const target = candidates.find((item) => item.identity.id === selectedTargetId);
     if (!target) {
-      targetMisses = Math.min(255, targetMisses + 1);
-      emitPersonTracking({ visible: false, command: "PARAR" }, targetMisses > 3 ? "TARGET_LOST" : "SEARCHING", force);
+      targetMisses += 1;
+      lastFollowCommand = "PARAR";
+      smoothedTargetCenter = null;
+      emitPersonTracking({ visible: false, command: "PARAR", id: selectedTargetId }, targetMisses > 3 ? "TARGET_LOST" : "REACQUIRING", force);
       return;
     }
     targetMisses = 0;
-    const center = (target.face.box[0] + target.face.box[2] / 2) / Math.max(1, video.videoWidth);
-    const command = center < 0.38 ? "ESQUERDA" : center > 0.62 ? "DIREITA" : "FRENTE";
+    const rawCenter = (target.face.box[0] + target.face.box[2] / 2) / Math.max(1, video.videoWidth);
+    smoothedTargetCenter = smoothedTargetCenter == null ? rawCenter : smoothedTargetCenter * 0.68 + rawCenter * 0.32;
+    const faceHeightRatio = target.face.box[3] / Math.max(1, video.videoHeight);
+    let command = lastFollowCommand;
+    if (faceHeightRatio >= 0.55) command = "PARAR";
+    else if (smoothedTargetCenter < (lastFollowCommand === "ESQUERDA" ? 0.44 : 0.37)) command = "ESQUERDA";
+    else if (smoothedTargetCenter > (lastFollowCommand === "DIREITA" ? 0.56 : 0.63)) command = "DIREITA";
+    else if (smoothedTargetCenter >= 0.44 && smoothedTargetCenter <= 0.56) command = "FRENTE";
+    lastFollowCommand = command;
     emitPersonTracking({
       visible: true,
       command,
-      center,
+      center: smoothedTargetCenter,
+      faceHeightRatio,
       id: target.identity.id,
       registered: target.identity.registered,
       confidence: target.quality.confidence,
@@ -710,8 +741,9 @@
     currentFaces = [];
     temporaryTracks = [];
     qualityStabilizer.reset();
-    lockedTargetId = null;
     targetMisses = 0;
+    smoothedTargetCenter = null;
+    lastFollowCommand = "PARAR";
     faceFrames = 0;
     faceFpsWindowAt = 0;
     resetInferenceCircuit();

@@ -64,8 +64,10 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn('if (!mayAcceptInput(2, detail)) return', self.robot_js)
         self.assertIn('acceptIntent(detail.visible ? detail.command : "PARAR"', self.robot_js)
         self.assertIn('Number(detail.confidence) < 0.45', self.robot_js)
-        self.assertIn('center < 0.38 ? "ESQUERDA"', self.face_js)
-        self.assertIn('center > 0.62 ? "DIREITA"', self.face_js)
+        self.assertIn("selectedTargetId", self.face_js)
+        self.assertIn('item.identity.registered', self.face_js)
+        self.assertIn('lastFollowCommand === "ESQUERDA" ? 0.44 : 0.37', self.face_js)
+        self.assertIn('lastFollowCommand === "DIREITA" ? 0.56 : 0.63', self.face_js)
         self.assertIn('visible: false, command: "PARAR"', self.face_js)
 
     def test_command_heartbeat_is_fail_safe(self) -> None:
@@ -185,13 +187,11 @@ class TestWebRobotControlOffline(unittest.TestCase):
             self.assertIn(field, self.firmware)
         self.assertIn("parseTelemetry", self.robot_js)
 
-    def test_bluetooth_rssi_is_never_used_as_a_direction_command(self) -> None:
-        self.assertIn("watchAdvertisements", self.robot_js)
-        self.assertIn("event.rssi", self.robot_js)
-        self.assertIn("O sinal informa proximidade, não direção", self.html)
-        beacon_handler = self.robot_js.split('beaconDevice.addEventListener("advertisementreceived"', 1)[1].split("});", 1)[0]
-        self.assertNotIn("sendLine", beacon_handler)
-        self.assertNotIn("deliverIntent", beacon_handler)
+    def test_active_web_robot_flow_has_no_bluetooth_or_esp32(self) -> None:
+        self.assertNotIn("navigator.bluetooth", self.robot_js)
+        self.assertNotIn("watchAdvertisements", self.robot_js)
+        self.assertNotIn('id="connectBeacon"', self.html)
+        self.assertIn("não usa ESP32 nem Bluetooth", self.html)
 
     def test_generated_web_bundle_contains_exact_integrated_firmware(self) -> None:
         relative = "firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino"

@@ -47,7 +47,7 @@ site envia comandos seriais; ele não recompila nem substitui o sketch.
 
 Não abra `index.html` por duplo clique (`file:///`): navegadores bloqueiam os módulos, modelos e WASM usados pelo FaceID e pelos gestos. A página detecta esse caso e encaminha para o painel HTTPS. Para desenvolvimento local, sirva a pasta por HTTP, por exemplo com `python -m http.server 8765`, e abra `http://127.0.0.1:8765/`.
 
-> O adaptador ESP32 presente em partes antigas do aplicativo desktop é legado e não participa do fluxo web/Arduino atual.
+> O controle físico usa exclusivamente Arduino UNO por USB, a 9600 baud, com o protocolo Quantum Tracker V5.
 
 ---
 
@@ -147,7 +147,7 @@ FECART/
 ├── robot/                   # Controle legado do app desktop / simulador
 │   ├── robot_controller.py
 │   ├── robot_state_machine.py
-│   └── esp32_adapter.py
+│   └── arduino_usb_adapter.py
 │
 ├── simulator/               # Simulador visual 2D
 │   ├── visual_simulator.py  # Arena 2D com robô e predição Ghost Mode
@@ -273,7 +273,7 @@ flowchart TD
 | **`tracker/`** | `tracker_wrapper.py`, `kalman_tracker.py` | Rastreamento multialvo, estimativa de estado, cálculo de velocidade e visual Re-ID. |
 | **`hud/`** | `tactical_hud.py` | Visualizador HUD tático OpenCV com brquetes de canto, mira e cartões transparentes. |
 | **`biometrics/`**| `face_recognition.py`, `identity_resolver.py` | Extração de vetores faciais (embeddings) e resolução de banco de identidades. |
-| **`robot/`** | `robot_controller.py`, `esp32_adapter.py` | Código legado do aplicativo desktop; o painel web atual usa Arduino UNO por USB/Web Serial. |
+| **`robot/`** | `robot_controller.py`, `arduino_usb_adapter.py` | Controle do Arduino UNO por USB/Web Serial no protocolo V5. |
 | **`brain/`** | `quantum_brain.py`, `gemini_assistant.py` | Assistente inteligente Gemini, processamento de síntese de voz e relatórios. |
 
 ---

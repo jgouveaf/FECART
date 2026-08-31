@@ -139,7 +139,8 @@
   }
 
   function classifyFingerCount(landmarks, worldLandmarks) {
-    return window.QuantumGestureMath?.classifyFingerCount(landmarks, worldLandmarks) || 0;
+    return window.QuantumGestureMath?.classifyFingerCountDetails?.(landmarks, worldLandmarks)
+      || { count: window.QuantumGestureMath?.classifyFingerCount(landmarks, worldLandmarks) || 0, confidence: 0 };
   }
 
   function drawHand(landmarks) {
@@ -265,12 +266,15 @@
     }
     lastHandAt = now;
     const landmarks = result.landmarks[0];
-    const category = result.handedness?.[0]?.[0] || {};
-    const confidence = Number(category.score) || 0;
     const worldLandmarks = result.worldLandmarks?.[0];
-    const count = classifyFingerCount(landmarks, worldLandmarks);
+    const classification = classifyFingerCount(landmarks, worldLandmarks);
+    const count = classification.count;
+    // Confiança geométrica do gesto. O score de handedness informa apenas se
+    // a mão parece esquerda/direita e não mede quantos dedos estão levantados.
+    const confidence = Number(classification.confidence) || 0;
     drawHand(landmarks);
-    const stable = confirmTemporal(count, now);
+    if (confidence < MIN_CONFIDENCE) clearCandidate();
+    const stable = confidence >= MIN_CONFIDENCE && confirmTemporal(count, now);
     updateGestureUi(count, confidence, stable);
     control?.patch("gestures", { gesture: count || null, confidence, status: "ONLINE" }, { source: "gesture-frame" });
     if (!stable) {

@@ -96,7 +96,7 @@ class TestFullIntegrationOffline(unittest.TestCase):
             output = self.system.process(
                 IntegrationInput(targets, (1280, 720), rng.choice(gestures), obstacle, location)
             )
-            self.assertFalse(self.system.robot.esp32.connected)
+            self.assertFalse(self.system.robot.arduino.connected)
             self.assertTrue(math.isfinite(output.robot.pose.x))
             self.assertTrue(math.isfinite(output.robot.pose.y))
             if output.robot.safety_active:

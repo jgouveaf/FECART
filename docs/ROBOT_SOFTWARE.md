@@ -14,7 +14,7 @@ flowchart TD
     F --> G
     G --> H["RobotCommand"]
     H --> I["RobotSimulator"]
-    H --> J["ESP32Adapter futuro"]
+    H --> J["ArduinoUSBAdapter"]
     I --> K["Aba Robo / Dashboard"]
 ```
 
@@ -26,7 +26,7 @@ flowchart TD
 - `robot_state_machine.py`: aplica estados e prioridade de gestos.
 - `robot_controller.py`: orquestra selecao, movimento, simulador e payload futuro.
 - `robot_simulator.py`: simula pose logica do robo.
-- `esp32_adapter.py`: prepara payload JSON para integracao futura.
+- `arduino_usb_adapter.py`: envia o protocolo V5 ao Arduino UNO por USB a 9600 baud.
 
 ## Estados do Robo
 
@@ -70,7 +70,7 @@ DIREITA
 - alvo em Ghost: comando cauteloso baseado na direcao prevista;
 - alvo perdido: `PARAR`.
 
-## Payload futuro ESP32
+## Telemetria do Arduino UNO
 
 ```json
 {

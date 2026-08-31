@@ -15,7 +15,7 @@
   Seguranca:
   - nenhum motor e liberado antes da primeira leitura valida do HC-SR04;
   - PARAR e ESTOP interrompem imediatamente;
-  - modos 2 e 3 param se nenhum novo CMD:* chegar por 1,5 s;
+  - todos os modos param se nenhum novo CMD:* chegar por 1,5 s;
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
   - cinco falhas consecutivas travam o sensor; tres leituras validas o recuperam;
   - obstaculo frontal inicia um desvio completo; a leitura e ignorada somente
@@ -41,8 +41,8 @@ const unsigned long INTERVALO_SENSOR_MS = 80UL;
 const unsigned long INTERVALO_TELEMETRIA_MS = 250UL;
 const unsigned long TIMEOUT_COMANDO_MS = 1500UL;
 const unsigned long JANELA_OBSTACULOS_MS = 15000UL;
-// Mantém as rodas paradas logo após o boot para o site enviar ESTOP antes
-// que o Modo 1 possa começar. Sem site, o autônomo inicia após esta janela.
+// Mantém as rodas paradas logo após o boot para o site concluir o handshake.
+// Depois da janela, nenhum modo se move sem heartbeat CMD:* pela USB.
 const unsigned long JANELA_COMANDO_INICIAL_MS = 750UL;
 
 const unsigned int TEMPO_PAUSA_MS = 200;
@@ -89,6 +89,7 @@ bool paradaEmergencia = false;
 bool sensorBloqueado = false;
 bool sensorInicializado = false;
 bool descartandoLinhaSerial = false;
+bool controleUsbAtivo = false;
 
 char linhaSerial[34];
 byte tamanhoLinha = 0;
@@ -348,6 +349,7 @@ void enviarStatus(unsigned long agora, bool forcar = false) {
   }
   else if (!sensorInicializado) Serial.print(F("SENSOR_INIT"));
   else if (!sensorSeguro()) Serial.print(F("SENSOR_FAIL"));
+  else if (!controleUsbAtivo) Serial.print(F("LINK_WAIT"));
   else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
   else Serial.print(nomeModo());
   Serial.println();
@@ -365,8 +367,8 @@ void selecionarModo(byte numero, unsigned long agora) {
 
 ComandoMovimento comandoDesejadoPeloModo() {
   // Um unico sketch executa os tres modos. O Arduino sempre resolve o modo
-  // localmente; o site apenas seleciona o estado e renova os comandos dos
-  // modos 2 e 3 pela porta USB.
+  // localmente; o site seleciona o estado e mantém a concessão de movimento
+  // de todos os modos viva pela porta USB.
   switch (modo) {
     case MODO_AUTONOMO:
       return CMD_FRENTE;
@@ -380,6 +382,7 @@ ComandoMovimento comandoDesejadoPeloModo() {
 void receberComando(ComandoMovimento comando, unsigned long agora) {
   comandoRecebido = comando;
   ultimoComandoEm = agora;
+  controleUsbAtivo = true;
   if (comando == CMD_PARAR || (modo != MODO_AUTONOMO && comando == CMD_TRAS)) {
     cancelarDesvio();
   }
@@ -406,6 +409,7 @@ void processarLinha(char* linha, unsigned long agora) {
     quantidadeObstaculos = 0;
     comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
     ultimoComandoEm = agora;
+    controleUsbAtivo = false;
     cancelarDesvio();
     Serial.println(F("OK:RESET_ESTOP"));
   } else if (strcmp(linha, "HELLO") == 0) {
@@ -481,9 +485,12 @@ void loop() {
     return;
   }
 
-  if (modo != MODO_AUTONOMO && agora - ultimoComandoEm > TIMEOUT_COMANDO_MS) {
+  if (!controleUsbAtivo || agora - ultimoComandoEm > TIMEOUT_COMANDO_MS) {
+    controleUsbAtivo = false;
     comandoRecebido = CMD_PARAR;
     cancelarDesvio();
+    enviarStatus(agora);
+    return;
   }
 
   if (estadoDesvio != DESVIO_INATIVO) {

@@ -16,6 +16,7 @@
   const simulatorHint = document.getElementById("simulatorHint");
   const simulatorCommandPanel = document.getElementById("simulatorCommandPanel");
   const autonomousModeButton = document.getElementById("simAutonomousMode");
+  const followModeButton = document.getElementById("simFollowMode");
   const gestureModeButton = document.getElementById("simGestureMode");
   const simulatorCommandButtons = [...document.querySelectorAll("[data-simulator-command]")];
 
@@ -25,7 +26,7 @@
     running: true,
     events: 0,
     lastTime: performance.now(),
-    robot: { x: 120, y: 280, angle: 0, speed: 80, turning: 0, turnUntil: 0 },
+    robot: { x: 120, y: 280, angle: 0, speed: 80, avoidance: null },
     obstacles: [
       { x: 310, y: 180, w: 70, h: 190 },
       { x: 520, y: 60, w: 85, h: 190 },
@@ -44,8 +45,10 @@
     if (signature === lastSimulatorUiSignature) return;
     lastSimulatorUiSignature = signature;
     autonomousModeButton.classList.toggle("active", state.mode === "AUTONOMO");
+    followModeButton.classList.toggle("active", state.mode === "SEGUIR");
     gestureModeButton.classList.toggle("active", state.mode === "GESTOS");
     autonomousModeButton.setAttribute("aria-pressed", String(state.mode === "AUTONOMO"));
+    followModeButton.setAttribute("aria-pressed", String(state.mode === "SEGUIR"));
     gestureModeButton.setAttribute("aria-pressed", String(state.mode === "GESTOS"));
     simulatorCommandButtons.forEach((button) => {
       button.classList.toggle("active", state.mode === "GESTOS" && button.dataset.simulatorCommand === state.command);
@@ -54,6 +57,8 @@
     simulatorSourceValue.textContent = state.source;
     simulatorHint.textContent = state.mode === "AUTONOMO"
       ? "Autônomo ativo · o sensor virtual desvia dos obstáculos. Teclado: 1–5 ou setas."
+      : state.mode === "SEGUIR"
+        ? "Seguir pessoa · recebe a direção da câmera; sem alvo reconhecido, para."
       : state.source === "GESTO"
         ? `Gesto recebido · ${state.command}. Sem gesto novo por 0,9 s, o simulador para.`
         : `${state.source === "TECLADO" ? "Teclado" : "Teste manual"} · ${state.command}. Os gestos da câmera também controlam esta arena.`;
@@ -61,14 +66,14 @@
 
   function setSimulatorMode(mode) {
     simulatorCommands.setMode(mode);
-    world.robot.turnUntil = 0;
+    world.robot.avoidance = null;
     renderSimulatorControls();
     scheduleAnimation();
   }
 
   function setSimulatorCommand(command, source = "TESTE") {
     if (!simulatorCommands.setCommand(command, source)) return false;
-    if (command === "PARAR") world.robot.turnUntil = 0;
+    if (command === "PARAR") world.robot.avoidance = null;
     renderSimulatorControls();
     scheduleAnimation();
     return true;
@@ -83,7 +88,7 @@
   }
 
   function resetWorld() {
-    Object.assign(world.robot, { x: 120, y: 280, angle: 0, speed: 80, turning: 0, turnUntil: 0 });
+    Object.assign(world.robot, { x: 120, y: 280, angle: 0, speed: 80, avoidance: null });
     simulatorCommands.setMode("AUTONOMO");
     world.events = 0;
     world.running = true;
@@ -109,18 +114,34 @@
     const distance = rayDistance();
     const command = simulatorCommands.current(time);
     if (command === "PARAR") {
-      robot.turnUntil = 0;
+      robot.avoidance = null;
       stateValue.textContent = "PARADO";
       commandValue.textContent = "PARAR";
       safetyValue.textContent = "PARADA SEGURA";
-    } else if (robot.turnUntil > time) {
-      robot.angle += robot.turning * dt;
+    } else if (robot.avoidance) {
+      const phase = robot.avoidance.phase;
+      if (time >= robot.avoidance.until) {
+        if (phase === "PAUSA") robot.avoidance = { phase: "RE", until: time + 700, direction: robot.avoidance.direction };
+        else if (phase === "RE") robot.avoidance = { phase: "CURVA", until: time + 900, direction: robot.avoidance.direction };
+        else if (phase === "CURVA") robot.avoidance = { phase: "SAIDA", until: time + 600, direction: robot.avoidance.direction };
+        else robot.avoidance = null;
+      }
+      if (robot.avoidance?.phase === "RE") {
+        robot.x -= Math.cos(robot.angle) * robot.speed * 0.65 * dt;
+        robot.y -= Math.sin(robot.angle) * robot.speed * 0.65 * dt;
+        commandValue.textContent = "TRAS";
+      } else if (robot.avoidance?.phase === "CURVA") {
+        robot.angle += robot.avoidance.direction * 2.15 * dt;
+        commandValue.textContent = robot.avoidance.direction > 0 ? "DIREITA" : "ESQUERDA";
+      } else if (robot.avoidance?.phase === "SAIDA") {
+        robot.x += Math.cos(robot.angle) * robot.speed * dt;
+        robot.y += Math.sin(robot.angle) * robot.speed * dt;
+        commandValue.textContent = "FRENTE";
+      } else commandValue.textContent = "PARAR";
       stateValue.textContent = "DESVIANDO";
-      commandValue.textContent = robot.turning > 0 ? "DIREITA" : "ESQUERDA";
       safetyValue.textContent = "INTERVENÇÃO ATIVA";
     } else if (command === "FRENTE" && distance <= 44) {
-      robot.turning = world.events % 2 === 0 ? 2.15 : -2.15;
-      robot.turnUntil = time + 760;
+      robot.avoidance = { phase: "PAUSA", until: time + 200, direction: world.events % 2 === 0 ? 1 : -1 };
       world.events += 1;
     } else if (command === "FRENTE") {
       robot.x += Math.cos(robot.angle) * robot.speed * dt;
@@ -128,6 +149,12 @@
       stateValue.textContent = "AVANÇANDO";
       commandValue.textContent = "FRENTE";
       safetyValue.textContent = "MONITORANDO";
+    } else if (command === "TRAS") {
+      robot.x -= Math.cos(robot.angle) * robot.speed * dt;
+      robot.y -= Math.sin(robot.angle) * robot.speed * dt;
+      stateValue.textContent = "RECUANDO";
+      commandValue.textContent = "TRAS";
+      safetyValue.textContent = "COMANDO VIRTUAL";
     } else {
       const direction = command === "ESQUERDA" ? -1 : 1;
       const turnSpeed = command === "GIRAR" ? 3.2 : 1.8;
@@ -200,6 +227,7 @@
   });
   resetButton.addEventListener("click", resetWorld);
   autonomousModeButton.addEventListener("click", () => setSimulatorMode("AUTONOMO"));
+  followModeButton.addEventListener("click", () => setSimulatorMode("SEGUIR"));
   gestureModeButton.addEventListener("click", () => setSimulatorMode("GESTOS"));
   simulatorCommandButtons.forEach((button) => button.addEventListener("click", () => {
     setSimulatorCommand(button.dataset.simulatorCommand, "TESTE");
@@ -224,6 +252,12 @@
     const detail = event.detail || {};
     if (detail.stable !== true || !detail.command) return;
     setSimulatorCommand(detail.command, "GESTO");
+  });
+  window.addEventListener("quantum:person-tracking", (event) => {
+    if (simulatorCommands.snapshot().mode !== "SEGUIR") return;
+    const detail = event.detail || {};
+    simulatorCommands.setCommand(detail.visible ? detail.command : "PARAR", "ROSTO");
+    renderSimulatorControls();
   });
   const mobileNavigation = window.matchMedia("(max-width: 920px)");
   function setMenuOpen(open) {

@@ -17,13 +17,13 @@
   - PARAR e ESTOP interrompem imediatamente;
   - todos os modos param se nenhum novo CMD:* chegar por 1,5 s;
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
-  - cinco falhas consecutivas travam o sensor; tres leituras validas o recuperam;
+  - doze falhas consecutivas travam o sensor; quatro leituras validas o recuperam;
   - obstaculo frontal inicia um desvio completo; a leitura e ignorada somente
     enquanto o chassi esta girando, pois nesse momento o sensor ainda aponta
     por alguns instantes para o obstaculo que originou a manobra;
   - apos a curva, duas leituras livres confirmam a nova direcao antes de avancar;
   - mensagens seriais longas sao descartadas integralmente ate a proxima linha;
-  - cinco obstaculos em 15 s ativam parada de seguranca.
+  - um obstaculo inicia re e giros de 90 graus ate encontrar caminho livre.
 */
 
 // L298N: mantenha os jumpers ENA e ENB instalados.
@@ -40,20 +40,19 @@ const float DISTANCIA_OBSTACULO_CM = 20.0;
 const unsigned long INTERVALO_SENSOR_MS = 80UL;
 const unsigned long INTERVALO_TELEMETRIA_MS = 250UL;
 const unsigned long TIMEOUT_COMANDO_MS = 1500UL;
-const unsigned long JANELA_OBSTACULOS_MS = 15000UL;
 // Mantém as rodas paradas logo após o boot para o site concluir o handshake.
 // Depois da janela, nenhum modo se move sem heartbeat CMD:* pela USB.
 const unsigned long JANELA_COMANDO_INICIAL_MS = 750UL;
 
 const unsigned int TEMPO_PAUSA_MS = 200;
-const unsigned int TEMPO_RE_MS = 700;
-const unsigned int TEMPO_CURVA_MS = 900;
-const unsigned int TEMPO_SAIDA_MS = 600;
+const unsigned int TEMPO_RE_MS = 750;
+const unsigned int TEMPO_CURVA_MS = 650;
+const unsigned int TEMPO_SAIDA_MS = 500;
+const unsigned int TEMPO_ANALISE_CURVA_MS = 650;
 
-const byte LIMITE_FALHAS_SENSOR = 5;
-const byte LEITURAS_VALIDAS_PARA_RECUPERAR = 3;
+const byte LIMITE_FALHAS_SENSOR = 12;
+const byte LEITURAS_VALIDAS_PARA_RECUPERAR = 4;
 const byte LEITURAS_CAMINHO_LIVRE = 2;
-const byte LIMITE_OBSTACULOS = 5;
 
 enum ModoRobo { MODO_AUTONOMO = 1, MODO_SEGUIR = 2, MODO_GESTOS = 3 };
 enum ComandoMovimento { CMD_PARAR, CMD_FRENTE, CMD_TRAS, CMD_DIREITA, CMD_ESQUERDA, CMD_GIRAR };
@@ -76,15 +75,14 @@ unsigned long ultimoSensorEm = 0;
 unsigned long ultimaTelemetriaEm = 0;
 unsigned long ultimoComandoEm = 0;
 unsigned long estadoDesvioDesde = 0;
-unsigned long obstaculosEm[LIMITE_OBSTACULOS];
 
 float distanciaAtualCm = -1;
 byte falhasConsecutivasSensor = 0;
 byte leiturasValidasRecuperacao = 0;
 byte leiturasLivresAposCurva = 0;
 byte obstaculosConsecutivos = 0;
-byte quantidadeObstaculos = 0;
 bool proximaCurvaDireita = true;
+bool curvaAtualDireita = true;
 bool paradaEmergencia = false;
 bool sensorBloqueado = false;
 bool sensorInicializado = false;
@@ -117,14 +115,14 @@ void andarParaTras() {
 }
 
 void girarDireita() {
-  // Calibração física: IN1/IN2 é a roda esquerda. Movê-la curva à direita.
-  aplicarMotores(LOW, HIGH, LOW, LOW);
+  // Giro forte no lugar: roda esquerda para frente e direita para tras.
+  aplicarMotores(LOW, HIGH, HIGH, LOW);
   comandoAplicado = CMD_DIREITA;
 }
 
 void girarEsquerda() {
-  // IN3/IN4 é a roda direita. Movê-la curva à esquerda.
-  aplicarMotores(LOW, LOW, LOW, HIGH);
+  // Giro forte no lugar: roda esquerda para tras e direita para frente.
+  aplicarMotores(HIGH, LOW, LOW, HIGH);
   comandoAplicado = CMD_ESQUERDA;
 }
 
@@ -228,20 +226,6 @@ bool comandoExigeFrenteLivre(ComandoMovimento comando) {
       || comando == CMD_GIRAR;
 }
 
-bool registrarObstaculo(unsigned long agora) {
-  byte validos = 0;
-  for (byte i = 0; i < quantidadeObstaculos; i++) {
-    if (agora - obstaculosEm[i] <= JANELA_OBSTACULOS_MS) {
-      obstaculosEm[validos++] = obstaculosEm[i];
-    }
-  }
-  quantidadeObstaculos = validos;
-  if (quantidadeObstaculos < LIMITE_OBSTACULOS) {
-    obstaculosEm[quantidadeObstaculos++] = agora;
-  }
-  return quantidadeObstaculos >= LIMITE_OBSTACULOS;
-}
-
 void cancelarDesvio() {
   estadoDesvio = DESVIO_INATIVO;
   leiturasLivresAposCurva = 0;
@@ -252,12 +236,8 @@ void iniciarDesvio(unsigned long agora) {
   pararMotores();
   obstaculosConsecutivos = 0;
   leiturasLivresAposCurva = 0;
-  if (registrarObstaculo(agora)) {
-    paradaEmergencia = true;
-    estadoDesvio = DESVIO_INATIVO;
-    Serial.println(F("ALERTA:5_OBSTACULOS"));
-    return;
-  }
+  curvaAtualDireita = proximaCurvaDireita;
+  proximaCurvaDireita = !proximaCurvaDireita;
   estadoDesvio = DESVIO_PAUSA_INICIAL;
   estadoDesvioDesde = agora;
   Serial.println(F("EVENTO:DESVIO_INICIADO"));
@@ -287,7 +267,7 @@ void atualizarDesvio(unsigned long agora) {
         // sensor traseiro seria inseguro; depois de uma unica re, ele executa
         // a curva completa e volta a avaliar a nova direcao.
         obstaculosConsecutivos = 0;
-        if (proximaCurvaDireita) girarDireita(); else girarEsquerda();
+        if (curvaAtualDireita) girarDireita(); else girarEsquerda();
         estadoDesvio = DESVIO_CURVA;
         estadoDesvioDesde = agora;
       }
@@ -295,17 +275,25 @@ void atualizarDesvio(unsigned long agora) {
     case DESVIO_CURVA:
       if (decorrido >= TEMPO_CURVA_MS) {
         pararMotores();
-        proximaCurvaDireita = !proximaCurvaDireita;
         estadoDesvio = DESVIO_PAUSA_CURVA;
         leiturasLivresAposCurva = 0;
         estadoDesvioDesde = agora;
       }
       break;
     case DESVIO_PAUSA_CURVA:
-      if (decorrido >= 150UL && leiturasLivresAposCurva >= LEITURAS_CAMINHO_LIVRE) {
+      // Aguarda o HC-SR04 apontar para a nova direcao. Se ainda houver
+      // obstaculo, gira mais 90 graus sem recuar novamente.
+      if (decorrido >= 250UL && leiturasLivresAposCurva >= LEITURAS_CAMINHO_LIVRE) {
         andarParaFrente();
         estadoDesvio = DESVIO_SAIDA;
         estadoDesvioDesde = agora;
+      } else if (decorrido >= TEMPO_ANALISE_CURVA_MS && obstaculoConfirmado()) {
+        obstaculosConsecutivos = 0;
+        leiturasLivresAposCurva = 0;
+        if (curvaAtualDireita) girarDireita(); else girarEsquerda();
+        estadoDesvio = DESVIO_CURVA;
+        estadoDesvioDesde = agora;
+        Serial.println(F("EVENTO:CURVA_EXTRA"));
       }
       break;
     case DESVIO_SAIDA:
@@ -408,7 +396,6 @@ void processarLinha(char* linha, unsigned long agora) {
     Serial.println(F("OK:ESTOP"));
   } else if (strcmp(linha, "RESET_ESTOP") == 0) {
     paradaEmergencia = false;
-    quantidadeObstaculos = 0;
     comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
     ultimoComandoEm = agora;
     controleUsbAtivo = false;
@@ -496,12 +483,6 @@ void loop() {
   }
 
   if (estadoDesvio != DESVIO_INATIVO) {
-    if (obstaculoConfirmado()
-        && (estadoDesvio == DESVIO_PAUSA_CURVA || estadoDesvio == DESVIO_SAIDA)) {
-      // A curva terminou e a nova frente continua bloqueada: inicia outra
-      // tentativa antes de manter o avanco.
-      iniciarDesvio(agora);
-    }
     atualizarDesvio(agora);
     enviarStatus(agora);
     return;

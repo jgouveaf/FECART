@@ -45,7 +45,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/face-quality.js?v=1',
             'web/gesture-math.js?v=2',
             'web/simulator-controller.js?v=2',
-            'web/robot-control.js?v=8',
+            'web/robot-control.js?v=9',
             'id="toggleGestures"',
             'id="cameraDeviceSelect"',
             'id="retryFaceDetection"',

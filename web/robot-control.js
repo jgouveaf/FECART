@@ -567,6 +567,7 @@
     updateDeliveryHint();
 
     try {
+      let dependencyError = null;
       const preserveEmergency = connected && emergencyActive;
       const preservedEmergencyOwner = emergencyOwner;
       if (connected) {
@@ -580,12 +581,21 @@
         await transact("CMD:PARAR", (line) => line === "OK:CMD:PARAR", { connectionToken, operationToken });
       }
 
-      await prepareModeDependencies(nextMode, operationToken);
+      try {
+        await prepareModeDependencies(nextMode, operationToken);
+      } catch (error) {
+        if (error?.name === "AbortError") throw error;
+        dependencyError = error;
+        log("WARNING", "MODO", `${MODE_NAMES[nextMode]} continuará em ESTOP até câmera/visão ficar disponível`, error?.message || String(error));
+      }
       if (connected) {
         await transact(`MODE:${nextMode}`, (line) => line === `OK:MODE:${nextMode}`, { connectionToken, operationToken });
         confirmedMode = nextMode;
-        if (preserveEmergency) {
-          setEmergencyUi(true, `${MODE_NAMES[nextMode]} PRONTO · CONFIRME A LIBERAÇÃO`, preservedEmergencyOwner || "operator");
+        if (preserveEmergency || dependencyError) {
+          const state = dependencyError
+            ? `${MODE_NAMES[nextMode]} SELECIONADO · CÂMERA PENDENTE`
+            : `${MODE_NAMES[nextMode]} PRONTO · CONFIRME A LIBERAÇÃO`;
+          setEmergencyUi(true, state, dependencyError ? "dependency" : preservedEmergencyOwner || "operator");
         } else {
           await transact("RESET_ESTOP", (line) => line === "OK:RESET_ESTOP", { connectionToken, operationToken });
           setEmergencyUi(false);
@@ -602,6 +612,9 @@
       renderMode(activeMode);
       updateDeliveryHint();
       log("INFO", "ARDUINO", connected ? `Modo ${MODE_NAMES[nextMode]} confirmado pelo firmware` : `Modo ${MODE_NAMES[nextMode]} preparado para a próxima conexão`);
+      if (dependencyError) {
+        reportError(`${MODE_NAMES[nextMode]} foi selecionado, mas câmera/visão ainda não iniciou`, dependencyError);
+      }
     } catch (error) {
       if (operationToken !== operationGeneration) return;
       modeTransitioning = false;

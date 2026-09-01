@@ -225,7 +225,14 @@ function createEnvironment(portOptions = {}, testConfig = {}) {
   const navigatorObject = { serial };
   const control = makeControl(windowObject);
   windowObject.QuantumControl = control;
-  windowObject.quantumCameraController = { active: true, start: async () => {}, stop: async () => {} };
+  windowObject.quantumCameraController = {
+    active: testConfig.cameraInitiallyInactive !== true,
+    start: async () => {
+      if (testConfig.cameraStartError) throw new Error(testConfig.cameraStartError);
+      windowObject.quantumCameraController.active = true;
+    },
+    stop: async () => {},
+  };
   windowObject.quantumGestureController = {
     enabled: false,
     selectView: async () => {},
@@ -546,11 +553,30 @@ async function testConnectionErrorsAreActionable() {
   await cleanup(environment);
 }
 
+async function testModeTransitionSurvivesCameraStartupFailureInEstop() {
+  const environment = createEnvironment({}, {
+    cameraInitiallyInactive: true,
+    cameraStartError: "Permissão da câmera negada",
+  });
+  await environment.robot.connect();
+  await releaseSafety(environment);
+
+  environment.robot.requestMode(2, "test");
+  await waitFor(() => environment.robot.confirmedMode === 2);
+  assert.equal(environment.control.state.mode.id, 2, "falha visual não deve cancelar o modo confirmado pelo UNO");
+  assert.equal(environment.control.state.safety.emergency, true, "modo sem câmera deve permanecer em ESTOP");
+  assert.match(environment.control.state.diagnostics.lastError, /câmera\/visão ainda não iniciou/i);
+  const modeWriteIndex = environment.port.writes.lastIndexOf("MODE:2");
+  assert.equal(environment.port.writes.slice(modeWriteIndex + 1).includes("RESET_ESTOP"), false);
+  await cleanup(environment);
+}
+
 async function main() {
   const tests = [
     testRobotStatusKeepsTechnicalStateAndReadableLabel,
     testHandshakeAndAcknowledgements,
     testModeTransitionAndStaleInputWatchdog,
+    testModeTransitionSurvivesCameraStartupFailureInEstop,
     testWrongModeAndSplitBrainFailClosed,
     testModeAckTimeoutRollsBackAndStaysStopped,
     testRepeatedMotionAckFailureTriggersEstop,

@@ -67,6 +67,7 @@
   let writeTail = Promise.resolve();
   let lineWaiters = new Set();
   let splitBrainHandling = false;
+  let programRunning = false;
 
   function delay(milliseconds) {
     return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -715,7 +716,7 @@
   }
 
   function watchdogTick() {
-    if (!connected || emergencyActive || modeTransitioning) return;
+    if (!connected || emergencyActive || modeTransitioning || programRunning) return;
     if (lastSerialRxAt > 0 && performance.now() - lastSerialRxAt > SERIAL_SILENCE_TIMEOUT_MS) {
       failClosed("O Arduino deixou de responder pela USB; motores bloqueados por segurança.");
       return;
@@ -908,8 +909,132 @@
   updateDeliveryHint();
   log("INFO", "ARDUINO", "Controlador Web Serial pronto · aguardando conexão explícita");
 
+
+  async function runProgram(programName) {
+    const program = String(programName || "").toLowerCase();
+    if (!["principal", "motores", "sensor"].includes(program)) {
+      throw new Error("Código selecionado inválido.");
+    }
+    if (programRunning) throw new Error("Já existe um código em execução.");
+
+    if (!connected) {
+      const opened = await connectRobot();
+      if (!opened) throw new Error("Não foi possível conectar ao Arduino. Feche o Monitor Serial e tente novamente.");
+    }
+    if (!connected || !transportOpen) throw new Error("Arduino USB não está conectado.");
+    if (["fault", "sensor", "firmware"].includes(emergencyOwner) && program !== "sensor") {
+      throw new Error("Resolva a falha de segurança mostrada no painel antes de ligar os motores.");
+    }
+
+    const connectionToken = connectionGeneration;
+    const operationToken = ++operationGeneration;
+    rejectSupersededOperationWaiters(operationToken);
+    const programModeToken = ++modeGeneration;
+    programRunning = true;
+    modeTransitioning = true;
+    lastIntent = "PARAR";
+    lastFreshInputAt = 0;
+    pendingMotion = null;
+
+    const command = (name) => transact(`CMD:${name}`, (line) => line === `OK:CMD:${name}`, {
+      connectionToken,
+      operationToken,
+      modeToken: programModeToken,
+      timeoutMs: 1400,
+      label: `teste de ${name.toLowerCase()}`,
+    });
+    const checkActive = () => {
+      if (!connected || connectionToken !== connectionGeneration || operationToken !== operationGeneration) throw cancelled();
+    };
+
+    try {
+      await transact("ESTOP", (line) => line === "OK:ESTOP", { connectionToken, operationToken, modeToken: programModeToken });
+      setEmergencyUi(true, program === "sensor" ? "TESTE DO SENSOR · MOTORES BLOQUEADOS" : "PREPARANDO CÓDIGO", "transition");
+      await command("PARAR");
+
+      if (program === "sensor") {
+        await enqueueLine("STATUS", { connectionToken, operationToken, modeToken: programModeToken });
+        modeTransitioning = false;
+        log("INFO", "CÓDIGOS", "Teste do HC-SR04 ativo; motores mantidos em ESTOP");
+        return { program, label: "Sensor monitorando" };
+      }
+
+      const targetMode = program === "principal" ? 1 : 3;
+      await transact(`MODE:${targetMode}`, (line) => line === `OK:MODE:${targetMode}`, {
+        connectionToken,
+        operationToken,
+        modeToken: programModeToken,
+      });
+      activeMode = targetMode;
+      confirmedMode = targetMode;
+      modeActivatedAt = performance.now();
+      control?.commitMode?.(targetMode, "code-runner");
+      renderMode(activeMode);
+
+      await transact("RESET_ESTOP", (line) => line === "OK:RESET_ESTOP", {
+        connectionToken,
+        operationToken,
+        modeToken: programModeToken,
+      });
+      setEmergencyUi(false);
+      modeTransitioning = false;
+
+      if (program === "principal") {
+        lastIntent = "FRENTE";
+        lastFreshInputAt = performance.now();
+        await command("FRENTE");
+        updateDeliveryHint();
+        log("INFO", "CÓDIGOS", "Código principal iniciado em modo autônomo");
+        return { program, label: "Autônomo rodando" };
+      }
+
+      log("WARNING", "CÓDIGOS", "Teste dos motores iniciado; mantenha as rodas levantadas");
+      const sequence = [
+        ["FRENTE", 900],
+        ["PARAR", 250],
+        ["TRAS", 900],
+        ["PARAR", 250],
+        ["DIREITA", 700],
+        ["PARAR", 250],
+        ["ESQUERDA", 700],
+        ["PARAR", 0],
+      ];
+      for (const [name, duration] of sequence) {
+        checkActive();
+        await command(name);
+        lastIntent = name;
+        if (commandStatus) commandStatus.textContent = name;
+        if (duration) await delay(duration);
+      }
+      await transact("ESTOP", (line) => line === "OK:ESTOP", {
+        connectionToken,
+        operationToken,
+        modeToken: programModeToken,
+      });
+      setEmergencyUi(true, "TESTE CONCLUÍDO · MOTORES PARADOS", "operator");
+      log("INFO", "CÓDIGOS", "Teste dos motores concluído com parada de segurança");
+      return { program, label: "Teste concluído" };
+    } catch (error) {
+      if (transportOpen && connectionToken === connectionGeneration) {
+        enqueueLine("ESTOP", { connectionToken }).catch(() => {});
+        setEmergencyUi(true, "EXECUÇÃO INTERROMPIDA · ESTOP", "fault");
+      }
+      reportError("Não foi possível rodar o código selecionado", error);
+      throw error;
+    } finally {
+      programRunning = false;
+      modeTransitioning = false;
+      if (program !== "principal") {
+        lastIntent = "PARAR";
+        lastFreshInputAt = 0;
+      }
+      updateDeliveryHint();
+    }
+  }
+
   const publicApi = {
     connect: connectRobot,
+    runProgram,
     disconnect: () => closePort({ sendEstop: true, reason: "API" }),
     requestMode,
     emergencyStop: toggleEmergency,

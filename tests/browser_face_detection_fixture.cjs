@@ -12,6 +12,11 @@ if (!faceImage) throw new Error("QT_FACE_IMAGE não foi informado.");
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
+  // O painel fica atrás de uma tela de login simples (client-side); autentica
+  // antes de navegar para o teste chegar até a câmera/FaceID de verdade.
+  await page.addInitScript(() => {
+    try { window.localStorage.setItem("quantumAuth:v1", "ok"); } catch { /* ignore */ }
+  });
   const pageErrors = [];
   const consoleErrors = [];
   const failedRequests = [];

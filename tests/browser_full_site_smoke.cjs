@@ -13,6 +13,11 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
     args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
   });
   const context = await browser.newContext({ permissions: ["camera"] });
+  // O painel fica atrás de uma tela de login simples (client-side); autentica
+  // antes de navegar para o smoke test cobrir o painel real, não a tela de login.
+  await context.addInitScript(() => {
+    try { window.localStorage.setItem("quantumAuth:v1", "ok"); } catch { /* ignore */ }
+  });
   const page = await context.newPage();
   const pageErrors = [];
   const consoleErrors = [];

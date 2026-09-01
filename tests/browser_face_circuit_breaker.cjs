@@ -11,6 +11,11 @@ const siteUrl = process.env.QT_SITE_URL || "http://127.0.0.1:8765/";
     args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
   });
   const context = await browser.newContext({ permissions: ["camera"] });
+  // O painel fica atrás de uma tela de login simples (client-side); autentica
+  // antes de navegar para o teste chegar até a câmera/FaceID de verdade.
+  await context.addInitScript(() => {
+    try { window.localStorage.setItem("quantumAuth:v1", "ok"); } catch { /* ignore */ }
+  });
   const page = await context.newPage();
   const pageErrors = [];
   const unexpectedConsoleErrors = [];

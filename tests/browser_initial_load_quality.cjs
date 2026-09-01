@@ -8,6 +8,11 @@ const throttled = process.env.QT_THROTTLE === "1";
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  // O painel fica atrás de uma tela de login simples (client-side); autentica
+  // antes de navegar para medir o carregamento do painel real, não do login.
+  await page.addInitScript(() => {
+    try { window.localStorage.setItem("quantumAuth:v1", "ok"); } catch { /* ignore */ }
+  });
   if (throttled) {
     const session = await page.context().newCDPSession(page);
     await session.send("Network.enable");

@@ -90,7 +90,8 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn('new TextEncoder().encode("ESTOP\\n")', self.robot_js)
         self.assertIn('strcmp(linha, "ESTOP")', self.firmware)
         self.assertIn("paradaEmergencia = true", self.firmware)
-        self.assertRegex(self.firmware, r"if \(paradaEmergencia \|\| !sensorSeguro\(\)\)\s*\{\s*pararMotores\(\)")
+        self.assertRegex(self.firmware, r"if \(paradaEmergencia\)\s*\{\s*pararMotores\(\)")
+        self.assertNotIn("sensorSeguro()", self.firmware)
 
     def test_serial_handshake_and_mode_commit_require_acknowledgement(self) -> None:
         self.assertIn('REQUIRED_FIRMWARE_READY = "QT:READY:V5"', self.robot_js)
@@ -126,12 +127,12 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn('consecutiveMotionFailures >= 2', self.robot_js)
         self.assertIn('Dois comandos de movimento ficaram sem confirmação', self.robot_js)
 
-    def test_sensor_must_initialize_before_any_motor_is_released(self) -> None:
+    def test_sensor_failure_is_reported_but_does_not_latch_motor_stop(self) -> None:
         self.assertIn("bool sensorInicializado = false", self.firmware)
         self.assertIn("sensorInicializado = true", self.firmware)
-        safety = self.firmware.split("bool sensorSeguro()", 1)[1].split("bool obstaculoConfirmado()", 1)[0]
-        self.assertIn("sensorInicializado", safety)
-        self.assertIn('Serial.print(F("SENSOR_INIT"))', self.firmware)
+        self.assertIn("falhasConsecutivasSensor", self.firmware)
+        self.assertNotIn("bool sensorSeguro()", self.firmware)
+        self.assertNotIn('Serial.print(F("SENSOR_INIT"))', self.firmware)
 
     def test_new_direction_requires_two_clear_ultrasonic_measurements(self) -> None:
         self.assertRegex(self.firmware, r"LEITURAS_CAMINHO_LIVRE\s*=\s*2")
@@ -162,10 +163,9 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn('enqueueLine("ESTOP"', fail_closed)
 
     def test_ultrasonic_sensor_remains_above_external_commands(self) -> None:
-        self.assertRegex(self.firmware, r"LIMITE_FALHAS_SENSOR\s*=\s*5")
         self.assertIn("obstaculoConfirmado()", self.firmware)
         self.assertIn("iniciarDesvio(agora)", self.firmware)
-        sensor_guard = self.firmware.index("if (paradaEmergencia || !sensorSeguro())")
+        sensor_guard = self.firmware.index("if (comandoExigeFrenteLivre(desejado) && obstaculoConfirmado())")
         command_application = self.firmware.index("aplicarComando(desejado)")
         self.assertLess(sensor_guard, command_application)
 
@@ -175,11 +175,11 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn("atualizarDesvio(agora)", loop)
         self.assertIn("lerSerial(agora)", loop)
 
-    def test_five_obstacles_in_window_trigger_latched_stop(self) -> None:
-        self.assertRegex(self.firmware, r"LIMITE_OBSTACULOS\s*=\s*5")
-        self.assertRegex(self.firmware, r"JANELA_OBSTACULOS_MS\s*=\s*15000UL")
-        self.assertIn('Serial.println(F("ALERTA:5_OBSTACULOS"))', self.firmware)
-        self.assertIn("registrarObstaculo(agora)", self.firmware)
+    def test_repeated_obstacles_do_not_trigger_an_automatic_latched_stop(self) -> None:
+        self.assertNotIn("LIMITE_OBSTACULOS", self.firmware)
+        self.assertNotIn("JANELA_OBSTACULOS_MS", self.firmware)
+        self.assertNotIn('Serial.println(F("ALERTA:5_OBSTACULOS"))', self.firmware)
+        self.assertNotIn("registrarObstaculo(agora)", self.firmware)
 
     def test_firmware_protocol_and_telemetry_are_complete(self) -> None:
         for token in ("HELLO", "MODE:1", "MODE:2", "MODE:3", "CMD:FRENTE", "CMD:PARAR", "ESTOP", "RESET_ESTOP", "PING", "STATUS"):

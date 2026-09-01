@@ -288,10 +288,24 @@
   const codeElement = document.getElementById("arduinoCode");
   const codeFilename = document.getElementById("codeFilename");
   const codeStatus = document.getElementById("codeStatus");
+  const runCode = document.getElementById("runCode");
   const copyCode = document.getElementById("copyCode");
   const downloadCode = document.getElementById("downloadCode");
   let loadedCode = "";
+  let selectedProgram = "principal";
   let downloadObjectUrl = "";
+
+  const PROGRAM_LABELS = Object.freeze({
+    principal: "Rodar autônomo",
+    motores: "Rodar teste dos motores",
+    sensor: "Rodar teste do sensor",
+  });
+
+  function programFromSource(source) {
+    if (source.includes("teste_motores")) return "motores";
+    if (source.includes("teste_sensor")) return "sensor";
+    return "principal";
+  }
 
   function prepareCodeDownload(code, filename) {
     if (downloadObjectUrl) URL.revokeObjectURL(downloadObjectUrl);
@@ -303,6 +317,11 @@
   async function loadArduinoCode(tab) {
     const source = tab.dataset.codeSource;
     const filename = tab.dataset.filename;
+    selectedProgram = programFromSource(source);
+    if (runCode) {
+      runCode.textContent = PROGRAM_LABELS[selectedProgram];
+      runCode.dataset.program = selectedProgram;
+    }
     document.querySelectorAll(".code-tab").forEach((item) => {
       const selected = item === tab;
       item.classList.toggle("active", selected);
@@ -350,6 +369,37 @@
       loadArduinoCode(codeTabs[nextIndex]);
     });
   });
+  runCode?.addEventListener("click", async () => {
+    const robot = window.quantumRobot;
+    if (!robot?.runProgram) {
+      codeStatus.textContent = "CONTROLE USB INDISPONÍVEL";
+      return;
+    }
+    if (selectedProgram === "motores") {
+      const confirmed = window.confirm("Levante as rodas do chão. O teste ligará os dois motores, inverterá o sentido e fará curvas. Deseja rodar agora?");
+      if (!confirmed) return;
+    }
+
+    const idleLabel = PROGRAM_LABELS[selectedProgram];
+    runCode.disabled = true;
+    runCode.textContent = robot.connected ? "Iniciando…" : "Conectando…";
+    codeStatus.textContent = robot.connected ? "INICIANDO" : "SELECIONE A PORTA USB";
+
+    try {
+      const result = await robot.runProgram(selectedProgram);
+      if (selectedProgram === "principal") codeStatus.textContent = "RODANDO · AUTÔNOMO";
+      else if (selectedProgram === "motores") codeStatus.textContent = "TESTE CONCLUÍDO · MOTORES PARADOS";
+      else codeStatus.textContent = "SENSOR ATIVO · VEJA A DISTÂNCIA NO PAINEL";
+      runCode.textContent = result?.label || idleLabel;
+    } catch (error) {
+      codeStatus.textContent = "NÃO FOI POSSÍVEL RODAR";
+      window.alert(error?.message || "Falha ao iniciar o código selecionado.");
+    } finally {
+      runCode.disabled = false;
+      window.setTimeout(() => { runCode.textContent = idleLabel; }, 1800);
+    }
+  });
+
   copyCode.addEventListener("click", async () => {
     if (!loadedCode) return;
     try {

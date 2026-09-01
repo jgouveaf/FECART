@@ -4,20 +4,20 @@
 
   MODOS:
   1 - AUTONOMO: anda sempre e desvia com o HC-SR04.
-  2 - SEGUIR: recebe direcao da camera; sensor continua soberano.
-  3 - GESTOS: recebe os gestos; sensor continua soberano.
+  2 - SEGUIR: recebe direcao da camera e desvia quando houver leitura valida.
+  3 - GESTOS: recebe os gestos e desvia quando houver leitura valida.
 
   PROTOCOLO SERIAL (9600 baud, uma linha por comando):
   MODE:1 | MODE:2 | MODE:3
   CMD:FRENTE | CMD:TRAS | CMD:DIREITA | CMD:ESQUERDA | CMD:PARAR | CMD:GIRAR
   HELLO | ESTOP | RESET_ESTOP | PING | STATUS
 
-  Seguranca:
-  - nenhum motor e liberado antes da primeira leitura valida do HC-SR04;
-  - PARAR e ESTOP interrompem imediatamente;
+  Comportamento:
+  - PARAR e ESTOP continuam disponiveis para o operador;
   - todos os modos param se nenhum novo CMD:* chegar por 1,5 s;
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
-  - doze falhas consecutivas travam o sensor; quatro leituras validas o recuperam;
+  - falhas do HC-SR04 nao bloqueiam os motores: uma leitura sem eco e ignorada;
+  - curvas usam as duas rodas ao mesmo tempo, em sentidos opostos;
   - obstaculo frontal inicia um desvio completo; a leitura e ignorada somente
     enquanto o chassi esta girando, pois nesse momento o sensor ainda aponta
     por alguns instantes para o obstaculo que originou a manobra;
@@ -50,8 +50,6 @@ const unsigned int TEMPO_CURVA_MS = 650;
 const unsigned int TEMPO_SAIDA_MS = 500;
 const unsigned int TEMPO_ANALISE_CURVA_MS = 650;
 
-const byte LIMITE_FALHAS_SENSOR = 12;
-const byte LEITURAS_VALIDAS_PARA_RECUPERAR = 4;
 const byte LEITURAS_CAMINHO_LIVRE = 2;
 
 enum ModoRobo { MODO_AUTONOMO = 1, MODO_SEGUIR = 2, MODO_GESTOS = 3 };
@@ -78,13 +76,11 @@ unsigned long estadoDesvioDesde = 0;
 
 float distanciaAtualCm = -1;
 byte falhasConsecutivasSensor = 0;
-byte leiturasValidasRecuperacao = 0;
 byte leiturasLivresAposCurva = 0;
 byte obstaculosConsecutivos = 0;
 bool proximaCurvaDireita = true;
 bool curvaAtualDireita = true;
 bool paradaEmergencia = false;
-bool sensorBloqueado = false;
 bool sensorInicializado = false;
 bool descartandoLinhaSerial = false;
 bool controleUsbAtivo = false;
@@ -115,19 +111,25 @@ void andarParaTras() {
 }
 
 void girarDireita() {
-  // Giro forte no lugar: roda esquerda para frente e direita para tras.
-  aplicarMotores(LOW, HIGH, HIGH, LOW);
+  // As duas rodas recebem potencia: esquerda para frente, direita para tras.
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
   comandoAplicado = CMD_DIREITA;
 }
 
 void girarEsquerda() {
-  // Giro forte no lugar: roda esquerda para tras e direita para frente.
-  aplicarMotores(HIGH, LOW, LOW, HIGH);
+  // As duas rodas recebem potencia: esquerda para tras, direita para frente.
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
   comandoAplicado = CMD_ESQUERDA;
 }
 
 void girarNoLugar() {
-  aplicarMotores(LOW, HIGH, HIGH, LOW);
+  girarDireita();
   comandoAplicado = CMD_GIRAR;
 }
 
@@ -161,38 +163,18 @@ void atualizarSensor(unsigned long agora) {
   ultimoSensorEm = agora;
   distanciaAtualCm = medirDistanciaCm();
 
+  // Sem eco: ignora somente esta leitura. O sensor nao para o robo.
   if (distanciaAtualCm < 0) {
     if (falhasConsecutivasSensor < 255) falhasConsecutivasSensor++;
-    leiturasValidasRecuperacao = 0;
     leiturasLivresAposCurva = 0;
     obstaculosConsecutivos = 0;
-
-    if (falhasConsecutivasSensor >= LIMITE_FALHAS_SENSOR && !sensorBloqueado) {
-      sensorBloqueado = true;
-      estadoDesvio = DESVIO_INATIVO;
-      pararMotores();
-      Serial.println(F("ALERTA:SENSOR_BLOQUEADO"));
-    }
     return;
   }
 
   sensorInicializado = true;
   falhasConsecutivasSensor = 0;
-  if (sensorBloqueado) {
-    if (leiturasValidasRecuperacao < 255) leiturasValidasRecuperacao++;
-    if (leiturasValidasRecuperacao >= LEITURAS_VALIDAS_PARA_RECUPERAR) {
-      sensorBloqueado = false;
-      leiturasValidasRecuperacao = 0;
-      Serial.println(F("EVENTO:SENSOR_RECUPERADO"));
-    }
-  } else {
-    leiturasValidasRecuperacao = 0;
-  }
 
-  // Durante a curva o HC-SR04 ainda pode enxergar o obstaculo antigo. Contar
-  // essas leituras reiniciaria o desvio antes de o robo conseguir mudar de
-  // direcao. Assim que a curva termina, a confirmacao por duas leituras volta
-  // a funcionar normalmente antes da saida para frente.
+  // Durante a curva o HC-SR04 ainda pode enxergar o obstaculo antigo.
   if (estadoDesvio == DESVIO_CURVA) {
     obstaculosConsecutivos = 0;
     leiturasLivresAposCurva = 0;
@@ -207,12 +189,6 @@ void atualizarSensor(unsigned long agora) {
       leiturasLivresAposCurva = 0;
     }
   }
-}
-
-bool sensorSeguro() {
-  return sensorInicializado
-      && !sensorBloqueado
-      && falhasConsecutivasSensor < LIMITE_FALHAS_SENSOR;
 }
 
 bool obstaculoConfirmado() {
@@ -334,11 +310,6 @@ void enviarStatus(unsigned long agora, bool forcar = false) {
   Serial.print(nomeComando(comandoAplicado));
   Serial.print(F("|STATE:"));
   if (paradaEmergencia) Serial.print(F("ESTOP"));
-  else if (sensorBloqueado || falhasConsecutivasSensor >= LIMITE_FALHAS_SENSOR) {
-    Serial.print(F("SENSOR_FAIL"));
-  }
-  else if (!sensorInicializado) Serial.print(F("SENSOR_INIT"));
-  else if (!sensorSeguro()) Serial.print(F("SENSOR_FAIL"));
   else if (!controleUsbAtivo) Serial.print(F("LINK_WAIT"));
   else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
   else Serial.print(nomeModo());
@@ -468,7 +439,7 @@ void loop() {
   lerSerial(agora);
   atualizarSensor(agora);
 
-  if (paradaEmergencia || !sensorSeguro()) {
+  if (paradaEmergencia) {
     pararMotores();
     enviarStatus(agora);
     return;

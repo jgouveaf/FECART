@@ -307,15 +307,16 @@
         <div class="section-heading">
           <div><span class="section-tag">Arduino UNO · instalação única</span><h2>Códigos do robô</h2><p>Grave o firmware principal uma vez. Depois disso, o IDE pode permanecer fechado e o site controla o UNO pelo cabo.</p></div>
           <div class="code-actions">
+            <button class="primary-button compact" id="runCode">Rodar autônomo</button>
             <button class="secondary-button" id="copyCode">Copiar código</button>
-            <a class="primary-button compact" id="downloadCode" download>Baixar .ino</a>
+            <a class="secondary-button" id="downloadCode" download>Baixar .ino</a>
           </div>
         </div>
         <div class="firmware-workflow" aria-label="Como preparar e conectar o Arduino">
           <article><b>01</b><div><strong>Gravar uma vez</strong><small>Envie o Código principal pelo Arduino IDE 2.3.10.</small></div></article>
           <article><b>02</b><div><strong>Liberar a porta</strong><small>Feche o Monitor Serial e o Arduino IDE após o envio.</small></div></article>
           <article><b>03</b><div><strong>Conectar por USB</strong><small>O firmware permanece salvo no UNO mesmo sem energia.</small></div></article>
-          <article><b>04</b><div><strong>Operar pelo site</strong><small>O painel envia modos e comandos; não envia sketches.</small></div></article>
+          <article><b>04</b><div><strong>Clicar em Rodar</strong><small>Escolha uma aba e o site inicia o comportamento pelo firmware principal.</small></div></article>
         </div>
         <div class="firmware-assurance" role="note">
           <span aria-hidden="true">✓</span>
@@ -381,9 +382,9 @@
   <script src="web/control-state.js?v=1" defer></script>
   <script src="web/arduino-codes.js?v=8" defer></script>
   <script src="web/simulator-controller.js?v=2" defer></script>
-  <script src="web/app.js?v=11" defer></script>
+  <script src="web/app.js?v=12" defer></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
-  <script src="web/robot-control.js?v=9" defer></script>
+  <script src="web/robot-control.js?v=10" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/gesture-math.js?v=2" defer></script>
   <script src="web/face-identities.js?v=12" defer></script>

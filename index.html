@@ -19,9 +19,22 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="web/styles.css?v=15">
+  <script>
+    // Bloqueia a exibição do painel até o auth-gate confirmar o login salvo
+    // neste navegador (ou o operador entrar de novo). Evita mostrar o
+    // conteúdo por uma fração de segundo antes da checagem.
+    try {
+      if (window.localStorage.getItem("quantumAuth:v1") !== "ok") {
+        document.documentElement.classList.add("qt-locked");
+      }
+    } catch (error) {
+      // Sem localStorage disponível: libera o painel em vez de travar o acesso.
+    }
+  </script>
+  <link rel="stylesheet" href="web/styles.css?v=16">
 </head>
 <body>
+  <noscript><div class="auth-overlay" style="display:flex"><div class="auth-card"><h1>Quantum Tracker</h1><p>Ative o JavaScript para acessar o painel.</p></div></div></noscript>
   <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
   <div class="app-shell">
     <aside class="sidebar" id="sidebarNavigation" aria-label="Navegação principal">
@@ -320,7 +333,7 @@
         </div>
         <div class="firmware-assurance" role="note">
           <span aria-hidden="true">✓</span>
-          <div><strong>Arduino IDE somente para instalar ou atualizar.</strong><small>Nos três modos, mantenha o site e o cabo USB conectados. Se o heartbeat parar, o UNO interrompe os motores em até 1,5 s.</small></div>
+          <div><strong>Arduino IDE somente para instalar ou atualizar.</strong><small>Nos três modos, mantenha o site e o cabo USB conectados. Se o heartbeat parar, o UNO interrompe os motores em até 1,5 s. O painel envia modos e comandos; não envia sketches.</small></div>
         </div>
         <div class="pin-strip">
           <span><b>D7</b> IN1</span><span><b>D6</b> IN2</span><span><b>D5</b> IN3</span><span><b>D4</b> IN4</span><span><b>D3</b> TRIG</span><span><b>D2</b> ECHO</span>
@@ -332,7 +345,42 @@
         </div>
         <div class="code-window" id="codeViewer" role="tabpanel" aria-labelledby="codeTabMain">
           <div class="code-titlebar"><span></span><span></span><span></span><strong id="codeFilename">quantum_tracker_arduino.ino</strong><em id="codeStatus" role="status" aria-live="polite">CARREGANDO</em></div>
-          <pre tabindex="0"><code id="arduinoCode">Carregando código…</code></pre>
+          <textarea id="arduinoCode" class="code-editor" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Editor do sketch selecionado">Carregando código…</textarea>
+          <div class="code-edit-bar">
+            <span class="code-edit-flag" id="codeEditFlag" hidden>Editado neste navegador</span>
+            <div class="code-edit-buttons">
+              <button class="secondary-button compact" id="restoreCode" hidden>Restaurar original</button>
+              <button class="primary-button compact" id="saveCode">Salvar edição</button>
+            </div>
+          </div>
+        </div>
+        <p class="notice">Editar aqui muda só o texto salvo neste navegador (nada é enviado ao Arduino). Para aplicar de verdade, baixe o .ino editado e grave pelo Arduino IDE.</p>
+
+        <div class="config-panel" aria-label="Comandos e configurações do site">
+          <div class="section-heading">
+            <div><span class="section-tag">Ajustes do lado do site</span><h3>Comandos &amp; configurações</h3><p>Valem só neste navegador e só depois de recarregar a página. Não afetam o firmware gravado no Arduino.</p></div>
+          </div>
+          <div class="config-grid">
+            <div class="config-card">
+              <h4>Mapa de gestos → comando</h4>
+              <div class="config-field" data-finger="1"><label for="gestureMap1">1 dedo</label><select id="gestureMap1"></select></div>
+              <div class="config-field" data-finger="2"><label for="gestureMap2">2 dedos</label><select id="gestureMap2"></select></div>
+              <div class="config-field" data-finger="3"><label for="gestureMap3">3 dedos</label><select id="gestureMap3"></select></div>
+              <div class="config-field" data-finger="4"><label for="gestureMap4">4 dedos</label><select id="gestureMap4"></select></div>
+              <div class="config-field" data-finger="5"><label for="gestureMap5">5 dedos</label><select id="gestureMap5"></select></div>
+            </div>
+            <div class="config-card">
+              <h4>Detecção de gestos</h4>
+              <div class="config-field"><label for="configMinConfidence">Confiança mínima (%)</label><input id="configMinConfidence" type="number" min="30" max="95" step="1"></div>
+              <div class="config-field"><label for="configCooldown">Intervalo entre comandos (ms)</label><input id="configCooldown" type="number" min="200" max="3000" step="50"></div>
+              <div class="config-field"><label for="configUnstable">Parar após instabilidade (ms)</label><input id="configUnstable" type="number" min="150" max="3000" step="50"></div>
+            </div>
+          </div>
+          <div class="config-actions">
+            <button class="secondary-button" id="resetConfig">Restaurar padrão</button>
+            <button class="primary-button compact" id="saveConfig">Salvar configurações</button>
+          </div>
+          <p class="config-status" id="configStatus" role="status" aria-live="polite">Usando valores padrão.</p>
         </div>
       </section>
 
@@ -379,15 +427,18 @@
       <footer><span>Quantum Tracker · FECART 2026</span><span>João · Gustavo · Renato</span></footer>
     </main>
   </div>
+  <script src="web/user-config.js?v=1" defer></script>
+  <script src="web/auth-gate.js?v=1" defer></script>
   <script src="web/control-state.js?v=1" defer></script>
-  <script src="web/arduino-codes.js?v=10" defer></script>
+  <script src="web/arduino-codes.js?v=11" defer></script>
   <script src="web/simulator-controller.js?v=2" defer></script>
-  <script src="web/app.js?v=13" defer></script>
+  <script src="web/app.js?v=14" defer></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
   <script src="web/robot-control.js?v=12" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
+  <script src="web/face-identity-math.js?v=1" defer></script>
   <script src="web/gesture-math.js?v=2" defer></script>
-  <script src="web/face-identities.js?v=12" defer></script>
-  <script src="web/camera-gestures.js?v=13" defer></script>
+  <script src="web/face-identities.js?v=13" defer></script>
+  <script src="web/camera-gestures.js?v=14" defer></script>
 </body>
 </html>

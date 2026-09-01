@@ -28,6 +28,7 @@
   const INPUT_TIMEOUT_MS = Number(testConfig.inputTimeoutMs) || 900;
   const SERIAL_SILENCE_TIMEOUT_MS = Number(testConfig.serialSilenceTimeoutMs) || 2200;
   const READY_TIMEOUT_MS = Number(testConfig.readyTimeoutMs) || 6500;
+  const HELLO_PROBE_MS = Number(testConfig.helloProbeMs) || 650;
   const ACK_TIMEOUT_MS = Number(testConfig.ackTimeoutMs) || 1000;
   const MAX_EVENT_AGE_MS = Number(testConfig.maxEventAgeMs) || 1200;
   const MAX_QUEUED_MOTION_AGE_MS = Number(testConfig.maxQueuedMotionAgeMs) || 350;
@@ -415,9 +416,21 @@
     });
     readTask = readLoop(connectionToken);
     // O UNO normalmente reinicia ao abrir a porta, mas alguns cabos/clones nao
-    // fazem isso. HELLO torna o handshake deterministico nos dois casos.
-    enqueueLine("HELLO", { connectionToken, operationToken }).catch(() => {});
-    const readyLine = await ready.promise;
+    // fazem isso. O bootloader também pode consumir a primeira mensagem; por
+    // isso HELLO é repetido até o firmware se identificar ou o prazo expirar.
+    const sendHello = () => {
+      if (transportOpen && connectionToken === connectionGeneration) {
+        enqueueLine("HELLO", { connectionToken, operationToken }).catch(() => {});
+      }
+    };
+    sendHello();
+    const helloProbeTimer = window.setInterval(sendHello, HELLO_PROBE_MS);
+    let readyLine;
+    try {
+      readyLine = await ready.promise;
+    } finally {
+      window.clearInterval(helloProbeTimer);
+    }
     if (readyLine !== REQUIRED_FIRMWARE_READY) throw new Error(`Firmware incompatível: recebido ${readyLine}; esperado ${REQUIRED_FIRMWARE_READY}.`);
 
     await transact("ESTOP", (line) => line === "OK:ESTOP", { connectionToken, operationToken, label: "ESTOP inicial" });

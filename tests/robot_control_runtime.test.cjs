@@ -119,7 +119,11 @@ class FakePort {
     if (this.options.noAckFor?.includes(line)) return null;
     if (line === "ESTOP") return "OK:ESTOP";
     if (line === "RESET_ESTOP") return "OK:RESET_ESTOP";
-    if (line === "HELLO" && this.options.helloReady) return this.options.readyLine || "QT:READY:V5";
+    if (line === "HELLO" && this.options.helloReady) {
+      this.helloCount = (this.helloCount || 0) + 1;
+      if (this.helloCount < (this.options.helloReadyAfter || 1)) return null;
+      return this.options.readyLine || "QT:READY:V5";
+    }
     if (line.startsWith("MODE:")) return `OK:${line}`;
     if (line.startsWith("CMD:")) return `OK:${line}`;
     if (line === "STATUS") return "QT|MODE:1|DIST:50.0|CMD:PARAR|STATE:AUTONOMO";
@@ -517,6 +521,14 @@ async function testHandshakeTimeoutAndVersionMismatch() {
   assert.equal(versionEnvironment.control.state.robot.status, "ERROR");
   assert.match(versionEnvironment.control.state.diagnostics.lastError, /Firmware incompatível/);
   await cleanup(versionEnvironment);
+
+  const slowBootEnvironment = createEnvironment(
+    { ready: false, helloReady: true, helloReadyAfter: 3 },
+    { readyTimeoutMs: 250, helloProbeMs: 20 },
+  );
+  assert.equal(await slowBootEnvironment.robot.connect(), true);
+  assert.ok(slowBootEnvironment.port.helloCount >= 3, "o site deve repetir HELLO durante um boot lento");
+  await cleanup(slowBootEnvironment);
 }
 
 async function testConnectionErrorsAreActionable() {

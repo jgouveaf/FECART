@@ -153,7 +153,7 @@
           <article class="system-indicator" data-status="offline"><span>Gestos</span><strong id="overallGestureStatus">OFFLINE</strong><small>MediaPipe local</small></article>
           <article class="system-indicator" data-status="offline"><span>Comunicação</span><strong id="overallCommunicationStatus">OFFLINE</strong><small>Handshake e ACK</small></article>
         </div>
-        <div class="robot-control-panel" aria-label="Controle do Arduino">
+        <div class="robot-control-panel" id="robotControlPanel" aria-label="Controle do Arduino">
           <div class="robot-connection-row">
             <div>
               <span class="section-tag">Arduino UNO · 9600 baud</span>
@@ -384,7 +384,7 @@
   <script src="web/simulator-controller.js?v=2" defer></script>
   <script src="web/app.js?v=13" defer></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
-  <script src="web/robot-control.js?v=11" defer></script>
+  <script src="web/robot-control.js?v=12" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/gesture-math.js?v=2" defer></script>
   <script src="web/face-identities.js?v=12" defer></script>

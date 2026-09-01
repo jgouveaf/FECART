@@ -117,12 +117,13 @@ void andarParaTras() {
 }
 
 void girarDireita() {
-  aplicarMotores(LOW, HIGH, LOW, LOW);
+  // Pinagem calibrada no chassi físico: somente o motor do lado correto.
+  aplicarMotores(LOW, LOW, LOW, HIGH);
   comandoAplicado = CMD_DIREITA;
 }
 
 void girarEsquerda() {
-  aplicarMotores(LOW, LOW, LOW, HIGH);
+  aplicarMotores(LOW, HIGH, LOW, LOW);
   comandoAplicado = CMD_ESQUERDA;
 }
 

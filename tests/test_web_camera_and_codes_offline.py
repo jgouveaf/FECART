@@ -39,7 +39,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="registeredPeople"',
             'id="codigos"',
             'id="arduinoCode"',
-            'web/arduino-codes.js?v=6',
+            'web/arduino-codes.js?v=7',
             'web/control-state.js?v=1',
             'web/camera-controller.js?v=2',
             'web/face-quality.js?v=1',

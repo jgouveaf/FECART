@@ -45,8 +45,9 @@
   const MIGRATION_KEY = "quantum_tracker_indexeddb_migrated_v1";
   const HUMAN_ENGINE = "human-faceres-3.3.6";
   const REQUIRED_SAMPLES = 5;
+  const MAX_SAMPLES_PER_IDENTITY = 15;
   const EMBEDDING_LENGTH = 1024;
-  const MATCH_THRESHOLD = 0.50;
+  const MATCH_THRESHOLD = window.QuantumFaceIdentityMath.MIN_SIMILARITY;
   const MIN_CONFIDENCE = 0.58;
   const MIN_FACE_SIZE = 140;
   const MIN_REAL = 0.50;
@@ -228,6 +229,15 @@
     return `QT-${String(largest + 1).padStart(3, "0")}`;
   }
 
+  function normalizedPersonName(value) {
+    return String(value || "").trim().replace(/\s+/g, " ").toLocaleLowerCase("pt-BR");
+  }
+
+  function identityByName(value) {
+    const normalized = normalizedPersonName(value);
+    return normalized ? identities.find((identity) => normalizedPersonName(identity.name) === normalized) || null : null;
+  }
+
   function renderIdentities() {
     registeredPeople.replaceChildren();
     identityCount.textContent = `${identities.length} ${identities.length === 1 ? "ID" : "IDs"}`;
@@ -370,38 +380,37 @@
   function identifyFace(face) {
     const box = boxObject(face);
     const known = identities.filter((identity) => identity.engine === HUMAN_ENGINE && identity.embeddings.length);
-    let bestIdentity = null;
-    let bestSimilarity = 0;
-    const compared = [];
-    for (const identity of known) {
-      const match = human.match.find(face.embedding, identity.embeddings, MATCH_OPTIONS);
-      const pairwise = identity.embeddings.map((reference) => human.match.similarity(face.embedding, reference, MATCH_OPTIONS));
-      const similarity = Math.max(Number(match.similarity) || 0, ...pairwise.filter(Number.isFinite));
-      compared.push({ id: identity.id, find: match.similarity, pairwise, similarity });
-      if (similarity > bestSimilarity) {
-        bestIdentity = identity;
-        bestSimilarity = similarity;
-      }
-    }
+    const compared = known.map((identity) => ({
+      identity,
+      scores: identity.embeddings.map((reference) => human.match.similarity(face.embedding, reference, MATCH_OPTIONS)),
+    }));
+    const decision = window.QuantumFaceIdentityMath.chooseIdentity(compared);
+    const bestIdentity = decision.identity;
+    const bestSimilarity = decision.similarity;
     window.quantumFaceDiagnostics = {
       known: known.length,
       bestSimilarity,
+      secondSimilarity: decision.secondSimilarity,
+      margin: decision.margin,
+      decision: decision.reason,
+      threshold: MATCH_THRESHOLD,
       embeddingLength: face.embedding?.length || 0,
       selfSimilarity: human.match.similarity(face.embedding, face.embedding, MATCH_OPTIONS),
-      compared,
+      compared: decision.ranked.map((candidate) => ({
+        id: candidate.identity.id,
+        name: candidate.identity.name,
+        scores: candidate.scores,
+        similarity: candidate.similarity,
+      })),
     };
     const now = performance.now();
     recognitionMemory = recognitionMemory.filter((item) => now - item.seenAt < 1600);
-    if (bestIdentity && bestSimilarity >= MATCH_THRESHOLD) {
+    if (decision.accepted && bestIdentity) {
       const memory = recognitionMemory.find((item) => item.id === bestIdentity.id);
       if (memory) Object.assign(memory, { box, seenAt: now, similarity: bestSimilarity });
       else recognitionMemory.push({ id: bestIdentity.id, name: bestIdentity.name, box, seenAt: now, similarity: bestSimilarity });
       return { id: bestIdentity.id, name: bestIdentity.name, registered: true, similarity: bestSimilarity };
     }
-    const recalled = recognitionMemory
-      .map((item) => ({ item, overlap: intersectionOverUnion(item.box, box) }))
-      .sort((a, b) => b.overlap - a.overlap)[0];
-    if (recalled?.overlap >= 0.38) return { ...recalled.item, registered: true, recalled: true };
     return { id: temporaryIdFor(box), name: "Não cadastrado", registered: false, similarity: bestSimilarity };
   }
 
@@ -530,8 +539,11 @@
   function updatePanel(faces) {
     currentFaces = faces;
     const item = faces.length === 1 ? faces[0] : null;
-    registerButton.disabled = !(item && !item.identity.registered && item.quality.acceptable
+    const existing = identityByName(personName.value);
+    const identityConflict = item?.identity.registered && item.identity.id !== existing?.id;
+    registerButton.disabled = !(item && !identityConflict && item.quality.acceptable
       && item.quality.rawAcceptable && personName.value.trim() && !registering);
+    if (!registering) registerButton.textContent = existing ? `Atualizar rosto de ${existing.name}` : "Validar e cadastrar rosto";
     setCheck(checks.single, faces.length === 1);
     if (!item) {
       resetMetrics();
@@ -758,14 +770,15 @@
     control?.patch("vision", { active: false, status: "OFFLINE", targetId: null, confidence: 0, tracking: "SEARCHING", direction: "PARAR", fps: 0 }, { source: "face-stop" });
   }
 
-  function waitForFreshFace(afterTimestamp, timeoutMs = 30000) {
+  function waitForFreshFace(afterTimestamp, allowedIdentityId = null, timeoutMs = 30000) {
     return new Promise((resolve, reject) => {
       const start = performance.now();
       const check = () => {
         if (!cameraActive) return reject(new Error("A câmera foi desligada durante o cadastro."));
         if (activeView !== "face") return reject(new Error("O cadastro foi interrompido porque a aba da câmera mudou."));
         const item = currentFaces.length === 1 ? currentFaces[0] : null;
-        if (item && item.detectedAt > afterTimestamp && !item.identity.registered
+        const permittedIdentity = !item?.identity.registered || item.identity.id === allowedIdentityId;
+        if (item && item.detectedAt > afterTimestamp && permittedIdentity
           && item.quality.acceptable && item.quality.rawAcceptable) return resolve(item);
         if (performance.now() - start >= timeoutMs) return reject(new Error("Não obtive uma nova amostra válida. Olhe de frente e melhore a iluminação."));
         window.setTimeout(check, 80);
@@ -783,44 +796,52 @@
     retryDetectionButton.disabled = false;
   });
   registerButton.addEventListener("click", async () => {
-    const name = personName.value.trim();
+    const name = personName.value.trim().replace(/\s+/g, " ").slice(0, 60);
+    const existing = identityByName(name);
     let item = currentFaces.length === 1 ? currentFaces[0] : null;
-    if (!name || !item || item.identity.registered || !item.quality.acceptable
+    const identityConflict = item?.identity.registered && item.identity.id !== existing?.id;
+    if (!name || !item || identityConflict || !item.quality.acceptable
       || !item.quality.rawAcceptable || registering) return;
+    if (existing && !item.identity.registered
+      && !window.confirm(`${existing.name} já está salvo. Deseja acrescentar estas novas amostras ao cadastro existente?`)) return;
     registering = true;
     registerButton.disabled = true;
     const embeddings = [];
     const photo = captureFace(item.face);
     try {
       for (let index = 0; index < REQUIRED_SAMPLES; index += 1) {
-        if (index > 0) item = await waitForFreshFace(item.detectedAt);
+        if (index > 0) item = await waitForFreshFace(item.detectedAt, existing?.id || null);
         embeddings.push(Array.from(item.quality.embedding));
         setSampleProgress(index + 1);
         registerButton.textContent = `Capturando ${index + 1}/${REQUIRED_SAMPLES}`;
         faceHint.textContent = index + 1 < REQUIRED_SAMPLES ? "Continue olhando para a câmera e mova levemente a cabeça." : "Salvando cadastro local…";
       }
       const identity = {
-        id: nextPermanentId(),
+        id: existing?.id || nextPermanentId(),
         name,
         engine: HUMAN_ENGINE,
-        embeddings,
+        embeddings: [...(existing?.embeddings || []), ...embeddings].slice(-MAX_SAMPLES_PER_IDENTITY),
         descriptors: [],
         photo,
-        createdAt: new Date().toISOString(),
-        enrollment: { samples: REQUIRED_SAMPLES, confidence: item.quality.confidence, real: item.quality.real, live: item.quality.live },
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        enrollment: {
+          samples: [...(existing?.embeddings || []), ...embeddings].slice(-MAX_SAMPLES_PER_IDENTITY).length,
+          confidence: item.quality.confidence,
+          real: item.quality.real,
+          live: item.quality.live,
+        },
       };
-      identities.push(identity);
-      try {
-        await putRecord(identity);
-      } catch (error) {
-        identities = identities.filter((item) => item !== identity);
-        throw error;
-      }
+      await putRecord(identity);
+      if (existing) identities = identities.map((candidate) => candidate.id === existing.id ? identity : candidate);
+      else identities.push(identity);
       renderIdentities();
       personName.value = "";
       currentFaceId.textContent = identity.id;
-      faceHint.textContent = `${identity.name} cadastrado(a) com ${REQUIRED_SAMPLES} amostras no navegador.`;
-      registerButton.textContent = "Cadastrado ✓";
+      faceHint.textContent = existing
+        ? `${identity.name} atualizado(a). O cadastro agora possui ${identity.embeddings.length} amostras.`
+        : `${identity.name} cadastrado(a) com ${REQUIRED_SAMPLES} amostras neste navegador.`;
+      registerButton.textContent = existing ? "Cadastro atualizado ✓" : "Cadastrado ✓";
     } catch (error) {
       faceHint.textContent = `Não foi possível cadastrar: ${error.message}`;
       setSampleProgress(0);

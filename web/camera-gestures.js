@@ -17,19 +17,22 @@
   const fpsElement = document.getElementById("gestureFps");
   const deliveryStatus = document.getElementById("gestureDeliveryStatus");
 
-  const COMMANDS = Object.freeze({ 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "PARAR", 5: "GIRAR" });
+  // Lidos uma vez do painel "Comandos & configurações" (aba Códigos). Editar lá
+  // só faz efeito na próxima vez que a página é recarregada.
+  const userConfig = window.QuantumUserConfig?.get() || null;
+  const COMMANDS = Object.freeze(userConfig ? { ...userConfig.gestureMap } : { 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "PARAR", 5: "GIRAR" });
   const CONNECTIONS = Object.freeze([
     [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8], [5,9],[9,10],[10,11],[11,12],
     [9,13],[13,14],[14,15],[15,16], [13,17],[17,18],[18,19],[19,20],[0,17],
   ]);
-  const MIN_CONFIDENCE = 0.65;
+  const MIN_CONFIDENCE = userConfig?.minConfidence ?? 0.65;
   const CONFIRM_FRAMES = 4;
   const STOP_CONFIRM_FRAMES = 2;
   const CONFIRM_MS = 180;
-  const COMMAND_COOLDOWN_MS = 650;
+  const COMMAND_COOLDOWN_MS = userConfig?.commandCooldownMs ?? 650;
   const COMMAND_HEARTBEAT_MS = 400;
   const LOST_HAND_STOP_MS = 500;
-  const UNSTABLE_GESTURE_STOP_MS = 500;
+  const UNSTABLE_GESTURE_STOP_MS = userConfig?.unstableStopMs ?? 500;
   const INFERENCE_INTERVAL_MS = 83;
   const MODEL_IDLE_RELEASE_MS = 60000;
 

@@ -291,8 +291,13 @@
   const runCode = document.getElementById("runCode");
   const copyCode = document.getElementById("copyCode");
   const downloadCode = document.getElementById("downloadCode");
-  let loadedCode = "";
+  const saveCode = document.getElementById("saveCode");
+  const restoreCode = document.getElementById("restoreCode");
+  const codeEditFlag = document.getElementById("codeEditFlag");
+  let bundledCodeForSource = "";
   let selectedProgram = "principal";
+  let selectedSource = "";
+  let selectedFilename = "";
   let downloadObjectUrl = "";
 
   const PROGRAM_LABELS = Object.freeze({
@@ -307,6 +312,41 @@
     return "principal";
   }
 
+  // Edições ficam só no localStorage deste navegador. Nada aqui é enviado
+  // ao Arduino: para valer de verdade, baixe o .ino e grave pelo Arduino IDE.
+  const CODE_EDIT_PREFIX = "quantumCodeEdit:";
+
+  function readStoredCode(source) {
+    try {
+      return window.localStorage.getItem(CODE_EDIT_PREFIX + source);
+    } catch {
+      return null;
+    }
+  }
+
+  function writeStoredCode(source, code) {
+    try {
+      window.localStorage.setItem(CODE_EDIT_PREFIX + source, code);
+    } catch {
+      // Sem storage disponível (modo privado, cota cheia): edição fica só na tela.
+    }
+  }
+
+  function clearStoredCode(source) {
+    try {
+      window.localStorage.removeItem(CODE_EDIT_PREFIX + source);
+    } catch {
+      // ignora
+    }
+  }
+
+  function updateEditIndicators() {
+    const stored = readStoredCode(selectedSource);
+    const edited = stored !== null && stored !== bundledCodeForSource;
+    if (codeEditFlag) codeEditFlag.hidden = !edited;
+    if (restoreCode) restoreCode.hidden = !edited;
+  }
+
   function prepareCodeDownload(code, filename) {
     if (downloadObjectUrl) URL.revokeObjectURL(downloadObjectUrl);
     downloadObjectUrl = URL.createObjectURL(new Blob([code], { type: "text/x-arduino;charset=utf-8" }));
@@ -318,6 +358,8 @@
     const source = tab.dataset.codeSource;
     const filename = tab.dataset.filename;
     selectedProgram = programFromSource(source);
+    selectedSource = source;
+    selectedFilename = filename;
     if (runCode) {
       runCode.textContent = PROGRAM_LABELS[selectedProgram];
       runCode.dataset.program = selectedProgram;
@@ -331,25 +373,31 @@
     document.getElementById("codeViewer")?.setAttribute("aria-labelledby", tab.id);
     codeFilename.textContent = filename;
     codeStatus.textContent = "CARREGANDO";
-    codeElement.textContent = "Carregando código…";
+    codeElement.value = "Carregando código…";
     const bundledCode = window.QUANTUM_ARDUINO_CODES?.[source];
     if (bundledCode) {
-      loadedCode = bundledCode;
-      codeElement.textContent = loadedCode;
-      codeStatus.textContent = "PRONTO · INTEGRADO";
-      prepareCodeDownload(loadedCode, filename);
+      bundledCodeForSource = bundledCode;
+      const stored = readStoredCode(source);
+      const edited = stored !== null && stored !== bundledCode;
+      codeElement.value = edited ? stored : bundledCode;
+      codeStatus.textContent = edited ? "EDITADO NESTE NAVEGADOR" : "PRONTO · INTEGRADO";
+      updateEditIndicators();
+      prepareCodeDownload(codeElement.value, filename);
       return;
     }
     try {
       const response = await fetch(new URL(source, document.baseURI));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      loadedCode = await response.text();
-      codeElement.textContent = loadedCode;
-      codeStatus.textContent = "PRONTO";
-      prepareCodeDownload(loadedCode, filename);
+      bundledCodeForSource = await response.text();
+      const stored = readStoredCode(source);
+      const edited = stored !== null && stored !== bundledCodeForSource;
+      codeElement.value = edited ? stored : bundledCodeForSource;
+      codeStatus.textContent = edited ? "EDITADO NESTE NAVEGADOR" : "PRONTO";
+      updateEditIndicators();
+      prepareCodeDownload(codeElement.value, filename);
     } catch (error) {
-      loadedCode = "";
-      codeElement.textContent = `Não foi possível carregar ${filename}. Abra o site publicado ou tente novamente.\n\nDetalhe: ${error.message}`;
+      bundledCodeForSource = "";
+      codeElement.value = `Não foi possível carregar ${filename}. Abra o site publicado ou tente novamente.\n\nDetalhe: ${error.message}`;
       codeStatus.textContent = "ERRO";
     }
   }
@@ -401,19 +449,102 @@
   });
 
   copyCode.addEventListener("click", async () => {
-    if (!loadedCode) return;
+    if (!codeElement.value) return;
     try {
-      await navigator.clipboard.writeText(loadedCode);
+      await navigator.clipboard.writeText(codeElement.value);
       copyCode.textContent = "Copiado!";
       setTimeout(() => { copyCode.textContent = "Copiar código"; }, 1600);
     } catch {
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(codeElement);
-      selection.removeAllRanges(); selection.addRange(range);
+      codeElement.focus();
+      codeElement.select();
       copyCode.textContent = "Código selecionado";
+      setTimeout(() => { copyCode.textContent = "Copiar código"; }, 1600);
     }
   });
+
+  downloadCode.addEventListener("click", () => {
+    prepareCodeDownload(codeElement.value, selectedFilename || "sketch.ino");
+  });
+
+  saveCode?.addEventListener("click", () => {
+    if (!selectedSource) return;
+    writeStoredCode(selectedSource, codeElement.value);
+    updateEditIndicators();
+    const original = saveCode.textContent;
+    saveCode.textContent = "Salvo neste navegador";
+    codeStatus.textContent = codeElement.value === bundledCodeForSource ? "PRONTO · INTEGRADO" : "EDITADO NESTE NAVEGADOR";
+    setTimeout(() => { saveCode.textContent = original; }, 1600);
+  });
+
+  restoreCode?.addEventListener("click", () => {
+    if (!selectedSource) return;
+    clearStoredCode(selectedSource);
+    codeElement.value = bundledCodeForSource;
+    codeStatus.textContent = "PRONTO · INTEGRADO";
+    updateEditIndicators();
+    prepareCodeDownload(codeElement.value, selectedFilename);
+  });
+
+  // Painel "Comandos & configurações": edita web/user-config.js (localStorage),
+  // lido pela detecção de gestos na próxima vez que a página carregar.
+  (function setupConfigPanel() {
+    const configApi = window.QuantumUserConfig;
+    if (!configApi) return;
+    const fingerSelects = [1, 2, 3, 4, 5].map((finger) => document.getElementById(`gestureMap${finger}`));
+    const confidenceInput = document.getElementById("configMinConfidence");
+    const cooldownInput = document.getElementById("configCooldown");
+    const unstableInput = document.getElementById("configUnstable");
+    const saveConfigButton = document.getElementById("saveConfig");
+    const resetConfigButton = document.getElementById("resetConfig");
+    const statusElement = document.getElementById("configStatus");
+    if (!saveConfigButton || !resetConfigButton) return;
+
+    fingerSelects.forEach((select) => {
+      if (!select) return;
+      configApi.validCommands.forEach((command) => {
+        const option = document.createElement("option");
+        option.value = command;
+        option.textContent = command;
+        select.appendChild(option);
+      });
+    });
+
+    function populate(config) {
+      fingerSelects.forEach((select, index) => {
+        if (select) select.value = config.gestureMap[index + 1];
+      });
+      if (confidenceInput) confidenceInput.value = Math.round(config.minConfidence * 100);
+      if (cooldownInput) cooldownInput.value = config.commandCooldownMs;
+      if (unstableInput) unstableInput.value = config.unstableStopMs;
+      if (statusElement) {
+        statusElement.textContent = configApi.isCustomized()
+          ? "Usando configurações salvas neste navegador."
+          : "Usando valores padrão.";
+      }
+    }
+
+    populate(configApi.get());
+
+    saveConfigButton.addEventListener("click", () => {
+      const gestureMap = {};
+      fingerSelects.forEach((select, index) => {
+        if (select) gestureMap[index + 1] = select.value;
+      });
+      configApi.save({
+        gestureMap,
+        minConfidence: Number(confidenceInput?.value) / 100,
+        commandCooldownMs: Number(cooldownInput?.value),
+        unstableStopMs: Number(unstableInput?.value),
+      });
+      populate(configApi.get());
+      if (statusElement) statusElement.textContent = "Salvo! Recarregue a página (F5) para aplicar aos gestos.";
+    });
+
+    resetConfigButton.addEventListener("click", () => {
+      populate(configApi.reset());
+      if (statusElement) statusElement.textContent = "Restaurado ao padrão. Recarregue a página (F5) para aplicar.";
+    });
+  })();
 
   window.addEventListener("resize", () => { resizeCanvas(); if (!world.running) draw(); });
   document.addEventListener("visibilitychange", scheduleAnimation);

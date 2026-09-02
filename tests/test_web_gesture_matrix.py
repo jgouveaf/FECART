@@ -75,7 +75,15 @@ function transform(points, side, rotationIndex, scaleIndex, caseIndex) {
     const y2 = x * Math.sin(rz) + y * Math.cos(rz);
     x = x2; y = y2;
     if (side === 1) { x = -x; z = -z; }
-    const noise = Math.sin((caseIndex + 1) * (landmarkIndex + 3) * 1.618) * 0.0011 * scale;
+    // Dorso da mão: o modelo costuma encurtar visualmente as pontas do anelar
+    // e mindinho e produzir mais ruído de profundidade.
+    if (side === 1 && [15, 16, 19, 20].includes(landmarkIndex)) {
+      const compression = landmarkIndex === 16 || landmarkIndex === 20 ? 0.94 : 0.97;
+      y *= compression;
+      z *= 1.12;
+    }
+    const dorsalNoise = side === 1 && landmarkIndex >= 13 ? 1.45 : 1;
+    const noise = Math.sin((caseIndex + 1) * (landmarkIndex + 3) * 1.618) * 0.0011 * scale * dorsalNoise;
     return point(x * scale + noise, y * scale - noise * 0.7, z * scale + noise * 0.4);
   });
 }

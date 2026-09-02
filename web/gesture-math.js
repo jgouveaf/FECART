@@ -40,36 +40,39 @@
     return Math.max(0, Math.min(1, 0.5 + (value - threshold) / Math.max(transition, EPSILON)));
   }
 
-  // Com o dorso voltado para a camera, o MediaPipe pode comprimir uma ou duas
-  // medidas do anelar/mindinho. A mediana exige concordancia da maioria dos
-  // sinais sem deixar uma unica medida instavel fechar um dedo aberto.
-  function robustProbability(scores) {
-    const ordered = [...scores].sort((first, second) => first - second);
-    return ordered[Math.floor(ordered.length / 2)];
+  function weightedProbability(entries) {
+    const totalWeight = entries.reduce((sum, entry) => sum + entry[1], 0);
+    if (totalWeight < EPSILON) return 0;
+    return entries.reduce((sum, entry) => sum + entry[0] * entry[1], 0) / totalWeight;
   }
 
   function evaluateFinger(points, mcp, pip, dip, tip, palmScale, palmCenter) {
-    const scores = [
-      thresholdScore(distance(points[tip], points[mcp]) / palmScale, 0.56, 0.30),
-      thresholdScore((distance(points[tip], points[0]) - distance(points[pip], points[0])) / palmScale, 0.08, 0.22),
-      thresholdScore((distance(points[tip], palmCenter) - distance(points[pip], palmCenter)) / palmScale, 0.08, 0.22),
-      thresholdScore(jointAngle(points[mcp], points[pip], points[dip]), 105, 70),
-      thresholdScore(jointAngle(points[pip], points[dip], points[tip]), 105, 70),
-    ];
-    const probability = robustProbability(scores);
-    return { extended: probability >= 0.5, probability, certainty: Math.abs(probability - 0.5) * 2 };
+    const chainLength = distance(points[mcp], points[pip])
+      + distance(points[pip], points[dip]) + distance(points[dip], points[tip]);
+    const straightness = distance(points[mcp], points[tip]) / Math.max(chainLength, EPSILON);
+    const probability = weightedProbability([
+      [thresholdScore(straightness, 0.78, 0.24), 0.36],
+      [thresholdScore(jointAngle(points[mcp], points[pip], points[dip]), 125, 70), 0.22],
+      [thresholdScore(jointAngle(points[pip], points[dip], points[tip]), 130, 65), 0.18],
+      [thresholdScore(distance(points[tip], points[mcp]) / palmScale, 0.56, 0.32), 0.14],
+      [thresholdScore((distance(points[tip], palmCenter) - distance(points[pip], palmCenter)) / palmScale, 0.05, 0.24), 0.10],
+    ]);
+    return { extended: probability >= 0.52, probability, certainty: Math.min(1, Math.abs(probability - 0.52) * 2.3) };
   }
 
   function evaluateThumb(points, palmScale, palmCenter) {
-    const scores = [
-      thresholdScore(jointAngle(points[1], points[2], points[3]), 105, 70),
-      thresholdScore(jointAngle(points[2], points[3], points[4]), 110, 70),
-      thresholdScore(distance(points[4], palmCenter) / palmScale, 0.82, 0.45),
-      thresholdScore(distance(points[4], points[5]) / palmScale, 0.55, 0.35),
-      thresholdScore((distance(points[4], palmCenter) - distance(points[3], palmCenter)) / palmScale, 0.08, 0.22),
-    ];
-    const probability = robustProbability(scores);
-    return { extended: probability >= 0.5, probability, certainty: Math.abs(probability - 0.5) * 2 };
+    const chainLength = distance(points[1], points[2])
+      + distance(points[2], points[3]) + distance(points[3], points[4]);
+    const straightness = distance(points[1], points[4]) / Math.max(chainLength, EPSILON);
+    const probability = weightedProbability([
+      [thresholdScore(straightness, 0.76, 0.28), 0.25],
+      [thresholdScore(jointAngle(points[1], points[2], points[3]), 125, 70), 0.14],
+      [thresholdScore(jointAngle(points[2], points[3], points[4]), 130, 65), 0.14],
+      [thresholdScore(distance(points[4], palmCenter) / palmScale, 0.82, 0.42), 0.19],
+      [thresholdScore(distance(points[4], points[5]) / palmScale, 0.58, 0.34), 0.20],
+      [thresholdScore((distance(points[4], palmCenter) - distance(points[3], palmCenter)) / palmScale, 0.05, 0.24), 0.08],
+    ]);
+    return { extended: probability >= 0.54, probability, certainty: Math.min(1, Math.abs(probability - 0.54) * 2.4) };
   }
 
   function fingerExtended(points, mcp, pip, dip, tip, palmScale, palmCenter) {
@@ -80,8 +83,7 @@
     return evaluateThumb(points, palmScale, palmCenter).extended;
   }
 
-  function classifyFingerCountDetails(imageLandmarks, worldLandmarks) {
-    const points = worldLandmarks?.length === 21 ? worldLandmarks : imageLandmarks;
+  function evaluateHand(points) {
     if (!points || points.length !== 21) return { count: 0, confidence: 0, fingers: [] };
     const palmScale = Math.max(distance(points[0], points[9]), distance(points[5], points[17]));
     if (palmScale < EPSILON) return { count: 0, confidence: 0, fingers: [] };
@@ -93,13 +95,30 @@
       evaluateFinger(points, 13, 14, 15, 16, palmScale, palmCenter),
       evaluateFinger(points, 17, 18, 19, 20, palmScale, palmCenter),
     ];
+    return { evaluations, palmScale };
+  }
+
+  function classifyFingerCountDetails(imageLandmarks, worldLandmarks) {
+    const image = evaluateHand(imageLandmarks);
+    const world = worldLandmarks?.length === 21 ? evaluateHand(worldLandmarks) : null;
+    const sources = [image, world].filter((item) => item?.evaluations);
+    if (!sources.length) return { count: 0, confidence: 0, fingers: [] };
+    const evaluations = image?.evaluations && world?.evaluations
+      ? image.evaluations.map((item, index) => {
+        const probability = item.probability * 0.62 + world.evaluations[index].probability * 0.38;
+        const threshold = index === 0 ? 0.54 : 0.52;
+        return { probability, extended: probability >= threshold, certainty: Math.min(1, Math.abs(probability - threshold) * 2.35) };
+      })
+      : sources[0].evaluations;
     const fingers = evaluations.map((item) => item.extended);
-    const confidence = evaluations.reduce((sum, item) => sum + item.certainty, 0) / evaluations.length;
+    const certainties = evaluations.map((item) => item.certainty).sort((a, b) => a - b);
+    const confidence = certainties[Math.floor(certainties.length / 2)];
     return {
       count: fingers.filter(Boolean).length,
       confidence: Math.max(0, Math.min(1, confidence)),
       fingers,
-      palmScale,
+      probabilities: evaluations.map((item) => item.probability),
+      palmScale: image?.palmScale || world?.palmScale,
     };
   }
 

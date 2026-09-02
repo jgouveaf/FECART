@@ -47,7 +47,9 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/control-state.js?v=1',
             'web/camera-controller.js?v=2',
             'web/face-quality.js?v=1',
-            'web/gesture-math.js?v=2',
+            'web/gesture-math.js?v=4',
+            'id="flashOfficialFirmware"',
+            'web/arduino-flasher.js?v=3',
             'web/simulator-controller.js?v=2',
             'web/robot-control.js?v=12',
             'web/code-editor-utils.js?v=1',
@@ -60,10 +62,10 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             self.assertIn(required, self.html)
 
     def test_arduino_installation_workflow_is_explicit(self) -> None:
-        self.assertIn("Gravar uma vez", self.html)
-        self.assertIn("Liberar a porta", self.html)
-        self.assertIn("O painel envia modos e comandos; não envia sketches.", self.html)
-        self.assertIn("Arduino IDE somente para instalar ou atualizar.", self.html)
+        self.assertIn("Gravar pelo site", self.html)
+        self.assertIn("Aguardar 100%", self.html)
+        self.assertIn("O firmware oficial pode ser instalado diretamente pelo site.", self.html)
+        self.assertIn('id="flashOfficialFirmware"', self.html)
 
     def test_every_code_source_exists_and_is_an_arduino_sketch(self) -> None:
         sources = re.findall(r'data-code-source="([^"]+)"', self.html)

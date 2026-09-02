@@ -39,7 +39,11 @@
         <h1>Quantum Tracker</h1>
         <p>Acesso restrito ao painel de controle.</p>
         <label>Usuário<input id="authUser" name="usuario" type="text" autocomplete="username" required></label>
-        <label>Senha<input id="authPass" name="senha" type="password" autocomplete="current-password" required></label>
+        <label for="authPass">Senha</label>
+        <div class="password-field">
+          <input id="authPass" name="senha" type="password" autocomplete="current-password" required aria-describedby="authError">
+          <button id="togglePassword" class="password-toggle" type="button" aria-controls="authPass" aria-pressed="false">Mostrar</button>
+        </div>
         <button type="submit" class="primary-button">Entrar</button>
         <small id="authError" role="alert" hidden>Usuário ou senha incorretos.</small>
         <small class="auth-note">Este bloqueio é só uma barreira simples do lado do navegador; não protege dados sensíveis.</small>
@@ -48,6 +52,15 @@
 
     const form = overlay.querySelector("#authForm");
     const error = overlay.querySelector("#authError");
+    const passwordInput = overlay.querySelector("#authPass");
+    const togglePassword = overlay.querySelector("#togglePassword");
+    togglePassword.addEventListener("click", () => {
+      const showing = passwordInput.type === "text";
+      passwordInput.type = showing ? "password" : "text";
+      togglePassword.textContent = showing ? "Mostrar" : "Ocultar";
+      togglePassword.setAttribute("aria-pressed", String(!showing));
+      passwordInput.focus();
+    });
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const user = overlay.querySelector("#authUser").value.trim();
@@ -57,8 +70,11 @@
         unlock();
       } else {
         error.hidden = false;
-        overlay.querySelector("#authPass").value = "";
-        overlay.querySelector("#authPass").focus();
+        passwordInput.value = "";
+        passwordInput.type = "password";
+        togglePassword.textContent = "Mostrar";
+        togglePassword.setAttribute("aria-pressed", "false");
+        passwordInput.focus();
       }
     });
   }

@@ -4,6 +4,7 @@
   const MIN_SIMILARITY = 0.80;
   const AMBIGUITY_MARGIN = 0.05;
   const TOP_SAMPLE_COUNT = 3;
+  const MIN_REFERENCE_SAMPLES = 3;
 
   function validScores(scores) {
     return (Array.isArray(scores) ? scores : [])
@@ -24,6 +25,7 @@
       .map((candidate) => ({
         ...candidate,
         similarity: aggregateSimilarity(candidate.scores),
+        referenceCount: validScores(candidate.scores).length,
       }))
       .sort((first, second) => second.similarity - first.similarity);
 
@@ -31,7 +33,8 @@
     const second = ranked[1] || null;
     const similarity = best?.similarity || 0;
     const margin = second ? similarity - second.similarity : 1;
-    const accepted = Boolean(best && similarity >= MIN_SIMILARITY && margin >= AMBIGUITY_MARGIN);
+    const accepted = Boolean(best && best.referenceCount >= MIN_REFERENCE_SAMPLES
+      && similarity >= MIN_SIMILARITY && margin >= AMBIGUITY_MARGIN);
 
     return {
       accepted,
@@ -42,11 +45,13 @@
       ranked,
       reason: !best
         ? "NO_IDENTITIES"
-        : similarity < MIN_SIMILARITY
-          ? "BELOW_THRESHOLD"
-          : margin < AMBIGUITY_MARGIN
-            ? "AMBIGUOUS"
-            : "MATCH",
+        : best.referenceCount < MIN_REFERENCE_SAMPLES
+          ? "INSUFFICIENT_SAMPLES"
+          : similarity < MIN_SIMILARITY
+            ? "BELOW_THRESHOLD"
+            : margin < AMBIGUITY_MARGIN
+              ? "AMBIGUOUS"
+              : "MATCH",
     };
   }
 
@@ -54,6 +59,7 @@
     MIN_SIMILARITY,
     AMBIGUITY_MARGIN,
     TOP_SAMPLE_COUNT,
+    MIN_REFERENCE_SAMPLES,
     aggregateSimilarity,
     chooseIdentity,
   });

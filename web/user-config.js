@@ -1,6 +1,6 @@
 // Configurações do site que o operador pode editar pela aba "Códigos".
-// Guardado só no localStorage deste navegador: recarregue a página (F5)
-// depois de salvar para os módulos de câmera/gestos lerem os novos valores.
+// Guardado só no localStorage deste navegador. Uma notificação local aplica
+// os novos valores aos módulos de câmera/gestos assim que o operador salva.
 // Isto NÃO altera o firmware gravado no Arduino: pinos, distância de
 // obstáculo e tempos de manobra só mudam editando o .ino e regravando pelo
 // Arduino IDE.
@@ -50,6 +50,13 @@
   }
 
   let current = sanitize(readStorage());
+  let lastSavePersistent = true;
+
+  function notifyChanged(source) {
+    window.dispatchEvent(new CustomEvent("quantum:user-config-changed", {
+      detail: { config: current, persistent: lastSavePersistent, source },
+    }));
+  }
 
   function get() {
     return current;
@@ -70,21 +77,26 @@
       gestureMap: { ...current.gestureMap, ...(partial && partial.gestureMap ? partial.gestureMap : {}) },
     });
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+      const serialized = JSON.stringify(merged);
+      window.localStorage.setItem(STORAGE_KEY, serialized);
+      lastSavePersistent = window.localStorage.getItem(STORAGE_KEY) === serialized;
     } catch {
-      // Armazenamento indisponível (modo privado, cota cheia): mantém em memória.
+      lastSavePersistent = false;
     }
     current = merged;
+    notifyChanged("save");
     return current;
   }
 
   function reset() {
     try {
       window.localStorage.removeItem(STORAGE_KEY);
+      lastSavePersistent = window.localStorage.getItem(STORAGE_KEY) === null;
     } catch {
-      // ignora
+      lastSavePersistent = false;
     }
     current = sanitize(null);
+    notifyChanged("reset");
     return current;
   }
 
@@ -95,5 +107,6 @@
     save,
     reset,
     isCustomized,
+    wasLastSavePersistent() { return lastSavePersistent; },
   });
 })();

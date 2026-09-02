@@ -194,6 +194,7 @@
       descriptors: legacyDescriptors,
       photo: item.photo,
       createdAt: item.createdAt || new Date().toISOString(),
+      updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
       enrollment: item.enrollment || null,
     };
   }
@@ -236,6 +237,15 @@
   function identityByName(value) {
     const normalized = normalizedPersonName(value);
     return normalized ? identities.find((identity) => normalizedPersonName(identity.name) === normalized) || null : null;
+  }
+
+  function mergeEmbeddings(existing = [], incoming = []) {
+    const unique = new Map();
+    for (const embedding of [...existing, ...incoming]) {
+      if (!Array.isArray(embedding) || embedding.length !== EMBEDDING_LENGTH) continue;
+      unique.set(embedding.join(","), embedding);
+    }
+    return [...unique.values()].slice(-MAX_SAMPLES_PER_IDENTITY);
   }
 
   function renderIdentities() {
@@ -379,6 +389,17 @@
 
   function identifyFace(face) {
     const box = boxObject(face);
+    if (!Array.isArray(face.embedding) || face.embedding.length !== EMBEDDING_LENGTH) {
+      window.quantumFaceDiagnostics = {
+        known: identities.length,
+        bestSimilarity: 0,
+        decision: "INVALID_EMBEDDING",
+        threshold: MATCH_THRESHOLD,
+        embeddingLength: face.embedding?.length || 0,
+        compared: [],
+      };
+      return { id: temporaryIdFor(box), name: "Não cadastrado", registered: false, similarity: 0 };
+    }
     const known = identities.filter((identity) => identity.engine === HUMAN_ENGINE && identity.embeddings.length);
     const compared = known.map((identity) => ({
       identity,
@@ -820,13 +841,13 @@
         id: existing?.id || nextPermanentId(),
         name,
         engine: HUMAN_ENGINE,
-        embeddings: [...(existing?.embeddings || []), ...embeddings].slice(-MAX_SAMPLES_PER_IDENTITY),
+        embeddings: mergeEmbeddings(existing?.embeddings, embeddings),
         descriptors: [],
         photo,
         createdAt: existing?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         enrollment: {
-          samples: [...(existing?.embeddings || []), ...embeddings].slice(-MAX_SAMPLES_PER_IDENTITY).length,
+          samples: mergeEmbeddings(existing?.embeddings, embeddings).length,
           confidence: item.quality.confidence,
           real: item.quality.real,
           live: item.quality.live,
@@ -879,15 +900,31 @@
       if (!imported.length) throw new Error("Nenhum cadastro facial válido foi encontrado.");
       if (identities.length && !window.confirm(`Importar ${imported.length} cadastro(s) e manter os atuais?`)) return;
       let added = 0;
+      let updated = 0;
       for (const candidate of imported) {
-        if (identities.some((identity) => identity.id === candidate.id && identity.name === candidate.name)) continue;
+        const sameName = identityByName(candidate.name);
+        if (sameName) {
+          const mergedEmbeddings = mergeEmbeddings(sameName.embeddings, candidate.embeddings);
+          const merged = {
+            ...sameName,
+            engine: mergedEmbeddings.length ? HUMAN_ENGINE : sameName.engine,
+            embeddings: mergedEmbeddings,
+            photo: candidate.photo || sameName.photo,
+            updatedAt: new Date().toISOString(),
+            enrollment: { ...(sameName.enrollment || {}), samples: mergedEmbeddings.length },
+          };
+          await putRecord(merged);
+          identities = identities.map((identity) => identity.id === sameName.id ? merged : identity);
+          updated += 1;
+          continue;
+        }
         if (identities.some((identity) => identity.id === candidate.id)) candidate.id = nextPermanentId();
         await putRecord(candidate);
         identities.push(candidate);
         added += 1;
       }
       renderIdentities();
-      faceHint.textContent = `${added} cadastro(s) importado(s).`;
+      faceHint.textContent = `${added} cadastro(s) novo(s) e ${updated} atualizado(s).`;
     } catch (error) {
       faceHint.textContent = `Falha ao importar backup: ${error.message}`;
     }

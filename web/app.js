@@ -19,11 +19,12 @@
   const followModeButton = document.getElementById("simFollowMode");
   const gestureModeButton = document.getElementById("simGestureMode");
   const simulatorCommandButtons = [...document.querySelectorAll("[data-simulator-command]")];
-  const modeTestButtons = [...document.querySelectorAll("[data-run-mode-test]")];
-  const followTestButtons = [...document.querySelectorAll("[data-follow-test]")];
-  const gestureTestButtons = [...document.querySelectorAll("[data-gesture-test]")];
-  const modeTestCards = [...document.querySelectorAll("[data-mode-test-card]")];
-  const modeTestResult = document.getElementById("modeTestResult");
+  const testTargetSimulatorButton = document.getElementById("testTargetSimulator");
+  const testTargetArduinoButton = document.getElementById("testTargetArduino");
+  const testConnectArduinoButton = document.getElementById("testConnectArduino");
+  const testTargetStatus = document.getElementById("testTargetStatus");
+  const testEnvironmentValue = document.getElementById("testEnvironmentValue");
+  const testCanvasBadge = document.getElementById("testCanvasBadge");
 
   const world = {
     width: 960,
@@ -43,10 +44,80 @@
   let simulatorVisible = true;
   let animationFrame = 0;
   let lastSimulatorUiSignature = "";
+  let testTarget = "simulator";
+
+  const ROBOT_MODE_BY_SIMULATOR_MODE = Object.freeze({ AUTONOMO: 1, SEGUIR: 2, GESTOS: 3 });
+
+  function robotTestState() {
+    const robot = window.quantumRobot;
+    const central = window.QuantumControl?.state;
+    return {
+      available: Boolean(robot),
+      connected: Boolean(robot?.connected),
+      emergency: Boolean(central?.safety?.emergency),
+      transitioning: central?.mode?.phase === "PREPARING",
+    };
+  }
+
+  function renderTestTarget() {
+    const robotState = robotTestState();
+    const physical = testTarget === "arduino";
+    testTargetSimulatorButton.classList.toggle("active", !physical);
+    testTargetArduinoButton.classList.toggle("active", physical);
+    testTargetSimulatorButton.setAttribute("aria-pressed", String(!physical));
+    testTargetArduinoButton.setAttribute("aria-pressed", String(physical));
+    testConnectArduinoButton.hidden = !physical || robotState.connected;
+    testEnvironmentValue.textContent = physical ? (robotState.connected ? "ARDUINO USB" : "ARDUINO OFFLINE") : "VIRTUAL";
+    testCanvasBadge.textContent = physical ? "PRÉVIA + ARDUINO" : "SIMULAÇÃO ATIVA";
+    if (!physical) testTargetStatus.textContent = "Somente a prévia virtual receberá os comandos.";
+    else if (!robotState.available) testTargetStatus.textContent = "Controle USB ainda não carregou. Atualize a página.";
+    else if (!robotState.connected) testTargetStatus.textContent = "Arduino desconectado. Clique em “Conectar Arduino”.";
+    else if (robotState.transitioning) testTargetStatus.textContent = "Arduino conectado · aguardando confirmação da troca de modo.";
+    else if (robotState.emergency) testTargetStatus.textContent = "Arduino conectado, mas bloqueado por segurança. Confira as rodas e libere o ESTOP no painel abaixo.";
+    else testTargetStatus.textContent = "Arduino conectado · os botões e o teclado enviam comandos reais por cerca de 1 segundo.";
+  }
+
+  function setTestTarget(target) {
+    if (!["simulator", "arduino"].includes(target)) return false;
+    testTarget = target;
+    lastSimulatorUiSignature = "";
+    renderTestTarget();
+    renderSimulatorControls();
+    return true;
+  }
+
+  function sendModeToArduino(mode) {
+    if (testTarget !== "arduino") return true;
+    const robot = window.quantumRobot;
+    if (!robot?.connected) {
+      renderTestTarget();
+      return false;
+    }
+    const accepted = robot.requestMode(ROBOT_MODE_BY_SIMULATOR_MODE[mode], "test-panel");
+    testTargetStatus.textContent = accepted
+      ? `Solicitando modo ${mode} ao Arduino…`
+      : `Modo ${mode} já selecionado. Se estiver bloqueado, libere o ESTOP no painel abaixo.`;
+    return accepted;
+  }
+
+  function sendCommandToArduino(command, source) {
+    if (testTarget !== "arduino" || source === "GESTO") return true;
+    const robot = window.quantumRobot;
+    if (!robot?.connected) {
+      renderTestTarget();
+      return false;
+    }
+    const accepted = robot.send(command);
+    testTargetStatus.textContent = accepted
+      ? `${command} enviado ao Arduino · o comando expira automaticamente se não for repetido.`
+      : `${command} não foi enviado. Confira conexão, modo, sensor e ESTOP.`;
+    return accepted;
+  }
 
   function renderSimulatorControls(now = performance.now()) {
     const state = simulatorCommands.snapshot(now);
-    const signature = `${state.mode}|${state.command}|${state.source}`;
+    const robotState = robotTestState();
+    const signature = `${state.mode}|${state.command}|${state.source}|${testTarget}|${robotState.connected}|${robotState.emergency}|${robotState.transitioning}`;
     if (signature === lastSimulatorUiSignature) return;
     lastSimulatorUiSignature = signature;
     autonomousModeButton.classList.toggle("active", state.mode === "AUTONOMO");
@@ -60,8 +131,9 @@
       button.disabled = state.mode !== "GESTOS";
     });
     simulatorSourceValue.textContent = state.source;
+    const targetLabel = testTarget === "arduino" ? "Arduino e prévia" : "Simulador";
     simulatorHint.textContent = state.mode === "AUTONOMO"
-      ? "Autônomo ativo · o sensor virtual desvia dos obstáculos. Teclado: 1–5 ou setas."
+      ? `${targetLabel}: autônomo ativo · o sensor desvia dos obstáculos. Teclado: 1–5 ou setas.`
       : state.mode === "SEGUIR"
         ? "Seguir pessoa · recebe a direção da câmera; sem alvo reconhecido, para."
       : state.source === "GESTO"
@@ -74,6 +146,7 @@
     world.robot.avoidance = null;
     renderSimulatorControls();
     scheduleAnimation();
+    sendModeToArduino(mode);
   }
 
   function setSimulatorCommand(command, source = "TESTE") {
@@ -81,33 +154,8 @@
     if (command === "PARAR") world.robot.avoidance = null;
     renderSimulatorControls();
     scheduleAnimation();
+    sendCommandToArduino(command, source);
     return true;
-  }
-
-  function reportModeTest(mode, command, message) {
-    modeTestCards.forEach((card) => card.classList.toggle("testing", card.dataset.modeTestCard === String(mode)));
-    if (!modeTestResult) return;
-    modeTestResult.classList.add("active");
-    modeTestResult.querySelector(".status-dot")?.classList.remove("idle");
-    modeTestResult.querySelector("strong").textContent = `MODO ${mode} · ${command}`;
-    modeTestResult.querySelector("small").textContent = message;
-  }
-
-  function startIsolatedModeTest(mode) {
-    if (mode === 1) {
-      setSimulatorMode("AUTONOMO");
-      reportModeTest(1, "AUTÔNOMO", "Cenário ativo. O robô virtual avançará e desviará sozinho.");
-    } else if (mode === 2) {
-      setSimulatorMode("SEGUIR");
-      simulatorCommands.setCommand("PARAR", "ROSTO SIMULADO");
-      renderSimulatorControls();
-      reportModeTest(2, "PARAR", "Modo isolado. Escolha uma posição facial simulada abaixo.");
-    } else {
-      setSimulatorMode("GESTOS");
-      setSimulatorCommand("PARAR", "GESTO SIMULADO");
-      reportModeTest(3, "PARAR", "Modo isolado. Pressione 1–5 para simular cada gesto.");
-    }
-    document.getElementById("robotCanvas")?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   function resizeCanvas() {
@@ -257,24 +305,23 @@
     } else scheduleAnimation();
   });
   resetButton.addEventListener("click", resetWorld);
+  testTargetSimulatorButton.addEventListener("click", () => setTestTarget("simulator"));
+  testTargetArduinoButton.addEventListener("click", () => setTestTarget("arduino"));
+  testConnectArduinoButton.addEventListener("click", async () => {
+    testConnectArduinoButton.disabled = true;
+    testTargetStatus.textContent = "Selecione a porta USB do Arduino…";
+    try {
+      await window.quantumRobot?.connect();
+    } finally {
+      testConnectArduinoButton.disabled = false;
+      lastSimulatorUiSignature = "";
+      renderTestTarget();
+      renderSimulatorControls();
+    }
+  });
   autonomousModeButton.addEventListener("click", () => setSimulatorMode("AUTONOMO"));
   followModeButton.addEventListener("click", () => setSimulatorMode("SEGUIR"));
   gestureModeButton.addEventListener("click", () => setSimulatorMode("GESTOS"));
-  modeTestButtons.forEach((button) => button.addEventListener("click", () => startIsolatedModeTest(Number(button.dataset.runModeTest))));
-  followTestButtons.forEach((button) => button.addEventListener("click", () => {
-    setSimulatorMode("SEGUIR");
-    const command = button.dataset.followTest;
-    simulatorCommands.setCommand(command, command === "PARAR" ? "ALVO PERDIDO" : "ROSTO SIMULADO");
-    renderSimulatorControls();
-    scheduleAnimation();
-    reportModeTest(2, command, command === "PARAR" ? "A perda do rosto gerou parada segura." : `Posição facial convertida no comando ${command}.`);
-  }));
-  gestureTestButtons.forEach((button) => button.addEventListener("click", () => {
-    setSimulatorMode("GESTOS");
-    const command = button.dataset.gestureTest;
-    setSimulatorCommand(command, "GESTO SIMULADO");
-    reportModeTest(3, command, `Gesto simulado convertido no comando ${command}.`);
-  }));
   simulatorCommandButtons.forEach((button) => button.addEventListener("click", () => {
     setSimulatorCommand(button.dataset.simulatorCommand, "TESTE");
   }));
@@ -303,6 +350,11 @@
     if (simulatorCommands.snapshot().mode !== "SEGUIR") return;
     const detail = event.detail || {};
     simulatorCommands.setCommand(detail.visible ? detail.command : "PARAR", "ROSTO");
+    renderSimulatorControls();
+  });
+  window.addEventListener("quantum:state-changed", () => {
+    lastSimulatorUiSignature = "";
+    renderTestTarget();
     renderSimulatorControls();
   });
   const mobileNavigation = window.matchMedia("(max-width: 920px)");
@@ -337,15 +389,20 @@
   const runCode = document.getElementById("runCode");
   const copyCode = document.getElementById("copyCode");
   const downloadCode = document.getElementById("downloadCode");
+  const updateCode = document.getElementById("updateCode");
+  const codeFileInput = document.getElementById("codeFileInput");
   const saveCode = document.getElementById("saveCode");
   const restoreCode = document.getElementById("restoreCode");
   const codeEditFlag = document.getElementById("codeEditFlag");
-  const codeCursorStatus = document.getElementById("codeCursorStatus");
   let bundledCodeForSource = "";
   let selectedProgram = "principal";
   let selectedSource = "";
   let selectedFilename = "";
   let downloadObjectUrl = "";
+  let codeLoadGeneration = 0;
+
+  const codeEditorUtils = window.QuantumCodeEditorUtils;
+  const MAX_CODE_FILE_BYTES = codeEditorUtils.MAX_CODE_FILE_BYTES;
 
   const PROGRAM_LABELS = Object.freeze({
     principal: "Rodar autônomo",
@@ -374,31 +431,43 @@
   function writeStoredCode(source, code) {
     try {
       window.localStorage.setItem(CODE_EDIT_PREFIX + source, code);
+      return window.localStorage.getItem(CODE_EDIT_PREFIX + source) === code;
     } catch {
-      // Sem storage disponível (modo privado, cota cheia): edição fica só na tela.
+      return false;
     }
   }
 
   function clearStoredCode(source) {
     try {
       window.localStorage.removeItem(CODE_EDIT_PREFIX + source);
+      return window.localStorage.getItem(CODE_EDIT_PREFIX + source) === null;
     } catch {
-      // ignora
+      return false;
     }
   }
 
-  function updateEditIndicators() {
+  function persistedCode() {
     const stored = readStoredCode(selectedSource);
-    const edited = codeElement.value !== bundledCodeForSource;
-    if (codeEditFlag) codeEditFlag.hidden = !edited;
-    if (restoreCode) restoreCode.hidden = !edited && (stored === null || stored === bundledCodeForSource);
+    return stored === null ? bundledCodeForSource : stored;
   }
 
-  function updateCodeCursor() {
-    if (!codeCursorStatus) return;
-    const before = codeElement.value.slice(0, codeElement.selectionStart);
-    const rows = before.split("\n");
-    codeCursorStatus.textContent = `Linha ${rows.length} · Coluna ${rows.at(-1).length + 1}`;
+  function codeHasUnsavedChanges() {
+    return Boolean(selectedSource) && codeElement.value !== persistedCode();
+  }
+
+  const validateArduinoCode = codeEditorUtils.validateArduinoCode;
+
+  function updateEditIndicators() {
+    const stored = readStoredCode(selectedSource);
+    const customized = stored !== null && stored !== bundledCodeForSource;
+    const dirty = codeHasUnsavedChanges();
+    if (codeEditFlag) {
+      codeEditFlag.hidden = !customized && !dirty;
+      codeEditFlag.textContent = dirty ? "Alterações não salvas" : "Edição salva neste navegador";
+      codeEditFlag.classList.toggle("saved", customized && !dirty);
+    }
+    if (restoreCode) restoreCode.hidden = !customized && !dirty;
+    if (saveCode) saveCode.disabled = !dirty;
   }
 
   function prepareCodeDownload(code, filename) {
@@ -411,6 +480,9 @@
   async function loadArduinoCode(tab) {
     const source = tab.dataset.codeSource;
     const filename = tab.dataset.filename;
+    if (source !== selectedSource && codeHasUnsavedChanges()
+      && !window.confirm("Há alterações não salvas no código atual. Deseja descartá-las e trocar de aba?")) return false;
+    const generation = ++codeLoadGeneration;
     selectedProgram = programFromSource(source);
     selectedSource = source;
     selectedFilename = filename;
@@ -437,22 +509,25 @@
       codeStatus.textContent = edited ? "EDITADO NESTE NAVEGADOR" : "PRONTO · INTEGRADO";
       updateEditIndicators();
       prepareCodeDownload(codeElement.value, filename);
-      return;
+      return true;
     }
     try {
       const response = await fetch(new URL(source, document.baseURI));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       bundledCodeForSource = await response.text();
+      if (generation !== codeLoadGeneration) return false;
       const stored = readStoredCode(source);
       const edited = stored !== null && stored !== bundledCodeForSource;
       codeElement.value = edited ? stored : bundledCodeForSource;
       codeStatus.textContent = edited ? "EDITADO NESTE NAVEGADOR" : "PRONTO";
       updateEditIndicators();
       prepareCodeDownload(codeElement.value, filename);
+      return true;
     } catch (error) {
       bundledCodeForSource = "";
       codeElement.value = `Não foi possível carregar ${filename}. Abra o site publicado ou tente novamente.\n\nDetalhe: ${error.message}`;
       codeStatus.textContent = "ERRO";
+      return false;
     }
   }
 
@@ -470,6 +545,39 @@
       codeTabs[nextIndex].focus();
       loadArduinoCode(codeTabs[nextIndex]);
     });
+  });
+  codeElement.addEventListener("input", () => {
+    const validationError = validateArduinoCode(codeElement.value);
+    codeStatus.textContent = validationError ? "EDIÇÃO INCOMPLETA" : "ALTERAÇÕES NÃO SALVAS";
+    updateEditIndicators();
+    prepareCodeDownload(codeElement.value, selectedFilename || "sketch.ino");
+  });
+
+  updateCode?.addEventListener("click", () => codeFileInput?.click());
+  codeFileInput?.addEventListener("change", async () => {
+    const file = codeFileInput.files?.[0];
+    codeFileInput.value = "";
+    if (!file) return;
+    if (file.size > MAX_CODE_FILE_BYTES) {
+      codeStatus.textContent = "ARQUIVO MUITO GRANDE";
+      window.alert("Escolha um arquivo .ino ou .txt de até 256 KB.");
+      return;
+    }
+    try {
+      const imported = codeEditorUtils.normalizeImportedCode(await file.text());
+      const validationError = validateArduinoCode(imported);
+      if (validationError) throw new Error(validationError);
+      if (codeHasUnsavedChanges()
+        && !window.confirm("Substituir as alterações ainda não salvas pelo arquivo escolhido?")) return;
+      codeElement.value = imported;
+      codeStatus.textContent = "IMPORTADO · SALVE A EDIÇÃO";
+      updateEditIndicators();
+      prepareCodeDownload(imported, selectedFilename || file.name || "sketch.ino");
+      codeElement.focus();
+    } catch (error) {
+      codeStatus.textContent = "ARQUIVO INVÁLIDO";
+      window.alert(`Não foi possível atualizar o código: ${error.message}`);
+    }
   });
   runCode?.addEventListener("click", async () => {
     const robot = window.quantumRobot;
@@ -522,7 +630,17 @@
 
   saveCode?.addEventListener("click", () => {
     if (!selectedSource) return;
-    writeStoredCode(selectedSource, codeElement.value);
+    const validationError = validateArduinoCode(codeElement.value);
+    if (validationError) {
+      codeStatus.textContent = "CÓDIGO INCOMPLETO";
+      window.alert(validationError);
+      return;
+    }
+    if (!writeStoredCode(selectedSource, codeElement.value)) {
+      codeStatus.textContent = "NÃO FOI POSSÍVEL SALVAR";
+      window.alert("O navegador bloqueou o armazenamento local ou está sem espaço. Baixe o arquivo para não perder as alterações.");
+      return;
+    }
     updateEditIndicators();
     const original = saveCode.textContent;
     saveCode.textContent = "Salvo neste navegador";
@@ -530,39 +648,32 @@
     setTimeout(() => { saveCode.textContent = original; }, 1600);
   });
 
-  codeElement?.addEventListener("input", () => {
-    updateEditIndicators();
-    prepareCodeDownload(codeElement.value, selectedFilename || "sketch.ino");
-    codeStatus.textContent = codeElement.value === bundledCodeForSource ? "PRONTO · INTEGRADO" : "EDIÇÃO NÃO SALVA";
-    updateCodeCursor();
-  });
-  codeElement?.addEventListener("click", updateCodeCursor);
-  codeElement?.addEventListener("keyup", updateCodeCursor);
-  codeElement?.addEventListener("keydown", (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
-      event.preventDefault();
-      saveCode?.click();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    event.preventDefault();
-    const start = codeElement.selectionStart;
-    const end = codeElement.selectionEnd;
-    codeElement.setRangeText("  ", start, end, "end");
-    codeElement.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-
   restoreCode?.addEventListener("click", () => {
     if (!selectedSource) return;
-    clearStoredCode(selectedSource);
+    if (!window.confirm("Restaurar o código original desta aba? A edição local será descartada.")) return;
+    if (!clearStoredCode(selectedSource)) {
+      codeStatus.textContent = "NÃO FOI POSSÍVEL RESTAURAR";
+      return;
+    }
     codeElement.value = bundledCodeForSource;
     codeStatus.textContent = "PRONTO · INTEGRADO";
     updateEditIndicators();
     prepareCodeDownload(codeElement.value, selectedFilename);
   });
 
+  window.addEventListener("beforeunload", (event) => {
+    if (!codeHasUnsavedChanges()) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
+  document.getElementById("logoutButton")?.addEventListener("click", () => {
+    if (codeHasUnsavedChanges() && !window.confirm("Há alterações de código não salvas. Sair mesmo assim?")) return;
+    window.QuantumAuthGate?.lock();
+  });
+
   // Painel "Comandos & configurações": edita web/user-config.js (localStorage),
-  // lido pela detecção de gestos na próxima vez que a página carregar.
+  // aplicado imediatamente pela detecção de gestos e persistido localmente.
   (function setupConfigPanel() {
     const configApi = window.QuantumUserConfig;
     if (!configApi) return;
@@ -613,12 +724,14 @@
         unstableStopMs: Number(unstableInput?.value),
       });
       populate(configApi.get());
-      if (statusElement) statusElement.textContent = "Salvo! Recarregue a página (F5) para aplicar aos gestos.";
+      if (statusElement) statusElement.textContent = configApi.wasLastSavePersistent()
+        ? "Salvo e aplicado aos gestos agora."
+        : "Aplicado nesta sessão, mas o navegador bloqueou o armazenamento permanente.";
     });
 
     resetConfigButton.addEventListener("click", () => {
       populate(configApi.reset());
-      if (statusElement) statusElement.textContent = "Restaurado ao padrão. Recarregue a página (F5) para aplicar.";
+      if (statusElement) statusElement.textContent = "Restaurado e aplicado ao padrão agora.";
     });
   })();
 
@@ -643,7 +756,8 @@
   window.QuantumSimulator = Object.freeze({
     setMode: setSimulatorMode,
     setCommand: setSimulatorCommand,
+    setTarget: setTestTarget,
     reset: resetWorld,
-    snapshot: () => ({ ...simulatorCommands.snapshot(), robot: { ...world.robot }, events: world.events }),
+    snapshot: () => ({ ...simulatorCommands.snapshot(), target: testTarget, robot: { ...world.robot }, events: world.events }),
   });
 })();

@@ -31,7 +31,7 @@
       // Sem localStorage disponível: libera o painel em vez de travar o acesso.
     }
   </script>
-  <link rel="stylesheet" href="web/styles.css?v=16">
+  <link rel="stylesheet" href="web/styles.css?v=17">
 </head>
 <body>
   <noscript><div class="auth-overlay" style="display:flex"><div class="auth-card"><h1>Quantum Tracker</h1><p>Ative o JavaScript para acessar o painel.</p></div></div></noscript>
@@ -129,6 +129,43 @@
             <button type="button" data-simulator-command="GIRAR">5 · Girar</button>
           </div>
           <small id="simulatorHint" role="status" aria-live="polite">Autônomo ativo · o sensor virtual desvia dos obstáculos. Teclado: 1–5 ou setas.</small>
+        </div>
+        <div class="mode-test-lab" aria-labelledby="modeTestTitle">
+          <div class="mode-test-heading">
+            <div><span class="section-tag">Ambiente isolado</span><h3 id="modeTestTitle">Testar cada modo separadamente</h3></div>
+            <span class="pill neutral">Não envia nada ao Arduino</span>
+          </div>
+          <div class="mode-test-grid">
+            <article class="mode-test-card" data-mode-test-card="1">
+              <span class="mode-test-number">01</span>
+              <div><strong>Autônomo</strong><small>Anda continuamente e executa o desvio virtual ao encontrar obstáculo.</small></div>
+              <button class="secondary-button compact" type="button" data-run-mode-test="1">Testar modo 1</button>
+            </article>
+            <article class="mode-test-card" data-mode-test-card="2">
+              <span class="mode-test-number">02</span>
+              <div><strong>Seguir pessoa</strong><small>Simule a posição do rosto ou a perda do alvo sem ligar a câmera.</small></div>
+              <button class="secondary-button compact" type="button" data-run-mode-test="2">Testar modo 2</button>
+              <div class="mode-test-inputs" role="group" aria-label="Posição facial simulada">
+                <button type="button" data-follow-test="ESQUERDA">Rosto à esquerda</button>
+                <button type="button" data-follow-test="FRENTE">Rosto ao centro</button>
+                <button type="button" data-follow-test="DIREITA">Rosto à direita</button>
+                <button type="button" data-follow-test="PARAR">Sem rosto</button>
+              </div>
+            </article>
+            <article class="mode-test-card" data-mode-test-card="3">
+              <span class="mode-test-number">03</span>
+              <div><strong>Gestos</strong><small>Teste a tradução de 1–5 dedos para comandos e o timeout de parada.</small></div>
+              <button class="secondary-button compact" type="button" data-run-mode-test="3">Testar modo 3</button>
+              <div class="mode-test-inputs" role="group" aria-label="Gestos simulados">
+                <button type="button" data-gesture-test="FRENTE">1</button>
+                <button type="button" data-gesture-test="DIREITA">2</button>
+                <button type="button" data-gesture-test="ESQUERDA">3</button>
+                <button type="button" data-gesture-test="PARAR">4</button>
+                <button type="button" data-gesture-test="GIRAR">5</button>
+              </div>
+            </article>
+          </div>
+          <div class="mode-test-result" id="modeTestResult" role="status" aria-live="polite"><span class="status-dot idle"></span><strong>PRONTO</strong><small>Escolha um modo para iniciar um teste isolado.</small></div>
         </div>
         <div class="sim-layout">
           <div class="canvas-wrap">
@@ -318,7 +355,7 @@
 
       <section id="codigos" class="page-section panel code-panel">
         <div class="section-heading">
-          <div><span class="section-tag">Arduino UNO · instalação única</span><h2>Códigos do robô</h2><p>Grave o firmware principal uma vez. Depois disso, o IDE pode permanecer fechado e o site controla o UNO pelo cabo.</p></div>
+          <div><span class="section-tag">Arduino UNO · editor local</span><h2>Editor de códigos</h2><p>Edite, salve no navegador e baixe os sketches. Para gravar no UNO, abra o arquivo baixado no Arduino IDE.</p></div>
           <div class="code-actions">
             <button class="primary-button compact" id="runCode">Rodar autônomo</button>
             <button class="secondary-button" id="copyCode">Copiar código</button>
@@ -347,7 +384,7 @@
           <div class="code-titlebar"><span></span><span></span><span></span><strong id="codeFilename">quantum_tracker_arduino.ino</strong><em id="codeStatus" role="status" aria-live="polite">CARREGANDO</em></div>
           <textarea id="arduinoCode" class="code-editor" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Editor do sketch selecionado">Carregando código…</textarea>
           <div class="code-edit-bar">
-            <span class="code-edit-flag" id="codeEditFlag" hidden>Editado neste navegador</span>
+            <div class="code-editor-meta"><span class="code-edit-flag" id="codeEditFlag" hidden>Alterações não publicadas</span><span id="codeCursorStatus">Linha 1 · Coluna 1</span></div>
             <div class="code-edit-buttons">
               <button class="secondary-button compact" id="restoreCode" hidden>Restaurar original</button>
               <button class="primary-button compact" id="saveCode">Salvar edição</button>
@@ -432,7 +469,7 @@
   <script src="web/control-state.js?v=1" defer></script>
   <script src="web/arduino-codes.js?v=11" defer></script>
   <script src="web/simulator-controller.js?v=2" defer></script>
-  <script src="web/app.js?v=14" defer></script>
+  <script src="web/app.js?v=15" defer></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
   <script src="web/robot-control.js?v=12" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>

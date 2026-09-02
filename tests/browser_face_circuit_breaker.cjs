@@ -30,9 +30,9 @@ const siteUrl = process.env.QT_SITE_URL || "http://127.0.0.1:8765/";
 
   try {
     await page.goto(siteUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForFunction(() => Boolean(window.QuantumControl && window.quantumCameraController && window.Human?.Human));
+    await page.waitForFunction(() => Boolean(window.QuantumControl && window.quantumCameraController));
     await page.locator("#startCamera").click();
-    await page.waitForFunction(() => window.QuantumControl.state.vision.status === "ONLINE", null, { timeout: 90000 });
+    await page.waitForFunction(() => window.QuantumControl.state.vision.status === "ONLINE" && Boolean(window.Human?.Human), null, { timeout: 90000 });
     await page.evaluate(() => {
       const prototype = window.Human.Human.prototype;
       window.__qtOriginalHumanDetect = prototype.detect;

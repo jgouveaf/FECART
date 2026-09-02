@@ -19,6 +19,11 @@
   const followModeButton = document.getElementById("simFollowMode");
   const gestureModeButton = document.getElementById("simGestureMode");
   const simulatorCommandButtons = [...document.querySelectorAll("[data-simulator-command]")];
+  const modeTestButtons = [...document.querySelectorAll("[data-run-mode-test]")];
+  const followTestButtons = [...document.querySelectorAll("[data-follow-test]")];
+  const gestureTestButtons = [...document.querySelectorAll("[data-gesture-test]")];
+  const modeTestCards = [...document.querySelectorAll("[data-mode-test-card]")];
+  const modeTestResult = document.getElementById("modeTestResult");
 
   const world = {
     width: 960,
@@ -77,6 +82,32 @@
     renderSimulatorControls();
     scheduleAnimation();
     return true;
+  }
+
+  function reportModeTest(mode, command, message) {
+    modeTestCards.forEach((card) => card.classList.toggle("testing", card.dataset.modeTestCard === String(mode)));
+    if (!modeTestResult) return;
+    modeTestResult.classList.add("active");
+    modeTestResult.querySelector(".status-dot")?.classList.remove("idle");
+    modeTestResult.querySelector("strong").textContent = `MODO ${mode} · ${command}`;
+    modeTestResult.querySelector("small").textContent = message;
+  }
+
+  function startIsolatedModeTest(mode) {
+    if (mode === 1) {
+      setSimulatorMode("AUTONOMO");
+      reportModeTest(1, "AUTÔNOMO", "Cenário ativo. O robô virtual avançará e desviará sozinho.");
+    } else if (mode === 2) {
+      setSimulatorMode("SEGUIR");
+      simulatorCommands.setCommand("PARAR", "ROSTO SIMULADO");
+      renderSimulatorControls();
+      reportModeTest(2, "PARAR", "Modo isolado. Escolha uma posição facial simulada abaixo.");
+    } else {
+      setSimulatorMode("GESTOS");
+      setSimulatorCommand("PARAR", "GESTO SIMULADO");
+      reportModeTest(3, "PARAR", "Modo isolado. Pressione 1–5 para simular cada gesto.");
+    }
+    document.getElementById("robotCanvas")?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   function resizeCanvas() {
@@ -229,6 +260,21 @@
   autonomousModeButton.addEventListener("click", () => setSimulatorMode("AUTONOMO"));
   followModeButton.addEventListener("click", () => setSimulatorMode("SEGUIR"));
   gestureModeButton.addEventListener("click", () => setSimulatorMode("GESTOS"));
+  modeTestButtons.forEach((button) => button.addEventListener("click", () => startIsolatedModeTest(Number(button.dataset.runModeTest))));
+  followTestButtons.forEach((button) => button.addEventListener("click", () => {
+    setSimulatorMode("SEGUIR");
+    const command = button.dataset.followTest;
+    simulatorCommands.setCommand(command, command === "PARAR" ? "ALVO PERDIDO" : "ROSTO SIMULADO");
+    renderSimulatorControls();
+    scheduleAnimation();
+    reportModeTest(2, command, command === "PARAR" ? "A perda do rosto gerou parada segura." : `Posição facial convertida no comando ${command}.`);
+  }));
+  gestureTestButtons.forEach((button) => button.addEventListener("click", () => {
+    setSimulatorMode("GESTOS");
+    const command = button.dataset.gestureTest;
+    setSimulatorCommand(command, "GESTO SIMULADO");
+    reportModeTest(3, command, `Gesto simulado convertido no comando ${command}.`);
+  }));
   simulatorCommandButtons.forEach((button) => button.addEventListener("click", () => {
     setSimulatorCommand(button.dataset.simulatorCommand, "TESTE");
   }));
@@ -294,6 +340,7 @@
   const saveCode = document.getElementById("saveCode");
   const restoreCode = document.getElementById("restoreCode");
   const codeEditFlag = document.getElementById("codeEditFlag");
+  const codeCursorStatus = document.getElementById("codeCursorStatus");
   let bundledCodeForSource = "";
   let selectedProgram = "principal";
   let selectedSource = "";
@@ -342,9 +389,16 @@
 
   function updateEditIndicators() {
     const stored = readStoredCode(selectedSource);
-    const edited = stored !== null && stored !== bundledCodeForSource;
+    const edited = codeElement.value !== bundledCodeForSource;
     if (codeEditFlag) codeEditFlag.hidden = !edited;
-    if (restoreCode) restoreCode.hidden = !edited;
+    if (restoreCode) restoreCode.hidden = !edited && (stored === null || stored === bundledCodeForSource);
+  }
+
+  function updateCodeCursor() {
+    if (!codeCursorStatus) return;
+    const before = codeElement.value.slice(0, codeElement.selectionStart);
+    const rows = before.split("\n");
+    codeCursorStatus.textContent = `Linha ${rows.length} · Coluna ${rows.at(-1).length + 1}`;
   }
 
   function prepareCodeDownload(code, filename) {
@@ -474,6 +528,28 @@
     saveCode.textContent = "Salvo neste navegador";
     codeStatus.textContent = codeElement.value === bundledCodeForSource ? "PRONTO · INTEGRADO" : "EDITADO NESTE NAVEGADOR";
     setTimeout(() => { saveCode.textContent = original; }, 1600);
+  });
+
+  codeElement?.addEventListener("input", () => {
+    updateEditIndicators();
+    prepareCodeDownload(codeElement.value, selectedFilename || "sketch.ino");
+    codeStatus.textContent = codeElement.value === bundledCodeForSource ? "PRONTO · INTEGRADO" : "EDIÇÃO NÃO SALVA";
+    updateCodeCursor();
+  });
+  codeElement?.addEventListener("click", updateCodeCursor);
+  codeElement?.addEventListener("keyup", updateCodeCursor);
+  codeElement?.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      saveCode?.click();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    event.preventDefault();
+    const start = codeElement.selectionStart;
+    const end = codeElement.selectionEnd;
+    codeElement.setRangeText("  ", start, end, "end");
+    codeElement.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
   restoreCode?.addEventListener("click", () => {

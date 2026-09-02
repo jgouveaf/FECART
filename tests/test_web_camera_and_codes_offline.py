@@ -57,7 +57,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("Aguardar 100%", self.html)
         self.assertIn('id="flashOfficialFirmware"', self.html)
         self.assertIn("bootloader STK500v1 do Arduino UNO", self.html)
-        self.assertIn('web/arduino-flasher.js?v=1', self.html)
+        self.assertIn('web/arduino-flasher.js?v=2', self.html)
 
     def test_official_firmware_flasher_is_local_and_pinned_to_uno(self) -> None:
         flasher = (ROOT / "web" / "arduino-flasher.js").read_text(encoding="utf-8")

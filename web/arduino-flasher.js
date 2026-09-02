@@ -7,7 +7,8 @@ const panel = document.getElementById("firmwareFlasher");
 const progress = document.getElementById("firmwareFlashProgress");
 const status = document.getElementById("firmwareFlashStatus");
 const FIRMWARE_URL = new URL("../firmware/compiled/quantum_tracker_arduino.ino.hex", import.meta.url);
-const FIRMWARE_SHA256 = "2347e3023236f1cf596f788453f35ab690a6f35a433b719c8a0454dc8b62e6f7";
+// Hash do conteúdo servido pelo GitHub Pages (Git normaliza o Intel HEX para LF).
+const FIRMWARE_SHA256 = "075bb71de83bfcc351ee9ce2ee9fe1de6fc032f85783c383eb6589ca323aeea0";
 
 function setStatus(state, title, detail, percentage = progress.value) {
   panel.classList.remove("flashing", "success", "error");
@@ -28,7 +29,7 @@ function friendlyError(error) {
 }
 
 async function sha256(text) {
-  const bytes = new TextEncoder().encode(text);
+  const bytes = new TextEncoder().encode(text.replace(/\r\n/g, "\n"));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

@@ -31,7 +31,7 @@
       // Sem localStorage disponível: libera o painel em vez de travar o acesso.
     }
   </script>
-  <link rel="stylesheet" href="web/styles.css?v=17">
+  <link rel="stylesheet" href="web/styles.css?v=18">
 </head>
 <body>
   <noscript><div class="auth-overlay" style="display:flex"><div class="auth-card"><h1>Quantum Tracker</h1><p>Ative o JavaScript para acessar o painel.</p></div></div></noscript>
@@ -44,6 +44,7 @@
       </a>
       <nav>
         <a class="nav-link active" href="#visao-geral" data-section="visao-geral"><span>⌁</span> Visão geral</a>
+        <a class="nav-link" href="#guia" data-section="guia"><span>?</span> Guia rápido</a>
         <a class="nav-link" href="#simulador" data-section="simulador"><span>◇</span> Simulador</a>
         <a class="nav-link" href="#camera-gestos" data-section="camera-gestos"><span>◉</span> Câmera &amp; gestos</a>
         <a class="nav-link" href="#codigos" data-section="codigos"><span>⌘</span> Códigos</a>
@@ -57,6 +58,7 @@
         <span class="status-dot"></span>
         <div><strong>Controle USB</strong><small>Arduino só se move após conexão e escolha do modo</small></div>
       </div>
+      <button class="sidebar-logout" id="logoutButton" type="button">Sair do painel</button>
     </aside>
 
     <main id="conteudo">
@@ -94,34 +96,57 @@
           <div class="progress-track"><span style="width:70%"></span></div>
           <p>O software passou nos testes automatizados. O carrinho real ainda precisa concluir os ensaios de motor, sensor e desconexão.</p>
           <div class="mini-stats">
-            <div><strong>640</strong><span>testes aprovados</span></div>
+            <div><strong>APROVADA</strong><span>suíte automatizada</span></div>
             <div><strong>0</strong><span>ensaios físicos</span></div>
           </div>
         </article>
       </section>
 
       <section class="metric-grid" aria-label="Resumo de testes">
-        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>640 aprovados</strong></div></article>
+        <article class="metric-card"><span class="metric-icon cyan">✓</span><div><small>Suíte offline</small><strong>Automatizada</strong></div></article>
         <article class="metric-card"><span class="metric-icon violet">◇</span><div><small>Rastreamento</small><strong>IDs estáveis</strong></div></article>
         <article class="metric-card"><span class="metric-icon green">◎</span><div><small>Cadastro</small><strong>Persistente</strong></div></article>
         <article class="metric-card"><span class="metric-icon amber">⌁</span><div><small>Arduino</small><strong>USB Serial</strong></div></article>
       </section>
 
+      <section id="guia" class="page-section panel quick-guide-panel">
+        <div class="section-heading">
+          <div><span class="section-tag">Comece por aqui</span><h2>Guia rápido de operação</h2><p>Siga a ordem abaixo para não confundir editar, gravar e executar o código do robô.</p></div>
+          <span class="pill neutral">4 passos</span>
+        </div>
+        <ol class="quick-guide-grid">
+          <li><b>1</b><div><strong>Prepare o firmware</strong><span>Abra <a href="#codigos">Códigos</a>, use o original ou importe um arquivo <code>.ino</code> e baixe a versão escolhida.</span><small>Esperado: status “PRONTO” ou “EDITADO NESTE NAVEGADOR”.</small></div></li>
+          <li><b>2</b><div><strong>Grave pelo Arduino IDE</strong><span>Abra o arquivo baixado, selecione Arduino UNO e a porta correta, depois clique em Upload.</span><small>Esperado: “Done uploading” sem erro de porta.</small></div></li>
+          <li><b>3</b><div><strong>Libere e conecte a porta</strong><span>Feche IDE e Monitor Serial. No painel, clique em “Conectar Arduino USB” e escolha a mesma porta.</span><small>Esperado: ROBÔ “ONLINE” e COMUNICAÇÃO “ONLINE”.</small></div></li>
+          <li><b>4</b><div><strong>Escolha e teste o modo</strong><span>Comece com as rodas levantadas. Teste Autônomo, depois câmera ou gestos.</span><small>Esperado: telemetria atualizando e parada ao perder a conexão.</small></div></li>
+        </ol>
+        <div class="guide-warning" role="note"><strong>Importante:</strong> “Rodar” envia comandos ao firmware já gravado. Alterar o texto no site não reprograma o Arduino automaticamente.</div>
+      </section>
+
       <section id="simulador" class="page-section panel simulator-panel">
         <div class="section-heading">
-          <div><span class="section-tag">Teste sem robô</span><h2>Simulador de comandos</h2><p>Valide autonomia, gestos, parada e curvas no veículo virtual antes de conectar o Arduino.</p></div>
+          <div><span class="section-tag">Bancada virtual ou física</span><h2>Central de testes</h2><p>Use os mesmos modos e comandos no simulador ou envie-os ao Arduino real conectado por USB.</p></div>
           <div class="controls">
             <button class="secondary-button" id="toggleSimulation" type="button">Pausar</button>
             <button class="primary-button compact" id="resetSimulation" type="button">Reiniciar</button>
           </div>
         </div>
-        <div class="simulator-command-panel" id="simulatorCommandPanel" tabindex="0" aria-label="Controle do simulador" aria-describedby="simulatorHint">
-          <div class="simulator-mode-switch" role="group" aria-label="Modo do simulador">
+        <div class="simulator-command-panel" id="simulatorCommandPanel" tabindex="0" aria-label="Central de testes do robô" aria-describedby="simulatorHint testTargetStatus">
+          <div class="test-target-row">
+            <span>Destino do teste</span>
+            <div class="test-target-switch" role="group" aria-label="Escolher destino dos comandos">
+              <button class="test-target active" id="testTargetSimulator" type="button" aria-pressed="true">Simulador</button>
+              <button class="test-target" id="testTargetArduino" type="button" aria-pressed="false">Arduino real</button>
+              <button class="secondary-button compact" id="testConnectArduino" type="button" hidden>Conectar Arduino</button>
+            </div>
+            <small id="testTargetStatus" role="status" aria-live="polite">Somente a prévia virtual receberá os comandos.</small>
+          </div>
+          <div class="simulator-mode-switch" role="group" aria-label="Modo do teste">
             <button class="simulator-mode active" id="simAutonomousMode" type="button" aria-pressed="true">Autônomo</button>
             <button class="simulator-mode" id="simFollowMode" type="button" aria-pressed="false">Seguir pessoa</button>
             <button class="simulator-mode" id="simGestureMode" type="button" aria-pressed="false">Testar gestos</button>
           </div>
-          <div class="simulator-command-pad" role="group" aria-label="Comandos virtuais">
+          <div class="simulator-command-pad" role="group" aria-label="Comandos de teste">
             <button type="button" data-simulator-command="FRENTE">1 · Frente</button>
             <button type="button" data-simulator-command="DIREITA">2 · Direita</button>
             <button type="button" data-simulator-command="ESQUERDA">3 · Esquerda</button>
@@ -130,47 +155,10 @@
           </div>
           <small id="simulatorHint" role="status" aria-live="polite">Autônomo ativo · o sensor virtual desvia dos obstáculos. Teclado: 1–5 ou setas.</small>
         </div>
-        <div class="mode-test-lab" aria-labelledby="modeTestTitle">
-          <div class="mode-test-heading">
-            <div><span class="section-tag">Ambiente isolado</span><h3 id="modeTestTitle">Testar cada modo separadamente</h3></div>
-            <span class="pill neutral">Não envia nada ao Arduino</span>
-          </div>
-          <div class="mode-test-grid">
-            <article class="mode-test-card" data-mode-test-card="1">
-              <span class="mode-test-number">01</span>
-              <div><strong>Autônomo</strong><small>Anda continuamente e executa o desvio virtual ao encontrar obstáculo.</small></div>
-              <button class="secondary-button compact" type="button" data-run-mode-test="1">Testar modo 1</button>
-            </article>
-            <article class="mode-test-card" data-mode-test-card="2">
-              <span class="mode-test-number">02</span>
-              <div><strong>Seguir pessoa</strong><small>Simule a posição do rosto ou a perda do alvo sem ligar a câmera.</small></div>
-              <button class="secondary-button compact" type="button" data-run-mode-test="2">Testar modo 2</button>
-              <div class="mode-test-inputs" role="group" aria-label="Posição facial simulada">
-                <button type="button" data-follow-test="ESQUERDA">Rosto à esquerda</button>
-                <button type="button" data-follow-test="FRENTE">Rosto ao centro</button>
-                <button type="button" data-follow-test="DIREITA">Rosto à direita</button>
-                <button type="button" data-follow-test="PARAR">Sem rosto</button>
-              </div>
-            </article>
-            <article class="mode-test-card" data-mode-test-card="3">
-              <span class="mode-test-number">03</span>
-              <div><strong>Gestos</strong><small>Teste a tradução de 1–5 dedos para comandos e o timeout de parada.</small></div>
-              <button class="secondary-button compact" type="button" data-run-mode-test="3">Testar modo 3</button>
-              <div class="mode-test-inputs" role="group" aria-label="Gestos simulados">
-                <button type="button" data-gesture-test="FRENTE">1</button>
-                <button type="button" data-gesture-test="DIREITA">2</button>
-                <button type="button" data-gesture-test="ESQUERDA">3</button>
-                <button type="button" data-gesture-test="PARAR">4</button>
-                <button type="button" data-gesture-test="GIRAR">5</button>
-              </div>
-            </article>
-          </div>
-          <div class="mode-test-result" id="modeTestResult" role="status" aria-live="polite"><span class="status-dot idle"></span><strong>PRONTO</strong><small>Escolha um modo para iniciar um teste isolado.</small></div>
-        </div>
         <div class="sim-layout">
           <div class="canvas-wrap">
             <canvas id="robotCanvas" width="960" height="540" aria-label="Arena virtual do robô">A telemetria ao lado descreve os movimentos do robô virtual.</canvas>
-            <span class="canvas-badge"><span class="status-dot"></span> SIMULAÇÃO ATIVA</span>
+            <span class="canvas-badge"><span class="status-dot"></span><span id="testCanvasBadge">SIMULAÇÃO ATIVA</span></span>
           </div>
           <aside class="telemetry" aria-live="polite">
             <h3>Telemetria</h3>
@@ -180,7 +168,7 @@
               <div><dt>Fonte</dt><dd id="simulatorSourceValue">AUTÔNOMO</dd></div>
               <div><dt>Obstáculo</dt><dd id="distanceValue">-- cm</dd></div>
               <div><dt>Eventos</dt><dd id="eventValue">0</dd></div>
-              <div><dt>Ambiente</dt><dd>VIRTUAL</dd></div>
+              <div><dt>Destino</dt><dd id="testEnvironmentValue">VIRTUAL</dd></div>
             </dl>
             <div class="safety-box"><span>Escudo lógico</span><strong id="safetyValue">MONITORANDO</strong><small>Distância de parada: 44 px virtuais</small></div>
           </aside>
@@ -355,32 +343,24 @@
 
       <section id="codigos" class="page-section panel code-panel">
         <div class="section-heading">
-          <div><span class="section-tag">Arduino UNO · instalação pelo navegador</span><h2>Firmware &amp; códigos</h2><p>Grave o firmware oficial diretamente pelo site. O editor abaixo permanece disponível para consultar e preparar versões avançadas.</p></div>
+          <div><span class="section-tag">Arduino UNO · instalação única</span><h2>Códigos do robô</h2><p>Grave o firmware principal uma vez. Depois disso, o IDE pode permanecer fechado e o site controla o UNO pelo cabo.</p></div>
           <div class="code-actions">
             <button class="primary-button compact" id="runCode">Rodar autônomo</button>
+            <button class="secondary-button" id="updateCode" type="button">Atualizar código</button>
             <button class="secondary-button" id="copyCode">Copiar código</button>
             <a class="secondary-button" id="downloadCode" download>Baixar .ino</a>
+            <input id="codeFileInput" type="file" accept=".ino,.txt,text/plain,text/x-arduino" hidden>
           </div>
         </div>
         <div class="firmware-workflow" aria-label="Como preparar e conectar o Arduino">
-          <article><b>01</b><div><strong>Conectar o UNO</strong><small>Use Chrome ou Edge e mantenha o Arduino ligado pelo cabo USB.</small></div></article>
-          <article><b>02</b><div><strong>Gravar pelo site</strong><small>Clique no botão abaixo e selecione a porta do Arduino UNO.</small></div></article>
-          <article><b>03</b><div><strong>Aguardar 100%</strong><small>Não remova o cabo durante gravação e verificação.</small></div></article>
-          <article><b>04</b><div><strong>Conectar o controle</strong><small>Depois da gravação, conecte o Arduino na área Câmeras &amp; robô.</small></div></article>
+          <article><b>01</b><div><strong>Gravar uma vez</strong><small>Envie o Código principal pelo Arduino IDE 2.3.10.</small></div></article>
+          <article><b>02</b><div><strong>Liberar a porta</strong><small>Feche o Monitor Serial e o Arduino IDE após o envio.</small></div></article>
+          <article><b>03</b><div><strong>Conectar por USB</strong><small>O firmware permanece salvo no UNO mesmo sem energia.</small></div></article>
+          <article><b>04</b><div><strong>Clicar em Rodar</strong><small>Escolha uma aba e o site inicia o comportamento pelo firmware principal.</small></div></article>
         </div>
         <div class="firmware-assurance" role="note">
           <span aria-hidden="true">✓</span>
-          <div><strong>O firmware oficial agora pode ser instalado sem Arduino IDE.</strong><small>O site usa Web Serial e o bootloader STK500v1 do Arduino UNO. Durante a gravação, os motores permanecem bloqueados.</small></div>
-        </div>
-        <div class="firmware-flasher" id="firmwareFlasher">
-          <div class="firmware-flasher-copy">
-            <span class="section-tag">Instalação USB direta</span>
-            <h3>Gravar firmware oficial no Arduino UNO</h3>
-            <p>Instala a versão testada com os três modos. Feche qualquer Monitor Serial e mantenha as rodas suspensas na primeira instalação.</p>
-          </div>
-          <button class="primary-button" id="flashOfficialFirmware" type="button">Gravar no Arduino UNO</button>
-          <progress id="firmwareFlashProgress" max="100" value="0" aria-label="Progresso da gravação"></progress>
-          <div class="firmware-flash-status" id="firmwareFlashStatus" role="status" aria-live="polite"><strong>PRONTO</strong><small>Compatível com Arduino UNO R3/ATmega328P em Chrome ou Edge.</small></div>
+          <div><strong>Arduino IDE somente para instalar ou atualizar.</strong><small>Nos três modos, mantenha o site e o cabo USB conectados. Se o heartbeat parar, o UNO interrompe os motores em até 1,5 s. O painel envia modos e comandos; não envia sketches.</small></div>
         </div>
         <div class="pin-strip">
           <span><b>D7</b> IN1</span><span><b>D6</b> IN2</span><span><b>D5</b> IN3</span><span><b>D4</b> IN4</span><span><b>D3</b> TRIG</span><span><b>D2</b> ECHO</span>
@@ -394,18 +374,28 @@
           <div class="code-titlebar"><span></span><span></span><span></span><strong id="codeFilename">quantum_tracker_arduino.ino</strong><em id="codeStatus" role="status" aria-live="polite">CARREGANDO</em></div>
           <textarea id="arduinoCode" class="code-editor" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Editor do sketch selecionado">Carregando código…</textarea>
           <div class="code-edit-bar">
-            <div class="code-editor-meta"><span class="code-edit-flag" id="codeEditFlag" hidden>Alterações não publicadas</span><span id="codeCursorStatus">Linha 1 · Coluna 1</span></div>
+            <span class="code-edit-flag" id="codeEditFlag" hidden>Alterações não salvas</span>
             <div class="code-edit-buttons">
               <button class="secondary-button compact" id="restoreCode" hidden>Restaurar original</button>
               <button class="primary-button compact" id="saveCode">Salvar edição</button>
             </div>
           </div>
         </div>
-        <p class="notice"><strong>Diferença importante:</strong> “Gravar no Arduino UNO” instala o firmware oficial testado. Alterações livres feitas no editor precisam ser compiladas antes de virar firmware; por segurança, elas não substituem automaticamente a versão oficial.</p>
+        <p class="notice" id="codeHelp">Você pode editar, colar ou usar “Atualizar código” para importar um <code>.ino</code>. A versão fica somente neste navegador. Para aplicar no robô, baixe o arquivo e grave pelo Arduino IDE.</p>
+        <details class="code-tutorial">
+          <summary>Passo a passo para trocar o código do Arduino</summary>
+          <ol>
+            <li>Selecione Código principal, Teste dos motores ou Teste do sensor.</li>
+            <li>Clique em “Atualizar código” e escolha um arquivo <code>.ino</code>, ou edite diretamente no campo.</li>
+            <li>Confira o aviso e clique em “Salvar edição”.</li>
+            <li>Clique em “Baixar .ino” e abra o arquivo no Arduino IDE.</li>
+            <li>Selecione Arduino UNO e a porta correta, faça Upload e feche o IDE antes de voltar ao site.</li>
+          </ol>
+        </details>
 
         <div class="config-panel" aria-label="Comandos e configurações do site">
           <div class="section-heading">
-            <div><span class="section-tag">Ajustes do lado do site</span><h3>Comandos &amp; configurações</h3><p>Valem só neste navegador e só depois de recarregar a página. Não afetam o firmware gravado no Arduino.</p></div>
+            <div><span class="section-tag">Ajustes do lado do site</span><h3>Comandos &amp; configurações</h3><p>Valem somente neste navegador e são aplicados assim que você salva. Não afetam o firmware gravado no Arduino.</p></div>
           </div>
           <div class="config-grid">
             <div class="config-card">
@@ -474,19 +464,19 @@
       <footer><span>Quantum Tracker · FECART 2026</span><span>João · Gustavo · Renato</span></footer>
     </main>
   </div>
-  <script src="web/user-config.js?v=1" defer></script>
-  <script src="web/auth-gate.js?v=1" defer></script>
+  <script src="web/user-config.js?v=2" defer></script>
+  <script src="web/auth-gate.js?v=2" defer></script>
   <script src="web/control-state.js?v=1" defer></script>
   <script src="web/arduino-codes.js?v=11" defer></script>
   <script src="web/simulator-controller.js?v=2" defer></script>
-  <script src="web/app.js?v=15" defer></script>
-  <script type="module" src="web/arduino-flasher.js?v=2"></script>
+  <script src="web/code-editor-utils.js?v=1" defer></script>
+  <script src="web/app.js?v=16" defer></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
   <script src="web/robot-control.js?v=12" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
-  <script src="web/face-identity-math.js?v=1" defer></script>
-  <script src="web/gesture-math.js?v=3" defer></script>
-  <script src="web/face-identities.js?v=13" defer></script>
-  <script src="web/camera-gestures.js?v=14" defer></script>
+  <script src="web/face-identity-math.js?v=2" defer></script>
+  <script src="web/gesture-math.js?v=2" defer></script>
+  <script src="web/face-identities.js?v=14" defer></script>
+  <script src="web/camera-gestures.js?v=15" defer></script>
 </body>
 </html>

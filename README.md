@@ -38,6 +38,8 @@ Por segurança, conectar o cabo **não inicia os motores**: o handshake termina 
 - Painel publicado: <https://jgouveaf.github.io/FECART/>
 - Firmware: `firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino`
 - Guia Arduino + site: `docs/GUIA_TECNICO_ARDUINO_SITE.md`
+- Tutorial completo do painel: `docs/TUTORIAL_PAINEL_WEB.md`
+- Revisão de qualidade: `docs/REVISAO_QUALIDADE_2026-09-01.md`
 - Relatório da revisão: `docs/RELATORIO_REVISAO_WEB_CAMERA_GESTOS.md`
 
 O Arduino IDE 2.3.10 é usado somente uma vez para gravar o firmware (ou quando

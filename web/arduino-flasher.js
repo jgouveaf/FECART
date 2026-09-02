@@ -8,7 +8,7 @@ const progress = document.getElementById("firmwareFlashProgress");
 const status = document.getElementById("firmwareFlashStatus");
 const FIRMWARE_URL = new URL("../firmware/compiled/quantum_tracker_arduino.ino.hex", import.meta.url);
 // Hash do conteúdo servido pelo GitHub Pages (Git normaliza o Intel HEX para LF).
-const FIRMWARE_SHA256 = "075bb71de83bfcc351ee9ce2ee9fe1de6fc032f85783c383eb6589ca323aeea0";
+const FIRMWARE_SHA256 = "e93e9ca06de2e8c3401dfc6815bbdebe642744429a4c0be261943f530cac5129";
 
 function setStatus(state, title, detail, percentage = progress.value) {
   panel.classList.remove("flashing", "success", "error");
@@ -19,7 +19,7 @@ function setStatus(state, title, detail, percentage = progress.value) {
 }
 
 function friendlyError(error) {
-  if (error?.name === "NotFoundError") return "Nenhuma porta foi selecionada.";
+  if (error?.name === "NotFoundError") return "Seleção cancelada. Clique novamente, marque ‘Arduino Uno (COM…)’ e depois clique em Conectar.";
   if (error?.name === "NetworkError") return "A porta está ocupada. Desconecte o painel e feche o Monitor Serial.";
   const message = String(error?.message || error || "Erro desconhecido.");
   if (/sync/i.test(message)) return "O bootloader não respondeu. Confirme que é um Arduino UNO e tente novamente.";
@@ -77,8 +77,9 @@ async function flashOfficialFirmware() {
     window.QuantumControl?.log?.("INFO", "FIRMWARE", "Firmware oficial gravado e verificado pelo site");
   } catch (error) {
     const message = friendlyError(error);
-    setStatus("error", "NÃO FOI POSSÍVEL GRAVAR", message, 0);
-    window.QuantumControl?.log?.("ERROR", "FIRMWARE", message);
+    const cancelled = error?.name === "NotFoundError";
+    setStatus(cancelled ? "" : "error", cancelled ? "PORTA NÃO CONFIRMADA" : "NÃO FOI POSSÍVEL GRAVAR", message, 0);
+    window.QuantumControl?.log?.(cancelled ? "INFO" : "ERROR", "FIRMWARE", message);
   } finally {
     try { await transport?.close(); } catch { /* porta já encerrada */ }
     button.disabled = false;

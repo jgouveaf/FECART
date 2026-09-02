@@ -82,6 +82,9 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn('lastIntent = "PARAR"', self.robot_js)
         self.assertIn("agora - ultimoComandoEm > TIMEOUT_COMANDO_MS", self.firmware)
         self.assertIn("comandoRecebido = CMD_PARAR", self.firmware)
+        self.assertIn("const bool modoRemoto = modo == MODO_SEGUIR || modo == MODO_GESTOS", self.firmware)
+        watchdog = self.firmware.split("const bool modoRemoto", 1)[1].split("if (estadoDesvio", 1)[0]
+        self.assertIn("modoRemoto &&", watchdog)
 
     def test_emergency_stop_interrupts_web_and_firmware(self) -> None:
         self.assertIn('id="emergencyStop"', self.html)

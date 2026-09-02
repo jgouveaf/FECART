@@ -14,7 +14,8 @@
 
   Comportamento:
   - PARAR e ESTOP continuam disponiveis para o operador;
-  - todos os modos param se nenhum novo CMD:* chegar por 1,5 s;
+  - AUTONOMO funciona localmente, mesmo sem site ou cabo USB;
+  - SEGUIR e GESTOS param se nenhum novo CMD:* chegar por 1,5 s;
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
   - falhas do HC-SR04 nao bloqueiam os motores: uma leitura sem eco e ignorada;
   - curvas usam as duas rodas ao mesmo tempo, em sentidos opostos;
@@ -40,8 +41,8 @@ const float DISTANCIA_OBSTACULO_CM = 35.0;
 const unsigned long INTERVALO_SENSOR_MS = 80UL;
 const unsigned long INTERVALO_TELEMETRIA_MS = 250UL;
 const unsigned long TIMEOUT_COMANDO_MS = 1500UL;
-// Mantém as rodas paradas logo após o boot para o site concluir o handshake.
-// Depois da janela, nenhum modo se move sem heartbeat CMD:* pela USB.
+// Mantém as rodas paradas logo após o boot para estabilizar a alimentação e
+// permitir que um site já aberto faça o handshake. Depois, o AUTONOMO é local.
 const unsigned long JANELA_COMANDO_INICIAL_MS = 750UL;
 
 const unsigned int TEMPO_PAUSA_MS = 200;
@@ -310,7 +311,7 @@ void enviarStatus(unsigned long agora, bool forcar = false) {
   Serial.print(nomeComando(comandoAplicado));
   Serial.print(F("|STATE:"));
   if (paradaEmergencia) Serial.print(F("ESTOP"));
-  else if (!controleUsbAtivo) Serial.print(F("LINK_WAIT"));
+  else if (modo != MODO_AUTONOMO && !controleUsbAtivo) Serial.print(F("LINK_WAIT"));
   else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
   else Serial.print(nomeModo());
   Serial.println();
@@ -328,8 +329,7 @@ void selecionarModo(byte numero, unsigned long agora) {
 
 ComandoMovimento comandoDesejadoPeloModo() {
   // Um unico sketch executa os tres modos. O Arduino sempre resolve o modo
-  // localmente; o site seleciona o estado e mantém a concessão de movimento
-  // de todos os modos viva pela porta USB.
+  // localmente. Apenas SEGUIR e GESTOS exigem concessão viva pela porta USB.
   switch (modo) {
     case MODO_AUTONOMO:
       return CMD_FRENTE;
@@ -445,7 +445,8 @@ void loop() {
     return;
   }
 
-  if (!controleUsbAtivo || agora - ultimoComandoEm > TIMEOUT_COMANDO_MS) {
+  const bool modoRemoto = modo == MODO_SEGUIR || modo == MODO_GESTOS;
+  if (modoRemoto && (!controleUsbAtivo || agora - ultimoComandoEm > TIMEOUT_COMANDO_MS)) {
     controleUsbAtivo = false;
     comandoRecebido = CMD_PARAR;
     cancelarDesvio();

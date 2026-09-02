@@ -53,10 +53,20 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             self.assertIn(required, self.html)
 
     def test_arduino_installation_workflow_is_explicit(self) -> None:
-        self.assertIn("Gravar uma vez", self.html)
-        self.assertIn("Liberar a porta", self.html)
-        self.assertIn("O painel envia modos e comandos; não envia sketches.", self.html)
-        self.assertIn("Arduino IDE somente para instalar ou atualizar.", self.html)
+        self.assertIn("Gravar pelo site", self.html)
+        self.assertIn("Aguardar 100%", self.html)
+        self.assertIn('id="flashOfficialFirmware"', self.html)
+        self.assertIn("bootloader STK500v1 do Arduino UNO", self.html)
+        self.assertIn('web/arduino-flasher.js?v=1', self.html)
+
+    def test_official_firmware_flasher_is_local_and_pinned_to_uno(self) -> None:
+        flasher = (ROOT / "web" / "arduino-flasher.js").read_text(encoding="utf-8")
+        self.assertIn('BOARDS["arduino-uno"]', flasher)
+        self.assertIn("FIRMWARE_SHA256", flasher)
+        self.assertIn("programmer.bootload", flasher)
+        self.assertIn("await window.quantumRobot.disconnect()", flasher)
+        self.assertTrue((ROOT / "firmware" / "compiled" / "quantum_tracker_arduino.ino.hex").is_file())
+        self.assertTrue((ROOT / "web" / "vendor" / "webserial-flasher" / "LICENSE").is_file())
 
     def test_every_code_source_exists_and_is_an_arduino_sketch(self) -> None:
         sources = re.findall(r'data-code-source="([^"]+)"', self.html)

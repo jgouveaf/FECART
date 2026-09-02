@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const matcher = require("../web/face-identity-math.js");
 
 assert.equal(matcher.MIN_SIMILARITY, 0.80);
+assert.equal(matcher.MIN_REFERENCE_SAMPLES, 3);
 assert.equal(matcher.aggregateSimilarity([0.92, 0.88, 0.85, 0.30]), (0.92 + 0.88 + 0.85) / 3);
 
 const ana = { id: "QT-001", name: "Ana" };
@@ -19,6 +20,12 @@ const belowThreshold = matcher.chooseIdentity([
 ]);
 assert.equal(belowThreshold.accepted, false);
 assert.equal(belowThreshold.reason, "BELOW_THRESHOLD");
+
+const insufficientSamples = matcher.chooseIdentity([
+  { identity: ana, scores: [0.96, 0.95] },
+]);
+assert.equal(insufficientSamples.accepted, false);
+assert.equal(insufficientSamples.reason, "INSUFFICIENT_SAMPLES");
 
 const ambiguous = matcher.chooseIdentity([
   { identity: ana, scores: [0.86, 0.84, 0.82] },

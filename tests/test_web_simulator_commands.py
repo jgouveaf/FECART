@@ -90,6 +90,23 @@ class TestWebSimulatorCommands(unittest.TestCase):
         self.assertIn('window.addEventListener("quantum:gesture-command"', app)
         self.assertIn("window.QuantumSimulator", app)
 
+    def test_same_test_panel_can_target_the_real_arduino(self) -> None:
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        app = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+        for marker in (
+            'id="testTargetSimulator"',
+            'id="testTargetArduino"',
+            'id="testConnectArduino"',
+            'id="testTargetStatus" role="status"',
+            'id="testEnvironmentValue"',
+        ):
+            self.assertIn(marker, html)
+        self.assertIn('robot.requestMode(ROBOT_MODE_BY_SIMULATOR_MODE[mode], "test-panel")', app)
+        self.assertIn("robot.send(command)", app)
+        self.assertIn('source === "GESTO"', app)
+        self.assertIn("setTarget: setTestTarget", app)
+        self.assertIn("target: testTarget", app)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

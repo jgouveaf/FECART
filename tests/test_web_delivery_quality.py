@@ -56,7 +56,7 @@ class TestWebDeliveryQuality(unittest.TestCase):
 
     def test_simulator_has_keyboard_contract_and_accessible_help(self) -> None:
         self.assertIn('id="simulatorCommandPanel" tabindex="0"', HTML)
-        self.assertIn('aria-describedby="simulatorHint"', HTML)
+        self.assertIn('aria-describedby="simulatorHint testTargetStatus"', HTML)
         self.assertIn('id="simulatorHint" role="status" aria-live="polite"', HTML)
         for marker in ('"1": "FRENTE"', 'ArrowRight: "DIREITA"', 'ArrowLeft: "ESQUERDA"', '"4": "PARAR"', '"5": "GIRAR"'):
             self.assertIn(marker, APP)
@@ -87,7 +87,7 @@ class TestWebDeliveryQuality(unittest.TestCase):
         self.assertNotRegex(HTML, r"\son(?:click|keydown|submit)=")
 
     def test_asset_versions_force_the_professional_release(self) -> None:
-        for marker in ("web/styles.css?v=17", "web/app.js?v=15", "web/arduino-flasher.js?v=2", "web/face-identity-math.js?v=1", "web/face-identities.js?v=13"):
+        for marker in ("web/styles.css?v=18", "web/app.js?v=16", "web/code-editor-utils.js?v=1", "web/face-identity-math.js?v=2", "web/face-identities.js?v=14"):
             self.assertIn(marker, HTML)
 
 

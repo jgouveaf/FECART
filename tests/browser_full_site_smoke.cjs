@@ -44,6 +44,18 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
     await page.waitForFunction(() => Boolean(window.QuantumControl && window.quantumCameraController && window.quantumGestureController && window.quantumRobot && window.QuantumSimulator));
     const humanRuntimeBeforeCamera = humanRuntimeRequests;
     await page.locator("#simulador").scrollIntoViewIfNeeded();
+    await page.locator("#testTargetArduino").click();
+    const arduinoTarget = await page.evaluate(() => ({
+      target: window.QuantumSimulator.snapshot().target,
+      status: document.getElementById("testTargetStatus").textContent,
+      connectVisible: !document.getElementById("testConnectArduino").hidden,
+    }));
+    await page.locator("#testTargetSimulator").click();
+    const simulatorTarget = await page.evaluate(() => ({
+      target: window.QuantumSimulator.snapshot().target,
+      status: document.getElementById("testTargetStatus").textContent,
+      connectHidden: document.getElementById("testConnectArduino").hidden,
+    }));
     await page.locator("#simGestureMode").click();
     const simulator = {};
     for (const command of ["FRENTE", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]) {
@@ -131,9 +143,15 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
       && simulator.gesture.start.command === "FRENTE"
       && simulator.gesture.timeout.command === "PARAR";
     const lazyFaceRuntime = { beforeCamera: humanRuntimeBeforeCamera, afterCamera: humanRuntimeRequests };
-    const result = { face, active, stopped, simulator: { ...simulator, passed: simulatorPassed }, lazyFaceRuntime, responsive, pageErrors, consoleErrors, failedRequests, externalRequests: [...new Set(externalRequests)], repeatedFaceModels };
+    const testTargetsPassed =
+      arduinoTarget.target === "arduino"
+      && arduinoTarget.connectVisible
+      && /desconectado/i.test(arduinoTarget.status)
+      && simulatorTarget.target === "simulator"
+      && simulatorTarget.connectHidden;
+    const result = { face, active, stopped, testTargets: { arduinoTarget, simulatorTarget, passed: testTargetsPassed }, simulator: { ...simulator, passed: simulatorPassed }, lazyFaceRuntime, responsive, pageErrors, consoleErrors, failedRequests, externalRequests: [...new Set(externalRequests)], repeatedFaceModels };
     process.stdout.write(JSON.stringify(result));
-    if (pageErrors.length || consoleErrors.length || failedRequests.length || externalRequests.length || face.status !== "ONLINE" || !face.active || humanRuntimeBeforeCamera !== 0 || humanRuntimeRequests !== 1 || repeatedFaceModels.length || active.camera !== "ACTIVE" || !active.gestureActive || stopped.camera !== "OFF" || stopped.attachedStream || !simulatorPassed || responsive.some((item) => item.horizontalOverflow || Math.abs(item.cameraRatio - 16 / 9) > 0.08)) process.exitCode = 1;
+    if (pageErrors.length || consoleErrors.length || failedRequests.length || externalRequests.length || face.status !== "ONLINE" || !face.active || humanRuntimeBeforeCamera !== 0 || humanRuntimeRequests !== 1 || repeatedFaceModels.length || active.camera !== "ACTIVE" || !active.gestureActive || stopped.camera !== "OFF" || stopped.attachedStream || !testTargetsPassed || !simulatorPassed || responsive.some((item) => item.horizontalOverflow || Math.abs(item.cameraRatio - 16 / 9) > 0.08)) process.exitCode = 1;
   } finally {
     await browser.close();
   }

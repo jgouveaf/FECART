@@ -24,6 +24,9 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         cls.face_js = (ROOT / "web" / "face-identities.js").read_text(encoding="utf-8")
         cls.robot_js = (ROOT / "web" / "robot-control.js").read_text(encoding="utf-8")
         cls.code_bundle_js = (ROOT / "web" / "arduino-codes.js").read_text(encoding="utf-8")
+        cls.code_editor_utils_js = (ROOT / "web" / "code-editor-utils.js").read_text(encoding="utf-8")
+        cls.auth_js = (ROOT / "web" / "auth-gate.js").read_text(encoding="utf-8")
+        cls.config_js = (ROOT / "web" / "user-config.js").read_text(encoding="utf-8")
         object_source = cls.code_bundle_js.split("Object.freeze(", 1)[1].rsplit(");", 1)[0]
         cls.code_bundle = json.loads(object_source)
 
@@ -40,12 +43,16 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="codigos"',
             'id="arduinoCode"',
             'web/arduino-codes.js?v=11',
+            'web/user-config.js?v=2',
             'web/control-state.js?v=1',
             'web/camera-controller.js?v=2',
             'web/face-quality.js?v=1',
-            'web/gesture-math.js?v=3',
+            'web/gesture-math.js?v=2',
             'web/simulator-controller.js?v=2',
             'web/robot-control.js?v=12',
+            'web/code-editor-utils.js?v=1',
+            'web/face-identity-math.js?v=2',
+            'web/face-identities.js?v=14',
             'id="toggleGestures"',
             'id="cameraDeviceSelect"',
             'id="retryFaceDetection"',
@@ -53,20 +60,10 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             self.assertIn(required, self.html)
 
     def test_arduino_installation_workflow_is_explicit(self) -> None:
-        self.assertIn("Gravar pelo site", self.html)
-        self.assertIn("Aguardar 100%", self.html)
-        self.assertIn('id="flashOfficialFirmware"', self.html)
-        self.assertIn("bootloader STK500v1 do Arduino UNO", self.html)
-        self.assertIn('web/arduino-flasher.js?v=2', self.html)
-
-    def test_official_firmware_flasher_is_local_and_pinned_to_uno(self) -> None:
-        flasher = (ROOT / "web" / "arduino-flasher.js").read_text(encoding="utf-8")
-        self.assertIn('BOARDS["arduino-uno"]', flasher)
-        self.assertIn("FIRMWARE_SHA256", flasher)
-        self.assertIn("programmer.bootload", flasher)
-        self.assertIn("await window.quantumRobot.disconnect()", flasher)
-        self.assertTrue((ROOT / "firmware" / "compiled" / "quantum_tracker_arduino.ino.hex").is_file())
-        self.assertTrue((ROOT / "web" / "vendor" / "webserial-flasher" / "LICENSE").is_file())
+        self.assertIn("Gravar uma vez", self.html)
+        self.assertIn("Liberar a porta", self.html)
+        self.assertIn("O painel envia modos e comandos; não envia sketches.", self.html)
+        self.assertIn("Arduino IDE somente para instalar ou atualizar.", self.html)
 
     def test_every_code_source_exists_and_is_an_arduino_sketch(self) -> None:
         sources = re.findall(r'data-code-source="([^"]+)"', self.html)
@@ -84,6 +81,32 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn('tabindex="-1"', self.html)
         self.assertIn('["ArrowLeft", "ArrowRight", "Home", "End"]', self.app_js)
         self.assertIn("item.tabIndex = selected ? 0 : -1", self.app_js)
+
+    def test_code_editor_import_is_validated_and_protects_unsaved_changes(self) -> None:
+        for marker in ('id="updateCode"', 'id="codeFileInput"', 'Passo a passo para trocar o código'):
+            self.assertIn(marker, self.html)
+        self.assertIn("MAX_CODE_FILE_BYTES = 256 * 1024", self.code_editor_utils_js)
+        self.assertIn("validateArduinoCode", self.code_editor_utils_js)
+        self.assertIn("normalizeImportedCode", self.code_editor_utils_js)
+        self.assertIn("await file.text()", self.app_js)
+        self.assertIn('window.addEventListener("beforeunload"', self.app_js)
+        self.assertIn("codeHasUnsavedChanges()", self.app_js)
+        self.assertIn("window.localStorage.getItem(CODE_EDIT_PREFIX + source) === code", self.app_js)
+
+    def test_password_visibility_logout_and_quick_guide_are_available(self) -> None:
+        self.assertIn('id="togglePassword"', self.auth_js)
+        self.assertIn('passwordInput.type = showing ? "password" : "text"', self.auth_js)
+        self.assertIn('aria-pressed', self.auth_js)
+        self.assertIn('id="logoutButton"', self.html)
+        self.assertIn('id="guia"', self.html)
+        self.assertIn("Guia rápido de operação", self.html)
+
+    def test_user_configuration_is_applied_without_reload(self) -> None:
+        self.assertIn('new CustomEvent("quantum:user-config-changed"', self.config_js)
+        self.assertIn('window.addEventListener("quantum:user-config-changed"', self.camera_js)
+        self.assertIn("renderGestureMapLabels()", self.camera_js)
+        self.assertIn("window.localStorage.getItem(STORAGE_KEY) === serialized", self.config_js)
+        self.assertNotIn("Recarregue a página", self.html)
 
     def test_main_firmware_pin_map_matches_declared_wiring(self) -> None:
         code = (ROOT / "firmware" / "quantum_tracker_arduino" / "quantum_tracker_arduino.ino").read_text(encoding="utf-8")
@@ -182,7 +205,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
     def test_camera_controller_uses_compatible_classic_bootstrap(self) -> None:
         self.assertIn('id="startCamera">Ativar câmera', self.html)
         self.assertIn('src="web/camera-controller.js?v=2" defer', self.html)
-        self.assertIn('src="web/camera-gestures.js?v=14" defer', self.html)
+        self.assertIn('src="web/camera-gestures.js?v=15" defer', self.html)
         self.assertNotIn('type="module" src="web/camera-gestures.js', self.html)
         self.assertIn("window.quantumCameraController", self.camera_controller_js)
         self.assertIn('startButton.textContent = "Ativar câmera"', self.camera_controller_js)

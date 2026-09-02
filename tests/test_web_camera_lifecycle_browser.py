@@ -383,10 +383,10 @@ class TestGestureAndCommandLifecycleContracts(unittest.TestCase):
         self.assertIn("web/vendor/mediapipe/wasm", self.gesture)
 
     def test_gesture_confirmation_has_confidence_frames_time_cooldown_and_loss_stop(self) -> None:
-        confidence = re.search(r"MIN_CONFIDENCE\s*=\s*([0-9.]+)", self.gesture)
+        confidence = re.search(r"MIN_CONFIDENCE\s*=.*?([0-9.]+)\s*;", self.gesture)
         frames = re.search(r"CONFIRM_FRAMES\s*=\s*(\d+)", self.gesture)
         confirm_ms = re.search(r"CONFIRM_MS\s*=\s*(\d+)", self.gesture)
-        cooldown = re.search(r"COMMAND_COOLDOWN_MS\s*=\s*(\d+)", self.gesture)
+        cooldown = re.search(r"COMMAND_COOLDOWN_MS\s*=.*?(\d+)\s*;", self.gesture)
         hand_loss = re.search(r"LOST_HAND_STOP_MS\s*=\s*(\d+)", self.gesture)
         self.assertIsNotNone(confidence)
         self.assertGreaterEqual(float(confidence.group(1)), 0.6)

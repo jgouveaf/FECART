@@ -40,6 +40,14 @@
     return Math.max(0, Math.min(1, 0.5 + (value - threshold) / Math.max(transition, EPSILON)));
   }
 
+  // Com o dorso voltado para a camera, o MediaPipe pode comprimir uma ou duas
+  // medidas do anelar/mindinho. A mediana exige concordancia da maioria dos
+  // sinais sem deixar uma unica medida instavel fechar um dedo aberto.
+  function robustProbability(scores) {
+    const ordered = [...scores].sort((first, second) => first - second);
+    return ordered[Math.floor(ordered.length / 2)];
+  }
+
   function evaluateFinger(points, mcp, pip, dip, tip, palmScale, palmCenter) {
     const scores = [
       thresholdScore(distance(points[tip], points[mcp]) / palmScale, 0.56, 0.30),
@@ -48,7 +56,7 @@
       thresholdScore(jointAngle(points[mcp], points[pip], points[dip]), 105, 70),
       thresholdScore(jointAngle(points[pip], points[dip], points[tip]), 105, 70),
     ];
-    const probability = Math.min(...scores);
+    const probability = robustProbability(scores);
     return { extended: probability >= 0.5, probability, certainty: Math.abs(probability - 0.5) * 2 };
   }
 
@@ -60,7 +68,7 @@
       thresholdScore(distance(points[4], points[5]) / palmScale, 0.55, 0.35),
       thresholdScore((distance(points[4], palmCenter) - distance(points[3], palmCenter)) / palmScale, 0.08, 0.22),
     ];
-    const probability = Math.min(...scores);
+    const probability = robustProbability(scores);
     return { extended: probability >= 0.5, probability, certainty: Math.abs(probability - 0.5) * 2 };
   }
 

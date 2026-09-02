@@ -43,7 +43,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/control-state.js?v=1',
             'web/camera-controller.js?v=2',
             'web/face-quality.js?v=1',
-            'web/gesture-math.js?v=2',
+            'web/gesture-math.js?v=3',
             'web/simulator-controller.js?v=2',
             'web/robot-control.js?v=12',
             'id="toggleGestures"',

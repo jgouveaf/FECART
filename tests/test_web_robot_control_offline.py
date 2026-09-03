@@ -206,6 +206,13 @@ class TestWebRobotControlOffline(unittest.TestCase):
         relative = "firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino"
         self.assertEqual(self.bundle[relative], self.firmware)
 
+    def test_post_turn_recovery_requires_recent_clear_sensor_confirmation(self) -> None:
+        self.assertIn("falhasConsecutivasSensor >= 2", self.firmware)
+        self.assertIn("agora - ultimaLeituraLivreEm > 240UL", self.firmware)
+        self.assertIn("agora - ultimaLeituraLivreEm <= 240UL", self.firmware)
+        self.assertIn("leiturasLivresAposCurva >= LEITURAS_CAMINHO_LIVRE", self.firmware)
+        self.assertIn('Serial.print(F("WAIT_SENSOR"))', self.firmware)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -603,10 +603,12 @@
       runCode.textContent = result?.label || idleLabel;
     } catch (error) {
       codeStatus.textContent = "NÃO FOI POSSÍVEL RODAR";
+      runCode.textContent = idleLabel;
       window.alert(error?.message || "Falha ao iniciar o código selecionado.");
     } finally {
       runCode.disabled = false;
-      window.setTimeout(() => { runCode.textContent = idleLabel; }, 1800);
+      // Iniciar o modo não é um teste com duração limitada. Não trocar o
+      // rótulo por temporizador: isso parecia encerrar o autônomo em 1,8 s.
     }
   });
 

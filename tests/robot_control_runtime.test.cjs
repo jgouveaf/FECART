@@ -598,6 +598,17 @@ async function testModeTransitionSurvivesCameraStartupFailureInEstop() {
 
 async function main() {
   const tests = [
+    async function testWaitingSensorIsVisibleAndDoesNotLatchEstop() {
+      const environment = createEnvironment();
+      await environment.robot.connect();
+      await releaseSafety(environment);
+      environment.robot._test.parseTelemetry("QT|MODE:1|DIST:ERR|CMD:PARAR|STATE:WAIT_SENSOR");
+      assert.match(environment.elements.robotStateStatus.textContent, /AGUARDANDO SENSOR/);
+      assert.equal(environment.control.state.safety.emergency, false);
+      environment.robot._test.parseTelemetry("QT|MODE:1|DIST:50|CMD:FRENTE|STATE:AUTONOMO");
+      assert.equal(environment.elements.robotStateStatus.textContent, "AUTONOMO");
+      await cleanup(environment);
+    },
     testRobotStatusKeepsTechnicalStateAndReadableLabel,
     testHandshakeAndAcknowledgements,
     testModeTransitionAndStaleInputWatchdog,

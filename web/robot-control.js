@@ -320,6 +320,9 @@
     if (distanceStatus) distanceStatus.textContent = distance === null || !Number.isFinite(distance) ? "SEM ECO" : `${distance.toFixed(1)} cm`;
     if (values.CMD && commandStatus) commandStatus.textContent = values.CMD;
     if (stateStatus) stateStatus.textContent = firmwareState;
+    if (values.STATE === "WAIT_SENSOR" && stateStatus) {
+      stateStatus.textContent = "AGUARDANDO SENSOR · RETOMA AO CONFIRMAR CAMINHO LIVRE";
+    }
 
     if (values.STATE === "ESTOP") setEmergencyUi(true, "ESTOP", emergencyOwner || "firmware");
     else if (values.STATE === "SENSOR_INIT" && stateStatus) {

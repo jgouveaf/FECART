@@ -74,6 +74,7 @@ unsigned long ultimoSensorEm = 0;
 unsigned long ultimaTelemetriaEm = 0;
 unsigned long ultimoComandoEm = 0;
 unsigned long estadoDesvioDesde = 0;
+unsigned long ultimaLeituraLivreEm = 0;
 
 float distanciaAtualCm = -1;
 byte falhasConsecutivasSensor = 0;
@@ -167,7 +168,11 @@ void atualizarSensor(unsigned long agora) {
   // Sem eco: ignora somente esta leitura. O sensor nao para o robo.
   if (distanciaAtualCm < 0) {
     if (falhasConsecutivasSensor < 255) falhasConsecutivasSensor++;
-    leiturasLivresAposCurva = 0;
+    // Uma falha isolada não apaga uma leitura livre recente. Falhas
+    // repetidas ou uma leitura antiga continuam exigindo nova confirmação.
+    if (falhasConsecutivasSensor >= 2 || agora - ultimaLeituraLivreEm > 240UL) {
+      leiturasLivresAposCurva = 0;
+    }
     obstaculosConsecutivos = 0;
     return;
   }
@@ -185,7 +190,9 @@ void atualizarSensor(unsigned long agora) {
   } else {
     obstaculosConsecutivos = 0;
     if (estadoDesvio == DESVIO_PAUSA_CURVA) {
+      if (agora - ultimaLeituraLivreEm > 240UL) leiturasLivresAposCurva = 0;
       if (leiturasLivresAposCurva < 255) leiturasLivresAposCurva++;
+      ultimaLeituraLivreEm = agora;
     } else {
       leiturasLivresAposCurva = 0;
     }
@@ -260,7 +267,9 @@ void atualizarDesvio(unsigned long agora) {
     case DESVIO_PAUSA_CURVA:
       // Aguarda o HC-SR04 apontar para a nova direcao. Se ainda houver
       // obstaculo, gira mais 90 graus sem recuar novamente.
-      if (decorrido >= 250UL && leiturasLivresAposCurva >= LEITURAS_CAMINHO_LIVRE) {
+      if (decorrido >= 250UL && distanciaAtualCm > DISTANCIA_OBSTACULO_CM
+          && agora - ultimaLeituraLivreEm <= 240UL
+          && leiturasLivresAposCurva >= LEITURAS_CAMINHO_LIVRE) {
         andarParaFrente();
         estadoDesvio = DESVIO_SAIDA;
         estadoDesvioDesde = agora;
@@ -311,6 +320,7 @@ void enviarStatus(unsigned long agora, bool forcar = false) {
   Serial.print(nomeComando(comandoAplicado));
   Serial.print(F("|STATE:"));
   if (paradaEmergencia) Serial.print(F("ESTOP"));
+  else if (estadoDesvio == DESVIO_PAUSA_CURVA && distanciaAtualCm < 0) Serial.print(F("WAIT_SENSOR"));
   else if (modo != MODO_AUTONOMO && !controleUsbAtivo) Serial.print(F("LINK_WAIT"));
   else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
   else Serial.print(nomeModo());

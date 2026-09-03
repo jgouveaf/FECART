@@ -718,14 +718,22 @@
   function watchdogTick() {
     if (!connected || emergencyActive || modeTransitioning || programRunning) return;
     if (lastSerialRxAt > 0 && performance.now() - lastSerialRxAt > SERIAL_SILENCE_TIMEOUT_MS) {
+      if (activeMode === 1) {
+        // O AUTONOMO pertence ao firmware, não ao navegador. Uma falha do
+        // painel fecha apenas a supervisão USB; enviar ESTOP aqui faria o
+        // carrinho parar mesmo com a máquina de estados ativa no UNO.
+        setConnection("USB SEM RESPOSTA · AUTÔNOMO LOCAL", "ERROR", "O Arduino continua no Modo 1. Reconecte o painel para recuperar a telemetria.");
+        log("WARNING", "ARDUINO", "Supervisão USB perdida; Modo 1 preservado no firmware");
+        closePort({ sendEstop: false, reason: "AUTONOMOUS_SERIAL_SILENCE", preserveStatus: true });
+        return;
+      }
       failClosed("O Arduino deixou de responder pela USB; motores bloqueados por segurança.");
       return;
     }
     if (activeMode === 1) {
-      // O modo autônomo também depende de uma concessão viva do site. O UNO
-      // para em até 1,5 s se a página travar, o cabo cair ou o navegador fechar.
+      // O Modo 1 é contínuo no próprio UNO. Não repetir CMD:FRENTE evita que
+      // um ACK atrasado do navegador seja interpretado como falha de movimento.
       lastIntent = "FRENTE";
-      sendMotion("FRENTE");
       return;
     }
     const hasFreshInput = lastFreshInputAt > 0 && performance.now() - lastFreshInputAt <= INPUT_TIMEOUT_MS;
@@ -884,7 +892,9 @@
     });
   }
   connectButton.addEventListener("click", () => { connectRobot(); });
-  disconnectButton.addEventListener("click", () => { closePort({ sendEstop: true, reason: "USER" }); });
+  disconnectButton.addEventListener("click", () => {
+    closePort({ sendEstop: activeMode !== 1, reason: "USER" });
+  });
   emergencyButton.addEventListener("click", () => { toggleEmergency(); });
   navigator.serial?.addEventListener?.("disconnect", (event) => {
     if (event.port === port || event.target === port) handleConnectionFailure(new Error("Arduino desconectado."));
@@ -899,7 +909,9 @@
     ++modeGeneration;
     lastIntent = "PARAR";
     lastFreshInputAt = 0;
-    if (transportOpen && writer) writer.write(new TextEncoder().encode("ESTOP\n")).catch(() => {});
+    // Fechar a página não cancela o autônomo local. Modos 2 e 3 dependem do
+    // computador e continuam entrando em ESTOP quando a página é encerrada.
+    if (activeMode !== 1 && transportOpen && writer) writer.write(new TextEncoder().encode("ESTOP\n")).catch(() => {});
     window.clearInterval(heartbeatTimer);
   });
 
@@ -982,9 +994,10 @@
       if (program === "principal") {
         lastIntent = "FRENTE";
         lastFreshInputAt = performance.now();
-        await command("FRENTE");
+        lastAcknowledgedCommand = "FRENTE";
+        if (commandStatus) commandStatus.textContent = "FRENTE";
         updateDeliveryHint();
-        log("INFO", "CÓDIGOS", "Código principal iniciado em modo autônomo");
+        log("INFO", "CÓDIGOS", "Código principal iniciado no Modo 1 local e contínuo");
         return { program, label: "Autônomo rodando" };
       }
 
@@ -1035,7 +1048,7 @@
   const publicApi = {
     connect: connectRobot,
     runProgram,
-    disconnect: () => closePort({ sendEstop: true, reason: "API" }),
+    disconnect: () => closePort({ sendEstop: activeMode !== 1, reason: "API" }),
     requestMode,
     emergencyStop: toggleEmergency,
     send(command) { return acceptIntent(String(command || "").toUpperCase(), "api", { fresh: true }); },

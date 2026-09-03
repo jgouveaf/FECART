@@ -149,11 +149,16 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn("descartandoLinhaSerial = false", parser)
         self.assertIn("discardingReadLine", self.robot_js)
 
-    def test_silent_serial_connection_fails_closed(self) -> None:
+    def test_silent_serial_preserves_local_autonomous_and_fails_closed_remotely(self) -> None:
         self.assertRegex(self.robot_js, r"SERIAL_SILENCE_TIMEOUT_MS\s*=.*\|\|\s*2200")
         self.assertIn("lastSerialRxAt", self.robot_js)
         self.assertIn("performance.now() - lastSerialRxAt > SERIAL_SILENCE_TIMEOUT_MS", self.robot_js)
         self.assertIn("deixou de responder pela USB", self.robot_js)
+        watchdog = self.robot_js.split("function watchdogTick()", 1)[1].split("async function toggleEmergency", 1)[0]
+        self.assertIn('activeMode === 1', watchdog)
+        self.assertIn('sendEstop: false', watchdog)
+        autonomous = watchdog.split('if (activeMode === 1)', 2)[2].split('const hasFreshInput', 1)[0]
+        self.assertNotIn('sendMotion("FRENTE")', autonomous)
 
     def test_stale_events_and_split_brain_fail_closed(self) -> None:
         self.assertIn("connectionGeneration", self.robot_js)

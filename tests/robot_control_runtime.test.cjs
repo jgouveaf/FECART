@@ -416,7 +416,7 @@ async function testOldTelemetryCannotConfirmANewMotionCommand() {
   await cleanup(environment);
 }
 
-async function testSilentUsbConnectionTriggersEmergencyStop() {
+async function testSilentUsbPreservesLocalAutonomousButStopsRemoteMode() {
   const environment = createEnvironment(
     { noAckFor: ["CMD:FRENTE"] },
     { serialSilenceTimeoutMs: 35, commandHeartbeatMs: 8, ackTimeoutMs: 120 },
@@ -424,11 +424,21 @@ async function testSilentUsbConnectionTriggersEmergencyStop() {
   await environment.robot.connect();
   await releaseSafety(environment);
 
-  await waitFor(() => environment.control.state.robot.status === "ERROR", 250);
-  assert.equal(environment.control.state.safety.emergency, true);
-  assert.match(environment.control.state.diagnostics.lastError, /deixou de responder/);
-  assert.equal(environment.port.writes.at(-1), "ESTOP");
+  await waitFor(() => environment.robot.connected === false, 250);
+  assert.equal(environment.control.state.safety.emergency, false, "perda da supervisão não deve cancelar o Modo 1 local");
+  assert.notEqual(environment.port.writes.at(-1), "ESTOP");
   await cleanup(environment);
+
+  const remote = createEnvironment({}, { serialSilenceTimeoutMs: 35, commandHeartbeatMs: 8, ackTimeoutMs: 15 });
+  await remote.robot.connect();
+  await releaseSafety(remote);
+  remote.robot.requestMode(3, "test");
+  await waitFor(() => remote.robot.confirmedMode === 3);
+  remote.port.options.acks = false;
+  await waitFor(() => remote.control.state.robot.status === "ERROR", 250);
+  assert.equal(remote.control.state.safety.emergency, true, "Modo 3 continua dependente da supervisão do computador");
+  assert.equal(remote.port.writes.at(-1), "ESTOP");
+  await cleanup(remote);
 }
 
 async function testRecoverableReadErrorDoesNotDisconnectArduino() {
@@ -473,12 +483,12 @@ async function testSensorFailureRemainsBlockedUntilRecovery() {
   await cleanup(environment);
 }
 
-async function testDisconnectAndPageHideEndWithEstop() {
+async function testRemoteDisconnectStopsButAutonomousPageHideKeepsRunning() {
   const environment = createEnvironment({ writeDelayMs: 2 });
   await environment.robot.connect();
   await releaseSafety(environment);
   environment.robot.requestMode(3, "test");
-  await waitFor(() => environment.robot.confirmedMode === 3);
+  await waitFor(() => environment.robot.confirmedMode === 3 && environment.robot.mode === 3);
   environment.window.dispatchEvent(new TestCustomEvent("quantum:gesture-command", {
     detail: { command: "GIRAR", stable: true, confidence: 0.9 },
   }));
@@ -490,9 +500,24 @@ async function testDisconnectAndPageHideEndWithEstop() {
   const pageEnvironment = createEnvironment();
   await pageEnvironment.robot.connect();
   await releaseSafety(pageEnvironment);
+  const beforePageHide = pageEnvironment.port.writes.length;
   pageEnvironment.window.dispatchEvent(new Event("pagehide"));
-  await waitFor(() => pageEnvironment.port.writes.at(-1) === "ESTOP");
+  await wait(10);
+  assert.equal(pageEnvironment.port.writes.slice(beforePageHide).includes("ESTOP"), false, "fechar o painel não deve parar o Modo 1 local");
   await cleanup(pageEnvironment);
+}
+
+async function testRunPrincipalStartsLocalModeWithoutMotionHeartbeat() {
+  const environment = createEnvironment({}, { commandHeartbeatMs: 8 });
+  const result = await environment.robot.runProgram("principal");
+  assert.equal(result.label, "Autônomo rodando");
+  assert.equal(environment.robot.confirmedMode, 1);
+  const resetIndex = environment.port.writes.lastIndexOf("RESET_ESTOP");
+  assert.ok(resetIndex >= 0);
+  await wait(35);
+  assert.equal(environment.port.writes.slice(resetIndex + 1).includes("CMD:FRENTE"), false, "Modo 1 deve andar pelo firmware, sem heartbeat do site");
+  assert.equal(environment.port.writes.slice(resetIndex + 1).includes("ESTOP"), false);
+  await cleanup(environment);
 }
 
 async function testKeyboardTransitionAndScopedSerialDisconnect() {
@@ -581,11 +606,12 @@ async function main() {
     testModeAckTimeoutRollsBackAndStaysStopped,
     testRepeatedMotionAckFailureTriggersEstop,
     testOldTelemetryCannotConfirmANewMotionCommand,
-    testSilentUsbConnectionTriggersEmergencyStop,
+    testSilentUsbPreservesLocalAutonomousButStopsRemoteMode,
     testRecoverableReadErrorDoesNotDisconnectArduino,
     testOversizedSerialLineIsDiscardedUntilNewline,
     testSensorFailureRemainsBlockedUntilRecovery,
-    testDisconnectAndPageHideEndWithEstop,
+    testRemoteDisconnectStopsButAutonomousPageHideKeepsRunning,
+    testRunPrincipalStartsLocalModeWithoutMotionHeartbeat,
     testKeyboardTransitionAndScopedSerialDisconnect,
     testHandshakeTimeoutAndVersionMismatch,
     testConnectionErrorsAreActionable,

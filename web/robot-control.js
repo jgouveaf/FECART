@@ -16,6 +16,9 @@
   const stateStatus = document.getElementById("robotStateStatus");
   const gestureDeliveryStatus = document.getElementById("gestureDeliveryStatus");
   const modeButtons = [...document.querySelectorAll(".robot-mode")];
+  const motorTestButtons = [...document.querySelectorAll("[data-motor-test]")];
+  const stopMotorTestButton = document.getElementById("stopMotorTest");
+  const motorTestStatus = document.getElementById("motorTestStatus");
 
   if (!panel || !connectButton || !disconnectButton || !emergencyButton) {
     console.error("Controle do robô não iniciou: elementos obrigatórios ausentes.");
@@ -459,6 +462,8 @@
     connectButton.disabled = online || busy;
     disconnectButton.disabled = !online && !busy;
     emergencyButton.disabled = !online;
+    for (const button of motorTestButtons) button.disabled = !online || programRunning;
+    if (stopMotorTestButton) stopMotorTestButton.disabled = !online;
     for (const button of modeButtons) button.disabled = busy;
   }
 
@@ -643,6 +648,7 @@
   }
 
   function requestMode(modeId, source = "ui") {
+    if (programRunning) return false;
     const nextMode = Number(modeId);
     if (!MODE_NAMES[nextMode]) return false;
     if (control?.requestMode) return Boolean(control.requestMode(nextMode, source));
@@ -664,6 +670,7 @@
   function mayAcceptInput(expectedMode, detail) {
     const centralMode = control?.state?.mode;
     return connected
+      && !programRunning
       && !modeTransitioning
       && !emergencyActive
       && activeMode === expectedMode
@@ -673,7 +680,7 @@
   }
 
   function sendMotion(command, options = {}) {
-    if (!VALID_COMMANDS.has(command) || !connected || emergencyActive || modeTransitioning) return Promise.resolve(false);
+    if (programRunning || !VALID_COMMANDS.has(command) || !connected || emergencyActive || modeTransitioning) return Promise.resolve(false);
     const modeToken = options.modeToken ?? modeGeneration;
     if (motionAckInFlight) {
       pendingMotion = { command, modeToken, createdAt: performance.now() };
@@ -714,7 +721,7 @@
   }
 
   function acceptIntent(command, source, options = {}) {
-    if (!VALID_COMMANDS.has(command) || !connected || emergencyActive || modeTransitioning) return false;
+    if (programRunning || !VALID_COMMANDS.has(command) || !connected || emergencyActive || modeTransitioning) return false;
     if (options.fresh !== false) lastFreshInputAt = performance.now();
     lastIntent = command;
     const changed = command !== lastWrittenCommand;
@@ -931,10 +938,13 @@
   log("INFO", "ARDUINO", "Controlador Web Serial pronto · aguardando conexão explícita");
 
 
-  async function runProgram(programName) {
+  async function runProgram(programName, motorDirection = null) {
     const program = String(programName || "").toLowerCase();
     if (!["principal", "motores", "sensor"].includes(program)) {
       throw new Error("Código selecionado inválido.");
+    }
+    if (motorDirection !== null && (program !== "motores" || !["FRENTE", "TRAS", "DIREITA", "ESQUERDA"].includes(motorDirection))) {
+      throw new Error("Direção de teste inválida.");
     }
     if (programRunning) throw new Error("Já existe um código em execução.");
 
@@ -1011,7 +1021,7 @@
       }
 
       log("WARNING", "CÓDIGOS", "Teste dos motores iniciado; mantenha as rodas levantadas");
-      const sequence = [
+      const sequence = motorDirection ? [[motorDirection, 700], ["PARAR", 0]] : [
         ["FRENTE", 900],
         ["PARAR", 250],
         ["TRAS", 900],
@@ -1054,9 +1064,46 @@
     }
   }
 
+  async function stopPhysicalTest() {
+    if (!connected) return;
+    const operationToken = ++operationGeneration;
+    rejectSupersededOperationWaiters(operationToken);
+    ++modeGeneration;
+    pendingMotion = null;
+    lastIntent = "PARAR";
+    lastFreshInputAt = 0;
+    setEmergencyUi(true, "PARADA SOLICITADA", "operator");
+    try {
+      await transact("ESTOP", line => line === "OK:ESTOP", { connectionToken: connectionGeneration, operationToken });
+      setEmergencyUi(true, "PARADA CONFIRMADA", "operator");
+      if (motorTestStatus) motorTestStatus.textContent = "Parada confirmada pelo firmware. Verifique as rodas.";
+    } catch (error) {
+      setEmergencyUi(true, "PARADA SEM CONFIRMAÇÃO", "fault");
+      if (motorTestStatus) motorTestStatus.textContent = "Parada não confirmada. Desligue a alimentação dos motores.";
+      reportError("Falha ao confirmar parada", error);
+    }
+  }
+
+  for (const button of motorTestButtons) button.addEventListener("click", async () => {
+    if (!connected || programRunning) return;
+    if (!window.confirm("As rodas estão suspensas e a área livre? O teste aciona motores reais por cerca de 0,7 s e muda para o Modo 3.")) return;
+    for (const item of motorTestButtons) item.disabled = true;
+    if (motorTestStatus) motorTestStatus.textContent = `Preparando teste: ${button.textContent}.`;
+    try {
+      await runProgram("motores", button.dataset.motorTest);
+      if (motorTestStatus) motorTestStatus.textContent = `Teste ${button.textContent} encerrado; ESTOP confirmado. Movimento físico não medido.`;
+    } catch (error) {
+      if (motorTestStatus) motorTestStatus.textContent = `Teste interrompido: ${error.message}`;
+    } finally {
+      for (const item of motorTestButtons) item.disabled = !connected;
+    }
+  });
+  stopMotorTestButton?.addEventListener("click", stopPhysicalTest);
+
   const publicApi = {
     connect: connectRobot,
     runProgram,
+    stopPhysicalTest,
     disconnect: () => closePort({ sendEstop: activeMode !== 1, reason: "API" }),
     requestMode,
     emergencyStop: toggleEmergency,

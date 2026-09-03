@@ -398,6 +398,18 @@
             <h3>Gravar firmware oficial no Arduino UNO</h3>
             <p>Fecha a versão antiga e instala o firmware testado com os três modos. Feche o Arduino IDE e mantenha as rodas suspensas.</p>
           </div>
+          <div class="guide-warning" aria-label="Teste físico das direções">
+            <strong>Teste físico por USB — rodas suspensas</strong>
+            <p>Cada botão testa uma direção por aproximadamente 0,7 s e termina em parada de emergência. Usa temporariamente o Modo 3, sem câmera ou gestos. O sensor continua ativo.</p>
+            <div class="robot-actions">
+              <button class="secondary-button" data-motor-test="FRENTE" disabled>Frente</button>
+              <button class="secondary-button" data-motor-test="TRAS" disabled>Ré</button>
+              <button class="secondary-button" data-motor-test="DIREITA" disabled>Direita</button>
+              <button class="secondary-button" data-motor-test="ESQUERDA" disabled>Esquerda</button>
+              <button class="danger-button" id="stopMotorTest" disabled>Parar</button>
+            </div>
+            <p id="motorTestStatus" role="status">Conecte o Arduino USB para testar. Estes botões controlam o carrinho real.</p>
+          </div>
           <button class="primary-button" id="flashOfficialFirmware" type="button">Gravar no Arduino UNO</button>
           <progress id="firmwareFlashProgress" max="100" value="0" aria-label="Progresso da gravação"></progress>
           <div class="firmware-flash-status" id="firmwareFlashStatus" role="status" aria-live="polite"><strong>PRONTO</strong><small>Use Chrome ou Edge e selecione a porta do Arduino UNO.</small></div>
@@ -513,7 +525,7 @@
   <script src="web/app.js?v=17" defer></script>
   <script type="module" src="web/arduino-flasher.js?v=6"></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
-  <script src="web/robot-control.js?v=15" defer></script>
+  <script src="web/robot-control.js?v=16" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/face-identity-math.js?v=2" defer></script>
   <script src="web/gesture-math.js?v=6" defer></script>

@@ -208,8 +208,16 @@ function createEnvironment(portOptions = {}, testConfig = {}) {
     "camera-gestos", "connectRobot", "disconnectRobot", "emergencyStop", "robotConnectionDot",
     "robotConnectionStatus", "robotConnectionHint", "robotModeStatus", "robotCommandStatus",
     "robotDistanceStatus", "robotStateStatus", "gestureDeliveryStatus", "connectBeacon", "beaconStatus",
+    "stopMotorTest", "motorTestStatus",
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
+  const motorButtons = ["FRENTE", "TRAS", "DIREITA", "ESQUERDA"].map(direction => {
+    const button = new FakeElement(direction);
+    button.dataset.motorTest = direction;
+    button.textContent = direction;
+    elements[`test${direction}`] = button;
+    return button;
+  });
   const modeButtons = [1, 2, 3].map((id) => {
     const button = new FakeElement(`mode-${id}`);
     button.dataset.robotMode = String(id);
@@ -217,7 +225,7 @@ function createEnvironment(portOptions = {}, testConfig = {}) {
   });
   const documentObject = {
     getElementById: (id) => elements[id] || null,
-    querySelectorAll: (selector) => selector === ".robot-mode" ? modeButtons : [],
+    querySelectorAll: (selector) => selector === ".robot-mode" ? modeButtons : selector === "[data-motor-test]" ? motorButtons : [],
   };
   const port = new FakePort(portOptions);
   const serial = new EventTarget();
@@ -598,6 +606,39 @@ async function testModeTransitionSurvivesCameraStartupFailureInEstop() {
 
 async function main() {
   const tests = [
+    async function testPhysicalButtonsSendOnlySelectedDirectionAndStop() {
+      for (const direction of ["FRENTE", "TRAS", "DIREITA", "ESQUERDA"]) {
+        const e = createEnvironment({}, { ackTimeoutMs: 500 });
+        assert.equal(e.elements[`test${direction}`].disabled, true);
+        await e.robot.connect();
+        assert.equal(e.elements[`test${direction}`].disabled, false);
+        const before = e.port.writes.length;
+        e.elements[`test${direction}`].click();
+        await waitFor(() => e.elements.motorTestStatus.textContent.includes("encerrado"), 3000);
+        const writes = e.port.writes.slice(before);
+        assert.deepEqual(writes.filter(x => /^CMD:/.test(x) && x !== "CMD:PARAR"), [`CMD:${direction}`]);
+        assert.equal(writes.at(-1), "ESTOP");
+        assert.equal(e.control.state.safety.emergency, true);
+        await cleanup(e);
+      }
+    },
+    async function testPhysicalStopCancelsPulseAndNeverReleasesEstop() {
+      const e = createEnvironment({}, { ackTimeoutMs: 500 });
+      await e.robot.connect();
+      const running = e.robot.runProgram("motores", "DIREITA").catch(error => error);
+      await waitFor(() => e.port.writes.includes("CMD:DIREITA"));
+      assert.equal(e.robot.send("FRENTE"), false);
+      assert.equal(e.robot.requestMode(1), false);
+      const before = e.port.writes.length;
+      e.elements.stopMotorTest.click();
+      await running;
+      await e.robot.stopPhysicalTest();
+      assert.equal(e.port.writes.slice(before).some(x => x === "RESET_ESTOP" || x === "CMD:FRENTE"), false);
+      assert.equal(e.port.writes.at(-1), "ESTOP");
+      assert.equal(e.control.state.safety.emergency, true);
+      await assert.rejects(() => e.robot.runProgram("motores", "INVALID"), /inválida/);
+      await cleanup(e);
+    },
     async function testEventsDoNotClaimMeasuredMovement() {
       const environment = createEnvironment();
       environment.robot._test.parseTelemetry("EVENTO:CURVA_EXTRA");

@@ -17,7 +17,7 @@
   - AUTONOMO funciona localmente, mesmo sem site ou cabo USB;
   - SEGUIR e GESTOS param se nenhum novo CMD:* chegar por 1,5 s;
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
-  - falhas do HC-SR04 nao bloqueiam os motores: uma leitura sem eco e ignorada;
+  - apos a curva, falta de eco inicia busca limitada, nunca avanco as cegas;
   - curvas usam as duas rodas ao mesmo tempo, em sentidos opostos;
   - obstaculo frontal inicia um desvio completo; a leitura e ignorada somente
     enquanto o chassi esta girando, pois nesse momento o sensor ainda aponta
@@ -50,6 +50,8 @@ const unsigned int TEMPO_RE_MS = 750;
 const unsigned int TEMPO_CURVA_MS = 650;
 const unsigned int TEMPO_SAIDA_MS = 500;
 const unsigned int TEMPO_ANALISE_CURVA_MS = 650;
+const unsigned int TEMPO_BUSCA_ECO_MS = 1000;
+const byte LIMITE_BUSCAS_ECO = 2;
 
 const byte LEITURAS_CAMINHO_LIVRE = 2;
 
@@ -80,6 +82,7 @@ float distanciaAtualCm = -1;
 byte falhasConsecutivasSensor = 0;
 byte leiturasLivresAposCurva = 0;
 byte obstaculosConsecutivos = 0;
+byte buscasSemEco = 0;
 bool proximaCurvaDireita = true;
 bool curvaAtualDireita = true;
 bool paradaEmergencia = false;
@@ -220,6 +223,7 @@ void iniciarDesvio(unsigned long agora) {
   pararMotores();
   obstaculosConsecutivos = 0;
   leiturasLivresAposCurva = 0;
+  buscasSemEco = 0;
   curvaAtualDireita = proximaCurvaDireita;
   proximaCurvaDireita = !proximaCurvaDireita;
   estadoDesvio = DESVIO_PAUSA_INICIAL;
@@ -280,6 +284,17 @@ void atualizarDesvio(unsigned long agora) {
         estadoDesvio = DESVIO_CURVA;
         estadoDesvioDesde = agora;
         Serial.println(F("EVENTO:CURVA_EXTRA"));
+      } else if (decorrido >= TEMPO_BUSCA_ECO_MS && distanciaAtualCm < 0
+                 && buscasSemEco < LIMITE_BUSCAS_ECO) {
+        // Procura eco em outra direcao, sem avancar nem repetir a re.
+        // O limite impede giros interminaveis se o sensor desconectar.
+        buscasSemEco++;
+        obstaculosConsecutivos = 0;
+        leiturasLivresAposCurva = 0;
+        if (curvaAtualDireita) girarDireita(); else girarEsquerda();
+        estadoDesvio = DESVIO_CURVA;
+        estadoDesvioDesde = agora;
+        Serial.println(F("EVENTO:BUSCA_ECO"));
       }
       break;
     case DESVIO_SAIDA:
@@ -320,7 +335,8 @@ void enviarStatus(unsigned long agora, bool forcar = false) {
   Serial.print(nomeComando(comandoAplicado));
   Serial.print(F("|STATE:"));
   if (paradaEmergencia) Serial.print(F("ESTOP"));
-  else if (estadoDesvio == DESVIO_PAUSA_CURVA && distanciaAtualCm < 0) Serial.print(F("WAIT_SENSOR"));
+  else if (estadoDesvio == DESVIO_PAUSA_CURVA && distanciaAtualCm < 0
+           && buscasSemEco >= LIMITE_BUSCAS_ECO) Serial.print(F("WAIT_SENSOR"));
   else if (modo != MODO_AUTONOMO && !controleUsbAtivo) Serial.print(F("LINK_WAIT"));
   else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
   else Serial.print(nomeModo());

@@ -284,6 +284,7 @@
 
     if (line.startsWith("QT:READY:")) {
       if (stateStatus) stateStatus.textContent = line === REQUIRED_FIRMWARE_READY ? "FIRMWARE V5 PRONTO" : "FIRMWARE INCOMPATÍVEL";
+      log("INFO", "ARDUINO", `Resposta de identificação: ${line}. Pode ocorrer ao iniciar ou responder HELLO; não confirma movimento.`);
       return;
     }
     if (line.startsWith("ALERTA:")) {
@@ -295,7 +296,12 @@
     if (line.startsWith("EVENTO:")) {
       const eventName = line.slice(7).replaceAll("_", " ");
       if (line === "EVENTO:SENSOR_RECUPERADO" && emergencyOwner === "sensor") setEmergencyUi(false);
-      log("INFO", "ARDUINO", eventName);
+      const descriptions = {
+        "EVENTO:CURVA_EXTRA": "Firmware ordenou outra curva porque ainda detectou obstáculo. Giro físico não medido.",
+        "EVENTO:BUSCA_ECO": "Firmware ordenou giro de busca após falta de eco. Giro físico não medido.",
+        "EVENTO:DESVIO_INICIADO": "Firmware iniciou a sequência de desvio após detectar obstáculo. Movimento físico não medido.",
+      };
+      log("INFO", "ARDUINO", descriptions[line] || eventName);
       return;
     }
     if (line.startsWith("ERRO:")) {

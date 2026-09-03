@@ -52,7 +52,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="flashOfficialFirmware"',
             'web/arduino-flasher.js?v=6',
             'web/simulator-controller.js?v=2',
-            'web/robot-control.js?v=14',
+            'web/robot-control.js?v=15',
             'web/code-editor-utils.js?v=1',
             'web/face-identity-math.js?v=2',
             'web/face-identities.js?v=14',

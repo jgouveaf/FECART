@@ -598,6 +598,15 @@ async function testModeTransitionSurvivesCameraStartupFailureInEstop() {
 
 async function main() {
   const tests = [
+    async function testEventsDoNotClaimMeasuredMovement() {
+      const environment = createEnvironment();
+      environment.robot._test.parseTelemetry("EVENTO:CURVA_EXTRA");
+      assert.match(environment.control.logs.at(-1).message, /Firmware ordenou/);
+      assert.match(environment.control.logs.at(-1).message, /Giro físico não medido/);
+      environment.robot._test.parseTelemetry("QT:READY:V5");
+      assert.match(environment.control.logs.at(-1).message, /responder HELLO/);
+      await cleanup(environment);
+    },
     async function testWaitingSensorIsVisibleAndDoesNotLatchEstop() {
       const environment = createEnvironment();
       await environment.robot.connect();

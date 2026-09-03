@@ -31,7 +31,7 @@
       // Sem localStorage disponível: libera o painel em vez de travar o acesso.
     }
   </script>
-  <link rel="stylesheet" href="web/styles.css?v=19">
+  <link rel="stylesheet" href="web/styles.css?v=20">
 </head>
 <body>
   <noscript><div class="auth-overlay" style="display:flex"><div class="auth-card"><h1>Quantum Tracker</h1><p>Ative o JavaScript para acessar o painel.</p></div></div></noscript>
@@ -261,6 +261,36 @@
               <div data-fingers="4"><b>4</b><span>Parar</span></div>
               <div data-fingers="5"><b>5</b><span>Girar</span></div>
             </div>
+            <div class="finger-diagnostics" aria-label="Diagnóstico individual dos dedos">
+              <div data-finger-debug="0"><span>POLEGAR</span><strong>—</strong></div>
+              <div data-finger-debug="1"><span>INDICADOR</span><strong>—</strong></div>
+              <div data-finger-debug="2"><span>MÉDIO</span><strong>—</strong></div>
+              <div data-finger-debug="3"><span>ANELAR</span><strong>—</strong></div>
+              <div data-finger-debug="4"><span>MÍNIMO</span><strong>—</strong></div>
+            </div>
+            <details class="gesture-calibration">
+              <summary>Calibrar com a sua mão</summary>
+              <p>Escolha o gesto real, mantenha a mão firme e capture 20 leituras. Nenhuma imagem é salva.</p>
+              <div class="calibration-fields">
+                <label>Dedos reais
+                  <select id="calibrationFingerCount">
+                    <option value="1">1 dedo</option><option value="2">2 dedos</option><option value="3">3 dedos</option>
+                    <option value="4">4 dedos</option><option value="5">5 dedos</option>
+                  </select>
+                </label>
+                <label>Vista da mão
+                  <select id="calibrationHandView">
+                    <option value="PALM">Palma</option><option value="BACK">Dorso</option><option value="SIDE">Lateral</option>
+                  </select>
+                </label>
+              </div>
+              <div class="calibration-actions">
+                <button class="secondary-button compact" id="captureGestureSample" type="button">Capturar 20 leituras</button>
+                <button class="secondary-button compact" id="exportGestureSamples" type="button" disabled>Baixar amostras</button>
+                <button class="text-button compact" id="clearGestureSamples" type="button" disabled>Limpar</button>
+              </div>
+              <small id="gestureCalibrationStatus" role="status" aria-live="polite">0 amostras nesta sessão</small>
+            </details>
             <p class="privacy-note" id="gestureDeliveryStatus">Processamento local. Conecte o Arduino e escolha o Modo 3 para aplicar os comandos ao robô.</p>
           </aside>
         </div>
@@ -486,8 +516,9 @@
   <script src="web/robot-control.js?v=12" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/face-identity-math.js?v=2" defer></script>
-  <script src="web/gesture-math.js?v=4" defer></script>
+  <script src="web/gesture-math.js?v=5" defer></script>
+  <script src="web/gesture-calibration.js?v=1" defer></script>
   <script src="web/face-identities.js?v=14" defer></script>
-  <script src="web/camera-gestures.js?v=15" defer></script>
+  <script src="web/camera-gestures.js?v=16" defer></script>
 </body>
 </html>

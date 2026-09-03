@@ -927,6 +927,48 @@ footer {
   .diagnostic-card.wide { grid-column: 1 / -1; }
 }
 
+.finger-diagnostics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+.finger-diagnostics > div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #f7f9fb;
+}
+.finger-diagnostics span,
+.finger-diagnostics strong { display: block; }
+.finger-diagnostics span { color: var(--muted); font-size: 8px; letter-spacing: .08em; }
+.finger-diagnostics strong { margin-top: 4px; color: #455766; font-size: 9px; white-space: nowrap; }
+.finger-diagnostics [data-state="OPEN"] { border-color: #8ac8ad; background: #edf7f2; }
+.finger-diagnostics [data-state="OPEN"] strong { color: #207a57; }
+.finger-diagnostics [data-state="UNCERTAIN"] { border-color: #e5c78e; background: #fbf5e9; }
+.finger-diagnostics [data-state="UNCERTAIN"] strong { color: #9a5c08; }
+
+.gesture-calibration {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #f7f9fb;
+}
+.gesture-calibration summary { cursor: pointer; color: #263746; font-size: 11px; font-weight: 800; }
+.gesture-calibration p { margin: 9px 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.calibration-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.calibration-fields label { color: #536575; font-size: 9px; font-weight: 700; }
+.calibration-fields select { width: 100%; margin-top: 4px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.calibration-actions { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0 7px; }
+.gesture-calibration > small { color: #536575; font-size: 9px; }
+
+@media (max-width: 620px) {
+  .finger-diagnostics { grid-template-columns: 1fr 1fr; }
+  .calibration-fields { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 390px) {
   .system-status-grid,
   .diagnostic-grid,

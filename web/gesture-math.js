@@ -2,6 +2,9 @@
   "use strict";
 
   const EPSILON = 1e-6;
+  const FINGER_NAMES = Object.freeze(["Polegar", "Indicador", "Médio", "Anelar", "Mínimo"]);
+  const FINGER_THRESHOLDS = Object.freeze([0.54, 0.52, 0.52, 0.52, 0.52]);
+  const UNCERTAIN_MARGIN = 0.055;
 
   function distance(first, second) {
     const dx = Number(first?.x || 0) - Number(second?.x || 0);
@@ -50,29 +53,48 @@
     const chainLength = distance(points[mcp], points[pip])
       + distance(points[pip], points[dip]) + distance(points[dip], points[tip]);
     const straightness = distance(points[mcp], points[tip]) / Math.max(chainLength, EPSILON);
+    const pipAngle = jointAngle(points[mcp], points[pip], points[dip]);
+    const dipAngle = jointAngle(points[pip], points[dip], points[tip]);
+    const tipMcpDistance = distance(points[tip], points[mcp]) / palmScale;
+    const radialAdvance = (distance(points[tip], palmCenter) - distance(points[pip], palmCenter)) / palmScale;
     const probability = weightedProbability([
       [thresholdScore(straightness, 0.78, 0.24), 0.36],
-      [thresholdScore(jointAngle(points[mcp], points[pip], points[dip]), 125, 70), 0.22],
-      [thresholdScore(jointAngle(points[pip], points[dip], points[tip]), 130, 65), 0.18],
-      [thresholdScore(distance(points[tip], points[mcp]) / palmScale, 0.56, 0.32), 0.14],
-      [thresholdScore((distance(points[tip], palmCenter) - distance(points[pip], palmCenter)) / palmScale, 0.05, 0.24), 0.10],
+      [thresholdScore(pipAngle, 125, 70), 0.22],
+      [thresholdScore(dipAngle, 130, 65), 0.18],
+      [thresholdScore(tipMcpDistance, 0.56, 0.32), 0.14],
+      [thresholdScore(radialAdvance, 0.05, 0.24), 0.10],
     ]);
-    return { extended: probability >= 0.52, probability, certainty: Math.min(1, Math.abs(probability - 0.52) * 2.3) };
+    return {
+      extended: probability >= 0.52,
+      probability,
+      certainty: Math.min(1, Math.abs(probability - 0.52) * 2.3),
+      metrics: { straightness, pipAngle, dipAngle, tipMcpDistance, radialAdvance },
+    };
   }
 
   function evaluateThumb(points, palmScale, palmCenter) {
     const chainLength = distance(points[1], points[2])
       + distance(points[2], points[3]) + distance(points[3], points[4]);
     const straightness = distance(points[1], points[4]) / Math.max(chainLength, EPSILON);
+    const mcpAngle = jointAngle(points[1], points[2], points[3]);
+    const ipAngle = jointAngle(points[2], points[3], points[4]);
+    const palmDistance = distance(points[4], palmCenter) / palmScale;
+    const indexDistance = distance(points[4], points[5]) / palmScale;
+    const radialAdvance = (distance(points[4], palmCenter) - distance(points[3], palmCenter)) / palmScale;
     const probability = weightedProbability([
       [thresholdScore(straightness, 0.76, 0.28), 0.25],
-      [thresholdScore(jointAngle(points[1], points[2], points[3]), 125, 70), 0.14],
-      [thresholdScore(jointAngle(points[2], points[3], points[4]), 130, 65), 0.14],
-      [thresholdScore(distance(points[4], palmCenter) / palmScale, 0.82, 0.42), 0.19],
-      [thresholdScore(distance(points[4], points[5]) / palmScale, 0.58, 0.34), 0.20],
-      [thresholdScore((distance(points[4], palmCenter) - distance(points[3], palmCenter)) / palmScale, 0.05, 0.24), 0.08],
+      [thresholdScore(mcpAngle, 125, 70), 0.14],
+      [thresholdScore(ipAngle, 130, 65), 0.14],
+      [thresholdScore(palmDistance, 0.82, 0.42), 0.19],
+      [thresholdScore(indexDistance, 0.58, 0.34), 0.20],
+      [thresholdScore(radialAdvance, 0.05, 0.24), 0.08],
     ]);
-    return { extended: probability >= 0.54, probability, certainty: Math.min(1, Math.abs(probability - 0.54) * 2.4) };
+    return {
+      extended: probability >= 0.54,
+      probability,
+      certainty: Math.min(1, Math.abs(probability - 0.54) * 2.4),
+      metrics: { straightness, mcpAngle, ipAngle, palmDistance, indexDistance, radialAdvance },
+    };
   }
 
   function fingerExtended(points, mcp, pip, dip, tip, palmScale, palmCenter) {
@@ -106,8 +128,15 @@
     const evaluations = image?.evaluations && world?.evaluations
       ? image.evaluations.map((item, index) => {
         const probability = item.probability * 0.62 + world.evaluations[index].probability * 0.38;
-        const threshold = index === 0 ? 0.54 : 0.52;
-        return { probability, extended: probability >= threshold, certainty: Math.min(1, Math.abs(probability - threshold) * 2.35) };
+        const threshold = FINGER_THRESHOLDS[index];
+        return {
+          probability,
+          extended: probability >= threshold,
+          certainty: Math.min(1, Math.abs(probability - threshold) * 2.35),
+          metrics: item.metrics,
+          imageProbability: item.probability,
+          worldProbability: world.evaluations[index].probability,
+        };
       })
       : sources[0].evaluations;
     const fingers = evaluations.map((item) => item.extended);
@@ -118,13 +147,88 @@
       confidence: Math.max(0, Math.min(1, confidence)),
       fingers,
       probabilities: evaluations.map((item) => item.probability),
+      fingerDetails: evaluations.map((item, index) => {
+        const threshold = FINGER_THRESHOLDS[index];
+        const delta = item.probability - threshold;
+        return {
+          name: FINGER_NAMES[index],
+          probability: item.probability,
+          threshold,
+          certainty: item.certainty,
+          state: delta >= UNCERTAIN_MARGIN ? "OPEN" : delta <= -UNCERTAIN_MARGIN ? "CLOSED" : "UNCERTAIN",
+          metrics: item.metrics || null,
+          imageProbability: item.imageProbability ?? item.probability,
+          worldProbability: item.worldProbability ?? null,
+        };
+      }),
       palmScale: image?.palmScale || world?.palmScale,
     };
+  }
+
+  class FingerStateStabilizer {
+    constructor({ alpha = 0.42, openMargin = 0.04, closeMargin = 0.055 } = {}) {
+      this.alpha = alpha;
+      this.openMargin = openMargin;
+      this.closeMargin = closeMargin;
+      this.reset();
+    }
+
+    reset() {
+      this.probabilities = Array(5).fill(null);
+      this.fingers = Array(5).fill(false);
+    }
+
+    update(classification) {
+      if (!classification?.probabilities || classification.probabilities.length !== 5) {
+        this.reset();
+        return { ...(classification || {}), count: 0, confidence: 0, fingers: [] };
+      }
+      const details = classification.probabilities.map((rawValue, index) => {
+        const raw = Math.max(0, Math.min(1, Number(rawValue) || 0));
+        const previous = this.probabilities[index];
+        const probability = previous === null ? raw : previous * (1 - this.alpha) + raw * this.alpha;
+        const threshold = FINGER_THRESHOLDS[index];
+        if (this.fingers[index]) {
+          if (probability <= threshold - this.closeMargin) this.fingers[index] = false;
+        } else if (probability >= threshold + this.openMargin) {
+          this.fingers[index] = true;
+        }
+        this.probabilities[index] = probability;
+        const delta = probability - threshold;
+        return {
+          ...(classification.fingerDetails?.[index] || {}),
+          name: FINGER_NAMES[index],
+          probability,
+          rawProbability: raw,
+          threshold,
+          extended: this.fingers[index],
+          state: Math.abs(delta) < UNCERTAIN_MARGIN ? "UNCERTAIN" : this.fingers[index] ? "OPEN" : "CLOSED",
+          certainty: Math.min(1, Math.abs(delta) * 2.35),
+        };
+      });
+      const certainties = details.map((item) => item.certainty).sort((a, b) => a - b);
+      return {
+        ...classification,
+        count: this.fingers.filter(Boolean).length,
+        confidence: certainties[Math.floor(certainties.length / 2)],
+        fingers: [...this.fingers],
+        probabilities: [...this.probabilities],
+        fingerDetails: details,
+      };
+    }
   }
 
   function classifyFingerCount(imageLandmarks, worldLandmarks) {
     return classifyFingerCountDetails(imageLandmarks, worldLandmarks).count;
   }
 
-  window.QuantumGestureMath = Object.freeze({ classifyFingerCount, classifyFingerCountDetails, distance, jointAngle });
+  window.QuantumGestureMath = Object.freeze({
+    classifyFingerCount,
+    classifyFingerCountDetails,
+    FingerStateStabilizer,
+    FINGER_NAMES,
+    FINGER_THRESHOLDS,
+    distance,
+    jointAngle,
+  });
 })();

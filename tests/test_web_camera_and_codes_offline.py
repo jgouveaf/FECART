@@ -47,7 +47,8 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/control-state.js?v=1',
             'web/camera-controller.js?v=2',
             'web/face-quality.js?v=1',
-            'web/gesture-math.js?v=4',
+            'web/gesture-math.js?v=5',
+            'web/gesture-calibration.js?v=1',
             'id="flashOfficialFirmware"',
             'web/arduino-flasher.js?v=4',
             'web/simulator-controller.js?v=2',
@@ -58,6 +59,9 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="toggleGestures"',
             'id="cameraDeviceSelect"',
             'id="retryFaceDetection"',
+            'id="captureGestureSample"',
+            'id="exportGestureSamples"',
+            'data-finger-debug="4"',
         ):
             self.assertIn(required, self.html)
 
@@ -207,7 +211,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
     def test_camera_controller_uses_compatible_classic_bootstrap(self) -> None:
         self.assertIn('id="startCamera">Ativar câmera', self.html)
         self.assertIn('src="web/camera-controller.js?v=2" defer', self.html)
-        self.assertIn('src="web/camera-gestures.js?v=15" defer', self.html)
+        self.assertIn('src="web/camera-gestures.js?v=16" defer', self.html)
         self.assertNotIn('type="module" src="web/camera-gestures.js', self.html)
         self.assertIn("window.quantumCameraController", self.camera_controller_js)
         self.assertIn('startButton.textContent = "Ativar câmera"', self.camera_controller_js)

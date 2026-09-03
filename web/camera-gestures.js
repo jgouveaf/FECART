@@ -16,6 +16,13 @@
   const confidenceElement = document.getElementById("gestureConfidence");
   const fpsElement = document.getElementById("gestureFps");
   const deliveryStatus = document.getElementById("gestureDeliveryStatus");
+  const fingerDebugRows = [...document.querySelectorAll("[data-finger-debug]")];
+  const calibrationCount = document.getElementById("calibrationFingerCount");
+  const calibrationView = document.getElementById("calibrationHandView");
+  const captureSampleButton = document.getElementById("captureGestureSample");
+  const exportSamplesButton = document.getElementById("exportGestureSamples");
+  const clearSamplesButton = document.getElementById("clearGestureSamples");
+  const calibrationStatus = document.getElementById("gestureCalibrationStatus");
 
   const defaultCommands = { 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "PARAR", 5: "GIRAR" };
   let userConfig = window.QuantumUserConfig?.get() || null;
@@ -57,6 +64,12 @@
   let unstableSince = 0;
   let inferenceFrames = 0;
   let fpsWindowAt = 0;
+  const fingerStabilizer = window.QuantumGestureMath?.FingerStateStabilizer
+    ? new window.QuantumGestureMath.FingerStateStabilizer()
+    : null;
+  const calibrationRecorder = window.QuantumGestureCalibration?.GestureCalibrationRecorder
+    ? new window.QuantumGestureCalibration.GestureCalibrationRecorder({ targetSamples: 20 })
+    : null;
 
   function setDetectorStatus(status, detail = "") {
     if (detectorStatus) detectorStatus.textContent = status;
@@ -118,6 +131,91 @@
     countElement.textContent = `${count} dedo(s) confirmados`;
   }
 
+  function renderFingerDiagnostics(classification = null) {
+    fingerDebugRows.forEach((row, index) => {
+      const detail = classification?.fingerDetails?.[index];
+      const output = row.querySelector("strong");
+      row.dataset.state = detail?.state || "IDLE";
+      if (!output) return;
+      if (!detail) output.textContent = "—";
+      else {
+        const label = detail.state === "OPEN" ? "ABERTO" : detail.state === "CLOSED" ? "FECHADO" : "INCERTO";
+        output.textContent = `${label} · ${Math.round(detail.probability * 100)}%`;
+      }
+    });
+  }
+
+  function renderCalibrationStatus(snapshot = calibrationRecorder?.snapshot()) {
+    if (!snapshot || !calibrationStatus) return;
+    if (snapshot.active) calibrationStatus.textContent = `Capturando ${snapshot.captured}/${snapshot.target} · mantenha a mão firme`;
+    else calibrationStatus.textContent = `${snapshot.total} amostra(s) nesta sessão`;
+    captureSampleButton.disabled = !enabled || !active;
+    captureSampleButton.textContent = snapshot.active ? "Capturando…" : "Capturar 20 leituras";
+    exportSamplesButton.disabled = snapshot.total === 0;
+    clearSamplesButton.disabled = snapshot.total === 0 && !snapshot.active;
+    calibrationCount.disabled = snapshot.active;
+    calibrationView.disabled = snapshot.active;
+  }
+
+  function cameraMetadata() {
+    const track = video.srcObject?.getVideoTracks?.()[0];
+    const settings = track?.getSettings?.() || {};
+    return {
+      label: track?.label || null,
+      width: Number(settings.width) || video.videoWidth || null,
+      height: Number(settings.height) || video.videoHeight || null,
+      facingMode: settings.facingMode || null,
+    };
+  }
+
+  function normalizedHandedness(result) {
+    const category = result?.handedness?.[0]?.[0] || result?.handednesses?.[0]?.[0];
+    if (!category) return null;
+    return {
+      label: category.categoryName || category.displayName || null,
+      score: Number(category.score) || 0,
+    };
+  }
+
+  function ingestCalibrationFrame(result, landmarks, worldLandmarks, classification, now) {
+    if (!calibrationRecorder?.snapshot().active) return;
+    const snapshot = calibrationRecorder.ingest({
+      frameTimeMs: now,
+      imageLandmarks: landmarks,
+      worldLandmarks,
+      handedness: normalizedHandedness(result),
+      camera: cameraMetadata(),
+      detector: {
+        count: classification.count,
+        confidence: classification.confidence,
+        probabilities: classification.probabilities,
+        fingerDetails: classification.fingerDetails?.map((detail) => ({
+          name: detail.name,
+          probability: detail.probability,
+          rawProbability: detail.rawProbability,
+          state: detail.state,
+          metrics: detail.metrics,
+        })),
+      },
+    });
+    renderCalibrationStatus(snapshot);
+    if (!snapshot.active) control?.log("INFO", "GESTOS", `Amostra concluída · ${snapshot.total} leituras locais`);
+  }
+
+  function downloadCalibrationSamples() {
+    if (!calibrationRecorder?.snapshot().total) return;
+    const blob = new Blob([JSON.stringify(calibrationRecorder.toJSON(), null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `quantum-gestos-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    control?.log("INFO", "GESTOS", "Amostras de calibração exportadas sem imagens");
+  }
+
   function dispatchCommand(command, count, confidence, reason = "CONFIRMED") {
     lastDispatchAt = performance.now();
     window.dispatchEvent(new CustomEvent("quantum:gesture-command", {
@@ -149,8 +247,9 @@
   }
 
   function classifyFingerCount(landmarks, worldLandmarks) {
-    return window.QuantumGestureMath?.classifyFingerCountDetails?.(landmarks, worldLandmarks)
+    const raw = window.QuantumGestureMath?.classifyFingerCountDetails?.(landmarks, worldLandmarks)
       || { count: window.QuantumGestureMath?.classifyFingerCount(landmarks, worldLandmarks) || 0, confidence: 0 };
+    return fingerStabilizer?.update(raw) || raw;
   }
 
   function drawHand(landmarks) {
@@ -259,6 +358,8 @@
   function handleNoHand(now) {
     clearOverlay();
     clearCandidate();
+    fingerStabilizer?.reset();
+    renderFingerDiagnostics();
     if (!lastHandAt || now - lastHandAt >= LOST_HAND_STOP_MS) {
       if (confirmedCommand) {
         control?.log("WARNING", "GESTOS", "Mão perdida; comando PARAR aplicado");
@@ -283,6 +384,8 @@
     // a mão parece esquerda/direita e não mede quantos dedos estão levantados.
     const confidence = Number(classification.confidence) || 0;
     drawHand(landmarks);
+    renderFingerDiagnostics(classification);
+    ingestCalibrationFrame(result, landmarks, worldLandmarks, classification, now);
     if (confidence < MIN_CONFIDENCE) clearCandidate();
     const stable = confidence >= MIN_CONFIDENCE && confirmTemporal(count, now);
     updateGestureUi(count, confidence, stable);
@@ -370,6 +473,7 @@
       canvas.width = video.videoWidth || 1280;
       canvas.height = video.videoHeight || 720;
       active = true;
+      renderCalibrationStatus();
       setToggleState("ACTIVE");
       setDetectorStatus("ONLINE", "Aguardando um gesto estável…");
       control?.patch("gestures", { enabled: true, active: true, status: "ONLINE", model: "READY" }, { source: "gesture-enable" });
@@ -395,6 +499,9 @@
     cancelAnimationFrame(animationId);
     animationId = 0;
     clearOverlay();
+    fingerStabilizer?.reset();
+    calibrationRecorder?.cancel();
+    renderFingerDiagnostics();
     forceStop(reason, wasEnabled);
     setToggleState("OFFLINE");
     setDetectorStatus("OFFLINE", "Nenhum gesto detectado");
@@ -403,6 +510,7 @@
     if (wasEnabled) control?.log("INFO", "GESTOS", `Detector desativado (${reason})`);
     scheduleModelRelease();
     updateDeliveryText();
+    renderCalibrationStatus();
   }
 
   async function setCameraView(view) {
@@ -439,6 +547,21 @@
     });
   });
   toggleButton.addEventListener("click", () => { if (enabled) disable("USER"); else enable(); });
+  captureSampleButton?.addEventListener("click", () => {
+    if (!calibrationRecorder || !enabled || !active) return;
+    try {
+      const snapshot = calibrationRecorder.start({ expectedCount: calibrationCount.value, view: calibrationView.value });
+      renderCalibrationStatus(snapshot);
+      control?.log("INFO", "GESTOS", `Captura iniciada · ${snapshot.expectedCount} dedo(s) · ${snapshot.view}`);
+    } catch (error) {
+      calibrationStatus.textContent = error.message;
+    }
+  });
+  exportSamplesButton?.addEventListener("click", downloadCalibrationSamples);
+  clearSamplesButton?.addEventListener("click", () => {
+    renderCalibrationStatus(calibrationRecorder?.clear());
+    control?.log("INFO", "GESTOS", "Amostras de calibração removidas da memória");
+  });
   window.addEventListener("quantum:camera-stopped", () => disable("CAMERA_STOPPED"));
   window.addEventListener("quantum:camera-error", () => disable("CAMERA_ERROR"));
   window.addEventListener("quantum:mode-will-change", (event) => {
@@ -486,6 +609,8 @@
   setToggleState("OFFLINE");
   setDetectorStatus("OFFLINE", "Nenhum gesto detectado");
   updateGestureUi(0, 0, false);
+  renderFingerDiagnostics();
+  renderCalibrationStatus();
   updateDeliveryText();
   control?.patch("gestures", { status: "OFFLINE", model: "NOT_LOADED" }, { source: "gesture-init" });
   control?.log("INFO", "GESTOS", "Controlador pronto · modelo local sob demanda");

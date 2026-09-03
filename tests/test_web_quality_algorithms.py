@@ -68,6 +68,16 @@ for (let count = 1; count <= 5; count += 1) {
   };
 }
 
+const fingerStabilizer = new window.QuantumGestureMath.FingerStateStabilizer();
+const fourFingerFrame = { probabilities: [0.20, 0.90, 0.90, 0.90, 0.90], fingerDetails: [] };
+const fiveFingerNoise = { probabilities: [0.95, 0.90, 0.90, 0.90, 0.90], fingerDetails: [] };
+const stableFour = fingerStabilizer.update(fourFingerFrame).count;
+const afterOneNoisyFrame = fingerStabilizer.update(fiveFingerNoise).count;
+let afterSustainedFive;
+for (let frame = 0; frame < 3; frame += 1) afterSustainedFive = fingerStabilizer.update(fiveFingerNoise).count;
+let afterSustainedFour;
+for (let frame = 0; frame < 3; frame += 1) afterSustainedFour = fingerStabilizer.update(fourFingerFrame).count;
+
 const stabilizer = new window.QuantumFaceQuality.FaceQualityStabilizer();
 const high = { acceptable: true, combined: 0.90 };
 const briefLow = { acceptable: false, combined: 0.70 };
@@ -82,7 +92,7 @@ for (let frame = 0; frame < 8; frame += 1) {
 for (let frame = 0; frame < 4; frame += 1) result = stabilizer.update("QT-01", briefLow, 1000 + frame * 70);
 const afterSustainedLow = { acceptable: result.acceptable, label: result.label };
 
-process.stdout.write(JSON.stringify({ counts, afterRise, alternating, afterSustainedLow }));
+process.stdout.write(JSON.stringify({ counts, stableFour, afterOneNoisyFrame, afterSustainedFive, afterSustainedFour, afterRise, alternating, afterSustainedLow }));
 """
 
 
@@ -120,6 +130,12 @@ class TestWebQualityAlgorithms(unittest.TestCase):
         self.assertEqual(self.result["afterRise"], {"acceptable": True, "label": "ALTA"})
         self.assertEqual(set(self.result["alternating"]), {"ALTA"})
         self.assertEqual(self.result["afterSustainedLow"], {"acceptable": False, "label": "BAIXA"})
+
+    def test_finger_hysteresis_ignores_one_noisy_frame_but_accepts_sustained_change(self) -> None:
+        self.assertEqual(self.result["stableFour"], 4)
+        self.assertEqual(self.result["afterOneNoisyFrame"], 4)
+        self.assertEqual(self.result["afterSustainedFive"], 5)
+        self.assertEqual(self.result["afterSustainedFour"], 4)
 
 
 if __name__ == "__main__":

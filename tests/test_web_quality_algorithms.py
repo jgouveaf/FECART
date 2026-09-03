@@ -77,6 +77,10 @@ let afterSustainedFive;
 for (let frame = 0; frame < 3; frame += 1) afterSustainedFive = fingerStabilizer.update(fiveFingerNoise).count;
 let afterSustainedFour;
 for (let frame = 0; frame < 3; frame += 1) afterSustainedFour = fingerStabilizer.update(fourFingerFrame).count;
+const canonicalOneStabilizer = new window.QuantumGestureMath.FingerStateStabilizer();
+const canonicalOne = canonicalOneStabilizer.update({ probabilities: [0.96, 0.91, 0.18, 0.20, 0.19], fingerDetails: [] });
+const canonicalThreeStabilizer = new window.QuantumGestureMath.FingerStateStabilizer();
+const canonicalThree = canonicalThreeStabilizer.update({ probabilities: [0.97, 0.90, 0.88, 0.91, 0.20], fingerDetails: [] });
 
 const stabilizer = new window.QuantumFaceQuality.FaceQualityStabilizer();
 const high = { acceptable: true, combined: 0.90 };
@@ -92,7 +96,7 @@ for (let frame = 0; frame < 8; frame += 1) {
 for (let frame = 0; frame < 4; frame += 1) result = stabilizer.update("QT-01", briefLow, 1000 + frame * 70);
 const afterSustainedLow = { acceptable: result.acceptable, label: result.label };
 
-process.stdout.write(JSON.stringify({ counts, stableFour, afterOneNoisyFrame, afterSustainedFive, afterSustainedFour, afterRise, alternating, afterSustainedLow }));
+process.stdout.write(JSON.stringify({ counts, stableFour, afterOneNoisyFrame, afterSustainedFive, afterSustainedFour, canonicalOne, canonicalThree, afterRise, alternating, afterSustainedLow }));
 """
 
 
@@ -136,6 +140,12 @@ class TestWebQualityAlgorithms(unittest.TestCase):
         self.assertEqual(self.result["afterOneNoisyFrame"], 4)
         self.assertEqual(self.result["afterSustainedFive"], 5)
         self.assertEqual(self.result["afterSustainedFour"], 4)
+
+    def test_folded_thumb_cannot_add_one_to_canonical_gestures(self) -> None:
+        self.assertEqual(self.result["canonicalOne"]["count"], 1)
+        self.assertEqual(self.result["canonicalThree"]["count"], 3)
+        self.assertTrue(self.result["canonicalOne"]["fingerDetails"][0]["canonicalSuppressed"])
+        self.assertTrue(self.result["canonicalThree"]["fingerDetails"][0]["canonicalSuppressed"])
 
 
 if __name__ == "__main__":

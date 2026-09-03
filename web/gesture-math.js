@@ -183,7 +183,17 @@
         this.reset();
         return { ...(classification || {}), count: 0, confidence: 0, fingers: [] };
       }
-      const details = classification.probabilities.map((rawValue, index) => {
+      const rawProbabilities = classification.probabilities.map((value) => Math.max(0, Math.min(1, Number(value) || 0)));
+      // O projeto usa a contagem canônica: 1–4 são os dedos longos e o
+      // polegar só completa o gesto 5. Isso impede que um polegar dobrado
+      // sobre a palma transforme 1 em 2 ou 3 em 4 por causa da perspectiva.
+      const extendedLongFingers = rawProbabilities.slice(1)
+        .filter((probability, index) => probability >= FINGER_THRESHOLDS[index + 1]).length;
+      const canonicalThumbSuppressed = extendedLongFingers < 4;
+      if (canonicalThumbSuppressed) {
+        rawProbabilities[0] = Math.min(rawProbabilities[0], FINGER_THRESHOLDS[0] - this.closeMargin - 0.01);
+      }
+      const details = rawProbabilities.map((rawValue, index) => {
         const raw = Math.max(0, Math.min(1, Number(rawValue) || 0));
         const previous = this.probabilities[index];
         const probability = previous === null ? raw : previous * (1 - this.alpha) + raw * this.alpha;
@@ -204,6 +214,7 @@
           extended: this.fingers[index],
           state: Math.abs(delta) < UNCERTAIN_MARGIN ? "UNCERTAIN" : this.fingers[index] ? "OPEN" : "CLOSED",
           certainty: Math.min(1, Math.abs(delta) * 2.35),
+          canonicalSuppressed: index === 0 && canonicalThumbSuppressed,
         };
       });
       const certainties = details.map((item) => item.certainty).sort((a, b) => a - b);

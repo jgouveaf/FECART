@@ -926,6 +926,8 @@ footer {
   .event-log-row span { grid-column: 1 / -1; padding-left: 0; }
   .diagnostic-card.wide { grid-column: 1 / -1; }
 }
+.gesture-toolbar > div:first-child { display: grid; gap: 3px; }
+.gesture-toolbar .section-tag { margin: 0; }
 
 .finger-diagnostics {
   display: grid;

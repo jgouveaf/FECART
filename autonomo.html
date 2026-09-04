@@ -19,7 +19,7 @@
 </head>
 <body><main>
   <a href="index.html#codigos">← Voltar ao projeto integrado</a>
-  <h1>Autônomo isolado</h1>
+  <h1>Autônomo isolado v2</h1>
   <p>Só Arduino UNO, motores e sensor. Sem câmera, gestos ou troca de modo.</p>
   <p class="note"><strong>Ensaio supervisionado.</strong> Comece com as rodas suspensas. Este firmware substitui o integrado na placa, mas não apaga seus arquivos. Ele inicia parado. Não ligue os motores enquanto o sensor não medir corretamente um objeto a uma distância conhecida.</p>
   <section aria-labelledby="installTitle">
@@ -27,7 +27,7 @@
     <p>Feche a conexão do painel integrado e o Monitor Serial. Use Chrome ou Edge no computador.</p>
     <div class="actions"><button id="autoFlash">Gravar autônomo isolado</button><a href="firmware/autonomo_isolado/autonomo_isolado.ino" download>Baixar código .ino</a></div>
     <progress id="autoProgress" max="100" value="0" aria-label="Progresso da gravação"></progress>
-    <p id="autoFlashStatus" role="status">Grave apenas quando estiver pronto para testar.</p>
+    <p id="autoFlashStatus" role="status">Atualização v2: grave novamente para aplicar a confirmação do sensor. Atualizar só a página não atualiza o Arduino.</p>
     <small>D7 → IN1 · D6 → IN2 · D5 → IN3 · D4 → IN4 · D3 → TRIG · D2 → ECHO. ENA e ENB com jumpers.</small>
   </section>
   <section aria-labelledby="operateTitle">
@@ -40,18 +40,19 @@
     </div>
     <p id="autoStatus" role="status">Desconectado.</p>
     <dl>
-      <div><dt>Distância</dt><dd id="autoDistance">—</dd></div>
+      <div><dt>Distância bruta</dt><dd id="autoDistance">—</dd></div>
       <div><dt>Eco bruto (µs)</dt><dd id="autoEcho">—</dd></div>
+      <div><dt>Confirmação do sensor</dt><dd id="autoSensorStatus">—</dd></div>
       <div><dt>Fase do programa</dt><dd id="autoPhase">—</dd></div>
       <div><dt>Ordem aos motores</dt><dd id="autoCommand">—</dd></div>
       <div><dt>Número da leitura</dt><dd id="autoSample">—</dd></div>
       <div><dt>Tempo desde o boot</dt><dd id="autoUptime">—</dd></div>
     </dl>
-    <p>Anda enquanto há caminho livre. Ao detectar obstáculo, para, recua por 0,4 s, gira por 0,65 s e mede de novo. O ângulo real precisa de calibração. Se ainda houver obstáculo, gira novamente sem repetir a ré. Sem leitura válida, para e continua medindo.</p>
+    <p>Para na primeira leitura de até 35 cm e confirma duas novas medidas parado antes de desviar. Um pico isolado não inicia ré; duas leituras livres permitem retomar. A distância bruta continua visível, sem esconder os saltos. O ângulo real precisa de calibração. Sem leitura válida, para e continua medindo.</p>
     <p class="note">Depois de iniciado, o autônomo executa na placa, sem temporizador de missão. Se perder o USB ou fechar o navegador, não conte com o botão Parar: use a chave de alimentação. Para sair normalmente, use <strong>Parar e desconectar</strong>.</p>
-    <small>Telemetria informa o que o programa ordenou, não confirma rotação das rodas. Este painel aceita somente o firmware isolado AUTO:READY:1.</small>
+    <small>Telemetria informa o que o programa ordenou, não confirma rotação das rodas. Este painel aceita somente o firmware isolado AUTO:READY:2.</small>
     <pre id="autoLog" aria-label="Últimas mensagens do Arduino">Aguardando conexão.</pre>
   </section>
   <noscript>Ative JavaScript para usar a comunicação USB.</noscript>
-</main><script type="module" src="web/autonomous-bench.js?v=2"></script></body>
+</main><script type="module" src="web/autonomous-bench.js?v=3"></script></body>
 </html>

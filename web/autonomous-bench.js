@@ -4,7 +4,7 @@ import { BOARDS } from "./vendor/webserial-flasher/dist/boards/database.js";
 
 const $ = id => document.getElementById(id);
 const firmwareUrl = new URL("../firmware/compiled/autonomo_isolado.ino.hex", import.meta.url);
-const firmwareHash = "9e3d1df2aecd8745d4ef34d03d80f96b7a3229a234da8eb48edc14eb9835d15f";
+const firmwareHash = "1869e315c3985306607c2f16a743d0dfc90796194d02e9c1b6a6e2ae66f3517d";
 const phases = ["Parado", "Verificando caminho", "Frente", "Pausa antes da ré", "Ré", "Pausa antes da curva", "Curva", "Sem leitura válida — parado"];
 let port, reader, writer, reading, verified = false, busy = false, waiters = [];
 let txTail = Promise.resolve(), buffer = "", epoch = 0, generation = 0, latest = 0;
@@ -43,6 +43,14 @@ function receive(line) {
   $("autoCommand").textContent = values.CMD;
   $("autoSample").textContent = values.N;
   $("autoUptime").textContent = `${(Number(values.UP) / 1000).toFixed(1)} s`;
+  // Um HTML antigo em cache nao deve interromper a leitura serial.
+  const sensorStatus = $("autoSensorStatus");
+  if (sensorStatus) sensorStatus.textContent = values.DIST === "ERR" ? "Sem leitura válida"
+    : Number(values.NEAR) >= 2 ? "Próximo em 2 leituras seguidas"
+    : Number(values.CLEAR) >= 2 ? "Livre em 2 leituras seguidas"
+    : Number(values.NEAR) === 1 ? "Leitura próxima — falta confirmar"
+    : Number(values.CLEAR) === 1 ? "Leitura livre — falta confirmar"
+    : "Aguardando novas medidas parado";
   buttons();
 }
 function send(line, token = epoch) {
@@ -132,13 +140,13 @@ $("autoConnect").addEventListener("click", async () => {
     reading = readLoop(reader); buttons();
     // Abrir a porta pode reiniciar um firmware antigo: apenas ESTOP no boot.
     for (let i = 0; i < 12; i++) { await send("ESTOP"); await new Promise(r => setTimeout(r, 250)); }
-    await command("HELLO", "AUTO:READY:1");
+    await command("HELLO", "AUTO:READY:2");
     await stop();
     verified = true;
     await send("STATUS");
     $("autoStatus").textContent = "Autônomo isolado conectado e parado. Confira o sensor antes de iniciar.";
   } catch (error) {
-    $("autoStatus").textContent = `${error.message}. Use o firmware isolado; feche outros programas que usam a porta. Nenhum START foi enviado.`;
+    $("autoStatus").textContent = `${error.message}. Grave o autônomo isolado v2 pelo botão acima; feche outros programas que usam a porta. Nenhum START foi enviado.`;
     await close();
   } finally { busy = false; buttons(); }
 });

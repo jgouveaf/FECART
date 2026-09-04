@@ -51,7 +51,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/gesture-calibration.js?v=1',
             'id="flashOfficialFirmware"',
             'web/arduino-flasher.js?v=7',
-            'web/autonomous-bench.js?v=2',
+            'web/autonomous-bench.js?v=3',
             'web/simulator-controller.js?v=2',
             'web/robot-control.js?v=17',
             'web/code-editor-utils.js?v=1',

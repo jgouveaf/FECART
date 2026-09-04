@@ -14,9 +14,9 @@ class AutonomousIsolated(unittest.TestCase):
         html = (ROOT / 'index.html').read_text(encoding='utf-8')
         for element in ('autoFlash', 'autoConnect', 'autoStart', 'autoStop', 'autoDisconnect',
                         'autoDistance', 'autoEcho', 'autoPhase', 'autoCommand', 'autoSample',
-                        'autoUptime', 'autoLog', 'autoProgress', 'autoStatus', 'autoFlashStatus'):
+                        'autoUptime', 'autoSensorStatus', 'autoLog', 'autoProgress', 'autoStatus', 'autoFlashStatus'):
             self.assertEqual(html.count(f'id="{element}"'), 1)
-        self.assertIn('web/autonomous-bench.js?v=2', html)
+        self.assertIn('web/autonomous-bench.js?v=3', html)
         self.assertIn('<details id="integratedFirmware"', html)
         self.assertNotIn('<iframe', html)
         self.assertIn('firmware/autonomo_isolado/autonomo_isolado.ino', html)
@@ -34,7 +34,9 @@ class AutonomousIsolated(unittest.TestCase):
         self.assertNotIn('robot-control.js', html)
         self.assertNotIn('camera-gestures.js', html)
         self.assertNotIn('MODE:', ino)
-        self.assertIn('AUTO:READY:1', ino)
+        self.assertIn('AUTO:READY:2', ino)
+        self.assertIn('AUTO:READY:2', js)
+        self.assertIn('AUTO:READY:2', html)
         self.assertIn('"ECHO_US:"', ino.replace('|ECHO_US:', 'ECHO_US:'))
         self.assertIn('id="autoStart" disabled', html)
         hex_bytes = (ROOT / 'firmware/compiled/autonomo_isolado.ino.hex').read_text().encode()

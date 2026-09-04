@@ -1,5 +1,5 @@
 /*
-  Autonomo isolado v1 - UNO + L298N + HC-SR04.
+  Autonomo isolado v2 - UNO + L298N + HC-SR04.
   Sem camera, gestos, modos ou dependencia de heartbeat do PC.
   ENA/ENB com jumpers. Mesma polaridade do firmware integrado.
   Serial 9600, comandos terminados por nova linha:
@@ -7,6 +7,8 @@
   Inicia PARADO. START inicia execucao continua; STOP permanece parado.
   Sensor invalido: para, continua medindo e retoma apos 2 leituras validas.
   Nao existe timeout da missao ou limite de cinco desvios.
+  Primeira leitura proxima para; confirma 2 novas medidas parado antes da re.
+  Nao suaviza distancia bruta nem transforma ausencia de eco em caminho livre.
   Giro por tempo NAO mede graus. Calibrar com rodas suspensas e depois no chao.
 */
 #include <Arduino.h>
@@ -27,6 +29,8 @@ bool habilitado = false;
 bool direita = true;
 bool permitirRe = true;
 byte leiturasValidas = 0;
+byte leiturasPerto = 0;
+byte leiturasLivres = 0;
 unsigned long faseDesde = 0;
 unsigned long sensorDesde = 0;
 unsigned long telemetriaDesde = 0;
@@ -50,6 +54,12 @@ void motores(byte a, byte b, byte c, byte d, const char* comando) {
 void entrar(Fase nova, unsigned long agora) {
   fase = nova;
   faseDesde = agora;
+  if (nova == VERIFICAR || nova == SENSOR || nova == PARADO) {
+    // Medidas obtidas durante movimento nao confirmam o caminho parado.
+    leiturasValidas = 0;
+    leiturasPerto = 0;
+    leiturasLivres = 0;
+  }
   switch (fase) {
     case FRENTE: motores(LOW, HIGH, LOW, HIGH, "FRENTE"); break;
     case RE: motores(HIGH, LOW, HIGH, LOW, "RE"); break;
@@ -80,8 +90,18 @@ void medir(unsigned long agora) {
   if (ecoUs == 0 || distanciaCm < 2 || distanciaCm > 400) {
     distanciaCm = -1; // nunca converte timeout em caminho livre
     leiturasValidas = 0;
-  } else if (leiturasValidas < 2) {
-    leiturasValidas++;
+    leiturasPerto = 0;
+    leiturasLivres = 0;
+  } else {
+    if (leiturasValidas < 2) leiturasValidas++;
+    // Contagem por amostra fisica, nunca por iteracao do loop.
+    if (distanciaCm <= LIMITE_CM) {
+      leiturasLivres = 0;
+      if (leiturasPerto < 2) leiturasPerto++;
+    } else {
+      leiturasPerto = 0;
+      if (leiturasLivres < 2) leiturasLivres++;
+    }
   }
 }
 
@@ -98,23 +118,26 @@ void atualizar(unsigned long agora) {
   }
   switch (fase) {
     case VERIFICAR:
-      if (leiturasValidas < 2) break;
-      if (distanciaCm > LIMITE_CM) {
+      if (leiturasLivres >= 2) {
         permitirRe = true;
         entrar(FRENTE, agora);
-      } else if (distanciaCm <= LIMITE_CM) {
+      } else if (leiturasPerto >= 2) {
         // Uma unica re por encontro: sem sensor traseiro, nao recua sem fim.
+        if (permitirRe) direita = !direita;
         entrar(permitirRe ? PAUSA_RE : PAUSA_CURVA, agora);
       }
       break;
     case FRENTE:
       if (distanciaCm <= LIMITE_CM) {
-        direita = !direita; // alterna a direcao em cada NOVO obstaculo
-        entrar(PAUSA_RE, agora);
+        // Para imediatamente, mas um pico isolado nao inicia uma manobra.
+        entrar(VERIFICAR, agora);
       }
       break;
     case PAUSA_RE:
-      if (agora - faseDesde >= PAUSA_MS) {
+      if (distanciaCm > LIMITE_CM) {
+        // O objeto pode ter sido removido antes de comecar a re.
+        entrar(VERIFICAR, agora);
+      } else if (agora - faseDesde >= PAUSA_MS) {
         permitirRe = false;
         entrar(RE, agora);
       }
@@ -143,7 +166,9 @@ void status() {
   Serial.print(F("|CMD:")); Serial.print(motor);
   Serial.print(F("|DIST:"));
   if (distanciaCm < 0) Serial.print(F("ERR")); else Serial.print(distanciaCm, 1);
-  Serial.print(F("|ECHO_US:")); Serial.println(ecoUs);
+  Serial.print(F("|ECHO_US:")); Serial.print(ecoUs);
+  Serial.print(F("|NEAR:")); Serial.print(leiturasPerto);
+  Serial.print(F("|CLEAR:")); Serial.println(leiturasLivres);
 }
 
 void processar(unsigned long agora) {
@@ -158,7 +183,7 @@ void processar(unsigned long agora) {
       entrar(VERIFICAR, agora);
     }
     Serial.println(F("OK:START"));
-  } else if (strcmp(linha, "HELLO") == 0) Serial.println(F("AUTO:READY:1"));
+  } else if (strcmp(linha, "HELLO") == 0) Serial.println(F("AUTO:READY:2"));
   else if (strcmp(linha, "PING") == 0) Serial.println(F("PONG"));
   else if (strcmp(linha, "STATUS") == 0) status();
   else Serial.println(F("ERR:COMMAND"));
@@ -194,7 +219,7 @@ void setup() {
   digitalWrite(TRIG, LOW);
   parar(millis());
   Serial.begin(9600);
-  Serial.println(F("AUTO:READY:1"));
+  Serial.println(F("AUTO:READY:2"));
 }
 
 void loop() {

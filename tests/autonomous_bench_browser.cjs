@@ -25,7 +25,9 @@ async function mockedPage(browser, incompatible = false) {
     let controller, timer, delayedStart = false;
     const encoder = new TextEncoder();
     const reply = line => { try { controller.enqueue(encoder.encode(line+'\n')); } catch {} };
-    const status = () => reply('AUTO|UP:1234|N:5|RUN:0|PHASE:0|CMD:PARAR|DIST:20.0|ECHO_US:1160');
+    let sample = { distance: '20.0', echo: 1160, near: 2, clear: 0 };
+    const status = () => reply(`AUTO|UP:1234|N:5|RUN:0|PHASE:0|CMD:PARAR|DIST:${sample.distance}|ECHO_US:${sample.echo}|NEAR:${sample.near}|CLEAR:${sample.clear}`);
+    window.setSensorSample = (distance, echo, near, clear) => { sample = {distance, echo, near, clear}; status(); };
     window.delayStart = () => { delayedStart = true; };
     const port = {
       async open() {
@@ -34,7 +36,7 @@ async function mockedPage(browser, incompatible = false) {
         this.writable = new WritableStream({ write(bytes) {
           const text = new TextDecoder().decode(bytes).trim();
           window.serialWrites.push(text);
-          if(text==='HELLO') reply(incompatible?'QT:READY:V5':'AUTO:READY:1');
+          if(text==='HELLO') reply(incompatible === 'v1' ? 'AUTO:READY:1' : incompatible ? 'QT:READY:V5' : 'AUTO:READY:2');
           if(text==='ESTOP') { reply('OK:STOP'); if(!incompatible) status(); }
           if(text==='STATUS') status();
           if(text==='START') {
@@ -66,6 +68,18 @@ async function mockedPage(browser, incompatible = false) {
     await page.waitForFunction(()=>document.querySelector('#autoStatus').textContent.includes('conectado e parado'));
     assert.equal(await page.locator('#autoDistance').textContent(),'20.0 cm');
     assert.equal(await page.locator('#autoEcho').textContent(),'1160');
+    assert.match(await page.locator('#autoSensorStatus').textContent(), /Próximo em 2 leituras/);
+    await page.evaluate(()=>setSensorSample('5.0',290,1,0));
+    assert.equal(await page.locator('#autoDistance').textContent(),'5.0 cm');
+    assert.match(await page.locator('#autoSensorStatus').textContent(), /falta confirmar/);
+    await page.evaluate(()=>setSensorSample('50.0',2900,0,2));
+    assert.match(await page.locator('#autoSensorStatus').textContent(), /Livre em 2 leituras/);
+    await page.evaluate(()=>setSensorSample('ERR',0,0,0));
+    assert.equal(await page.locator('#autoSensorStatus').textContent(),'Sem leitura válida');
+    await page.evaluate(()=>setSensorSample('20.0',1160,2,0));
+    // An older HTML can lack the new diagnostic field while loading updated JS.
+    await page.locator('#autoSensorStatus').evaluate(el=>el.remove());
+    await page.evaluate(()=>setSensorSample('20.0',1160,2,0));
     assert.equal((await page.evaluate(()=>serialWrites)).includes('START'),false);
     await page.locator('#autoStart').click();
     await page.waitForFunction(()=>document.querySelector('#autoStatus').textContent.includes('Autônomo iniciado'));
@@ -94,6 +108,14 @@ async function mockedPage(browser, incompatible = false) {
     assert.equal(await wrong.page.locator('#autoStart').isDisabled(),true);
     assert.deepEqual(wrong.errors,[]);
     await wrong.page.close();
+    const old = await mockedPage(browser, 'v1');
+    await old.page.goto(url);
+    await old.page.locator('#autoConnect').click();
+    await old.page.waitForFunction(()=>document.querySelector('#autoStatus').textContent.includes('Grave o autônomo isolado v2'));
+    assert.equal((await old.page.evaluate(()=>serialWrites)).includes('START'),false);
+    assert.equal(await old.page.locator('#autoStart').isDisabled(),true);
+    assert.deepEqual(old.errors,[]);
+    await old.page.close();
     const invalidHex = await mockedPage(browser);
     await invalidHex.page.route('**/firmware/compiled/autonomo_isolado.ino.hex', route => route.fulfill({status:200,body:'invalid firmware'}));
     await invalidHex.page.goto(url);

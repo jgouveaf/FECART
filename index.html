@@ -376,7 +376,7 @@
           <div><span class="section-tag">Arduino UNO · gravação pelo site</span><h2>Códigos do robô</h2><p>Comece pelo autônomo isolado: motores e sensor, sem câmera, gestos ou troca de modo. Tudo neste painel.</p></div>
         </div>
         <div id="autonomo-isolado" class="autonomous-panel" aria-labelledby="autoTitle">
-          <h3 id="autoTitle">Autônomo isolado</h3>
+          <h3 id="autoTitle">Autônomo isolado v2 · confirmação do sensor</h3>
           <p class="guide-warning"><strong>Ensaio supervisionado.</strong> Comece com as rodas suspensas. Esta versão substitui o firmware integrado na placa e inicia parada. Não ligue os motores enquanto o sensor não medir corretamente um objeto a uma distância conhecida.</p>
           <section class="autonomous-step" aria-labelledby="autoInstallTitle">
             <h4 id="autoInstallTitle">1. Gravar esta versão no UNO</h4>
@@ -386,7 +386,7 @@
               <a class="secondary-button" href="firmware/autonomo_isolado/autonomo_isolado.ino" download>Baixar código .ino</a>
             </div>
             <progress id="autoProgress" max="100" value="0" aria-label="Progresso da gravação do autônomo isolado"></progress>
-            <p id="autoFlashStatus" role="status">Grave uma vez. Nas próximas utilizações, vá direto ao passo 2.</p>
+            <p id="autoFlashStatus" role="status">Atualização v2: grave novamente para aplicar a confirmação do sensor. Atualizar só a página não atualiza o Arduino.</p>
             <div class="pin-strip"><span><b>D7</b> IN1</span><span><b>D6</b> IN2</span><span><b>D5</b> IN3</span><span><b>D4</b> IN4</span><span><b>D3</b> TRIG</span><span><b>D2</b> ECHO</span></div>
             <small>ENA e ENB com jumpers. A gravação usa o arquivo compilado do autônomo isolado, não o editor da versão integrada abaixo.</small>
           </section>
@@ -400,16 +400,17 @@
             </div>
             <p id="autoStatus" role="status">Desconectado.</p>
             <dl class="autonomous-telemetry">
-              <div><dt>Distância</dt><dd id="autoDistance">—</dd></div>
+              <div><dt>Distância bruta</dt><dd id="autoDistance">—</dd></div>
               <div><dt>Eco bruto (µs)</dt><dd id="autoEcho">—</dd></div>
+              <div><dt>Confirmação do sensor</dt><dd id="autoSensorStatus">—</dd></div>
               <div><dt>Fase do programa</dt><dd id="autoPhase">—</dd></div>
               <div><dt>Ordem aos motores</dt><dd id="autoCommand">—</dd></div>
               <div><dt>Número da leitura</dt><dd id="autoSample">—</dd></div>
               <div><dt>Tempo desde o boot</dt><dd id="autoUptime">—</dd></div>
             </dl>
-            <p>Anda com caminho livre. Ao encontrar obstáculo, para, recua, gira e mede de novo. Sem leitura válida do sensor, para e continua medindo. O ângulo real da curva precisa de calibração.</p>
+            <p>Para na primeira leitura de até 35 cm e confirma duas novas medidas parado antes de desviar. Um pico isolado não inicia ré; duas leituras livres permitem retomar. A distância bruta continua visível, sem esconder os saltos. Sem eco válido, para e continua medindo. O ângulo da curva precisa de calibração.</p>
             <p class="guide-warning">Após Iniciar, o programa continua na placa sem temporizador de missão. Se perder o USB ou fechar o navegador, não conte com o botão Parar: use a chave de alimentação. Para sair normalmente, use <strong>Parar e desconectar</strong>.</p>
-            <small>Telemetria mostra ordens do firmware, não confirma rotação das rodas. Este painel aceita somente AUTO:READY:1; não use os controles de três modos com esta versão.</small>
+            <small>Telemetria mostra ordens do firmware, não confirma rotação das rodas. Este painel aceita somente AUTO:READY:2; não use os controles de três modos com esta versão.</small>
             <pre id="autoLog" aria-label="Últimas mensagens do autônomo isolado">Aguardando conexão.</pre>
           </section>
         </div>
@@ -569,7 +570,7 @@
   <script src="web/code-editor-utils.js?v=1" defer></script>
   <script src="web/app.js?v=17" defer></script>
   <script type="module" src="web/arduino-flasher.js?v=7"></script>
-  <script type="module" src="web/autonomous-bench.js?v=2"></script>
+  <script type="module" src="web/autonomous-bench.js?v=3"></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
   <script src="web/robot-control.js?v=17" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>

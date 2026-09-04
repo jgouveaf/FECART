@@ -9,6 +9,10 @@ const phases = ["Parado", "Verificando caminho", "Frente", "Pausa antes da ré",
 let port, reader, writer, reading, verified = false, busy = false, waiters = [];
 let txTail = Promise.resolve(), buffer = "", epoch = 0, generation = 0, latest = 0;
 const logs = [];
+function otherPanelUsesUsb() {
+  return window.quantumRobot?.usbBusy || window.quantumFirmwareFlasher?.busy;
+}
+window.quantumAutonomousBench = Object.freeze({ get usbBusy() { return busy || !!port; } });
 function log(line) {
   logs.push(line);
   if (logs.length > 25) logs.shift();
@@ -116,6 +120,10 @@ async function stop() {
 }
 $("autoConnect").addEventListener("click", async () => {
   if (busy || port) return;
+  if (otherPanelUsesUsb()) {
+    $("autoStatus").textContent = "USB em uso pela versão integrada. Pare e desconecte esse painel, ou aguarde a gravação terminar.";
+    return;
+  }
   busy = true; buttons();
   try {
     port = await navigator.serial.requestPort();
@@ -155,6 +163,10 @@ $("autoDisconnect").addEventListener("click", async () => {
 });
 $("autoFlash").addEventListener("click", async () => {
   if (busy || port) return;
+  if (otherPanelUsesUsb()) {
+    $("autoFlashStatus").textContent = "USB em uso pela versão integrada. Pare e desconecte esse painel, ou aguarde a gravação terminar.";
+    return;
+  }
   if (!window.confirm("Desligue a alimentação dos motores, mantenha o UNO no USB e feche outros painéis. Substituir o firmware pelo autônomo isolado?")) return;
   busy = true; buttons(); let transport;
   try {

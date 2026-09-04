@@ -1,6 +1,6 @@
 # Autônomo isolado v1
 
-Este ensaio não carrega câmera, gestos nem o controlador de três modos.
+Este firmware não usa câmera, gestos nem o controlador de três modos.
 O firmware integrado permanece em `firmware/quantum_tracker_arduino`.
 
 - Placa: Arduino UNO, 9600 baud.
@@ -12,9 +12,14 @@ O firmware integrado permanece em `firmware/quantum_tracker_arduino`.
 - `STATUS` mostra fase, ordem elétrica, eco em microssegundos, leitura e tempo desde o boot.
 - Identificação: `AUTO:READY:1`. Não opere este sketch pelo painel integrado.
 
-Use a página `autonomo.html` para gravar o HEX verificado e operar. Para voltar aos
-três modos, grave o firmware integrado pela página principal. Trocar de página
-não troca o firmware instalado.
+Use **Códigos → Autônomo isolado** na página principal (`index.html#codigos`)
+para gravar o HEX verificado, conectar, iniciar, parar e conferir o sensor.
+`autonomo.html` permanece disponível como acesso alternativo ao mesmo controlador.
+Os painéis da página principal bloqueiam conexões/gravações USB simultâneas,
+inclusive durante a seleção da porta. Feche outras abas e o Monitor Serial.
+Para voltar aos três modos, use Parar e desconectar e abra **Versão integrada**
+na mesma seção para gravar o outro firmware. Trocar de página ou abrir essa seção
+não troca o firmware instalado e não envia comandos de movimento.
 
 ## Sequência
 
@@ -45,3 +50,8 @@ fechar a página só tenta enviar STOP, sem garantia. Saia por Parar e desconect
 com IO e tempo simulados. Não simula potência, física, AVR ou overflow de millis.
 Compile separadamente com `arduino-cli compile --fqbn arduino:avr:uno firmware/autonomo_isolado`.
 Compilação e testes de lógica não comprovam movimento real.
+
+`node tests/autonomous_bench_browser.cjs` testa ambos os painéis em Chromium,
+com Web Serial simulada: comandos e confirmações, parada durante START pendente,
+recusa de firmware incompatível, integridade do HEX, exclusão de uso simultâneo
+da USB, cancelamento do seletor, reconexão e layout móvel. Não abre USB real.

@@ -1390,3 +1390,20 @@ h2 {
   .hero-card { min-height: 0; padding: 26px 22px; }
   .panel { padding: 17px; border-radius: 6px; }
 }
+
+.autonomous-panel { min-width: 0; }
+.autonomous-panel .guide-warning,
+.integrated-firmware .guide-warning { color: #704609; background: #fff8e9; }
+.autonomous-step { margin: 20px 0; padding: 20px; border: 1px solid var(--line); border-radius: 6px; }
+.autonomous-step h4 { margin: 0 0 12px; font-size: 1.1rem; }
+.autonomous-step > p { margin: 12px 0; }
+.autonomous-step > small { display: block; color: var(--muted); }
+.autonomous-step progress { width: 100%; margin-top: 16px; }
+.autonomous-telemetry { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; margin: 20px 0; }
+.autonomous-telemetry > div { background: #f2f5f7; border-radius: 5px; padding: 12px; }
+.autonomous-telemetry dt { font-size: .85rem; color: #526575; }
+.autonomous-telemetry dd { margin: 6px 0 0; font-weight: 700; overflow-wrap: anywhere; }
+#autoLog { white-space: pre-wrap; overflow-wrap: anywhere; background: #f2f5f7; padding: 12px; max-height: 230px; overflow: auto; font-size: .85rem; }
+.integrated-firmware { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 20px; }
+.integrated-firmware > summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
+.integrated-firmware > summary:focus-visible { outline: 3px solid #1769aa; outline-offset: 3px; }

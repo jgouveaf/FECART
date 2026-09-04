@@ -10,6 +10,17 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class AutonomousIsolated(unittest.TestCase):
+    def test_main_site_reuses_the_isolated_controller(self):
+        html = (ROOT / 'index.html').read_text(encoding='utf-8')
+        for element in ('autoFlash', 'autoConnect', 'autoStart', 'autoStop', 'autoDisconnect',
+                        'autoDistance', 'autoEcho', 'autoPhase', 'autoCommand', 'autoSample',
+                        'autoUptime', 'autoLog', 'autoProgress', 'autoStatus', 'autoFlashStatus'):
+            self.assertEqual(html.count(f'id="{element}"'), 1)
+        self.assertIn('web/autonomous-bench.js?v=2', html)
+        self.assertIn('<details id="integratedFirmware"', html)
+        self.assertNotIn('<iframe', html)
+        self.assertIn('firmware/autonomo_isolado/autonomo_isolado.ino', html)
+
     @unittest.skipUnless(shutil.which('node'), 'Node required')
     def test_sketch_logic(self):
         result = subprocess.run([shutil.which('node'), 'tests/autonomous_isolated_logic.test.cjs'],

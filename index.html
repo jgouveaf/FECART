@@ -31,7 +31,7 @@
       // Sem localStorage disponível: libera o painel em vez de travar o acesso.
     }
   </script>
-  <link rel="stylesheet" href="web/styles.css?v=21">
+  <link rel="stylesheet" href="web/styles.css?v=22">
 </head>
 <body>
   <noscript><div class="auth-overlay" style="display:flex"><div class="auth-card"><h1>Quantum Tracker</h1><p>Ative o JavaScript para acessar o painel.</p></div></div></noscript>
@@ -373,7 +373,51 @@
 
       <section id="codigos" class="page-section panel code-panel">
         <div class="section-heading">
-          <div><span class="section-tag">Arduino UNO · instalação única</span><h2>Códigos do robô</h2><p>Grave o firmware principal uma vez. Depois disso, o IDE pode permanecer fechado e o site controla o UNO pelo cabo.</p></div>
+          <div><span class="section-tag">Arduino UNO · gravação pelo site</span><h2>Códigos do robô</h2><p>Comece pelo autônomo isolado: motores e sensor, sem câmera, gestos ou troca de modo. Tudo neste painel.</p></div>
+        </div>
+        <div id="autonomo-isolado" class="autonomous-panel" aria-labelledby="autoTitle">
+          <h3 id="autoTitle">Autônomo isolado</h3>
+          <p class="guide-warning"><strong>Ensaio supervisionado.</strong> Comece com as rodas suspensas. Esta versão substitui o firmware integrado na placa e inicia parada. Não ligue os motores enquanto o sensor não medir corretamente um objeto a uma distância conhecida.</p>
+          <section class="autonomous-step" aria-labelledby="autoInstallTitle">
+            <h4 id="autoInstallTitle">1. Gravar esta versão no UNO</h4>
+            <p>Desligue a alimentação dos motores, mantendo o UNO no USB. Feche o Arduino IDE e qualquer outra conexão com a placa. Use Chrome ou Edge no computador.</p>
+            <div class="robot-actions">
+              <button class="primary-button" id="autoFlash" type="button">Gravar autônomo isolado</button>
+              <a class="secondary-button" href="firmware/autonomo_isolado/autonomo_isolado.ino" download>Baixar código .ino</a>
+            </div>
+            <progress id="autoProgress" max="100" value="0" aria-label="Progresso da gravação do autônomo isolado"></progress>
+            <p id="autoFlashStatus" role="status">Grave uma vez. Nas próximas utilizações, vá direto ao passo 2.</p>
+            <div class="pin-strip"><span><b>D7</b> IN1</span><span><b>D6</b> IN2</span><span><b>D5</b> IN3</span><span><b>D4</b> IN4</span><span><b>D3</b> TRIG</span><span><b>D2</b> ECHO</span></div>
+            <small>ENA e ENB com jumpers. A gravação usa o arquivo compilado do autônomo isolado, não o editor da versão integrada abaixo.</small>
+          </section>
+          <section class="autonomous-step" aria-labelledby="autoOperateTitle">
+            <h4 id="autoOperateTitle">2. Conferir o sensor e iniciar</h4>
+            <div class="robot-actions">
+              <button class="primary-button" id="autoConnect" type="button">Conectar Arduino USB</button>
+              <button class="primary-button" id="autoStart" disabled type="button">Iniciar autônomo</button>
+              <button class="danger-button" id="autoStop" disabled type="button">Parar</button>
+              <button class="secondary-button" id="autoDisconnect" disabled type="button">Parar e desconectar</button>
+            </div>
+            <p id="autoStatus" role="status">Desconectado.</p>
+            <dl class="autonomous-telemetry">
+              <div><dt>Distância</dt><dd id="autoDistance">—</dd></div>
+              <div><dt>Eco bruto (µs)</dt><dd id="autoEcho">—</dd></div>
+              <div><dt>Fase do programa</dt><dd id="autoPhase">—</dd></div>
+              <div><dt>Ordem aos motores</dt><dd id="autoCommand">—</dd></div>
+              <div><dt>Número da leitura</dt><dd id="autoSample">—</dd></div>
+              <div><dt>Tempo desde o boot</dt><dd id="autoUptime">—</dd></div>
+            </dl>
+            <p>Anda com caminho livre. Ao encontrar obstáculo, para, recua, gira e mede de novo. Sem leitura válida do sensor, para e continua medindo. O ângulo real da curva precisa de calibração.</p>
+            <p class="guide-warning">Após Iniciar, o programa continua na placa sem temporizador de missão. Se perder o USB ou fechar o navegador, não conte com o botão Parar: use a chave de alimentação. Para sair normalmente, use <strong>Parar e desconectar</strong>.</p>
+            <small>Telemetria mostra ordens do firmware, não confirma rotação das rodas. Este painel aceita somente AUTO:READY:1; não use os controles de três modos com esta versão.</small>
+            <pre id="autoLog" aria-label="Últimas mensagens do autônomo isolado">Aguardando conexão.</pre>
+          </section>
+        </div>
+        <details id="integratedFirmware" class="integrated-firmware">
+          <summary>Versão integrada — três modos, editor e testes anteriores</summary>
+          <p class="guide-warning">Para voltar aos três modos, primeiro use <strong>Parar e desconectar</strong> no autônomo isolado, grave o firmware integrado abaixo e conecte em Câmeras &amp; robô. Apenas um painel pode usar a USB por vez.</p>
+          <div class="section-heading">
+          <div><span class="section-tag">Firmware integrado</span><h3>Três modos e códigos de diagnóstico</h3><p>Estes controles não operam o firmware autônomo isolado.</p></div>
           <div class="code-actions">
             <button class="primary-button compact" id="runCode">Rodar autônomo</button>
             <button class="secondary-button" id="updateCode" type="button">Atualizar código</button>
@@ -382,7 +426,6 @@
             <input id="codeFileInput" type="file" accept=".ino,.txt,text/plain,text/x-arduino" hidden>
           </div>
         </div>
-        <p class="guide-warning"><strong>Nova etapa: autônomo isolado.</strong> Teste só motores e sensor, sem câmera ou gestos. <a href="autonomo.html">Abrir gravação e controle do autônomo isolado</a>. O código integrado abaixo permanece disponível.</p>
         <div class="firmware-workflow" aria-label="Como preparar e conectar o Arduino">
           <article><b>01</b><div><strong>Conectar o UNO</strong><small>Use Chrome ou Edge e feche o Arduino IDE.</small></div></article>
           <article><b>02</b><div><strong>Gravar pelo site</strong><small>Use o botão abaixo e selecione a porta do UNO.</small></div></article>
@@ -472,6 +515,7 @@
           </div>
           <p class="config-status" id="configStatus" role="status" aria-live="polite">Usando valores padrão.</p>
         </div>
+        </details>
       </section>
 
       <section id="identidades" class="page-section panel">
@@ -524,9 +568,10 @@
   <script src="web/simulator-controller.js?v=2" defer></script>
   <script src="web/code-editor-utils.js?v=1" defer></script>
   <script src="web/app.js?v=17" defer></script>
-  <script type="module" src="web/arduino-flasher.js?v=6"></script>
+  <script type="module" src="web/arduino-flasher.js?v=7"></script>
+  <script type="module" src="web/autonomous-bench.js?v=2"></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
-  <script src="web/robot-control.js?v=16" defer></script>
+  <script src="web/robot-control.js?v=17" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/face-identity-math.js?v=2" defer></script>
   <script src="web/gesture-math.js?v=6" defer></script>

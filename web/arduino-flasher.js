@@ -9,6 +9,7 @@ const status = document.getElementById("firmwareFlashStatus");
 const FIRMWARE_URL = new URL("../firmware/compiled/quantum_tracker_arduino.ino.hex", import.meta.url);
 // Hash do conteúdo servido pelo GitHub Pages (Git normaliza o Intel HEX para LF).
 const FIRMWARE_SHA256 = "c3163fef59c33eac2a221c0e41ee1f535c10d2060ae497f3e01dade5dcb417c2";
+let busy = false;
 
 function setStatus(state, title, detail, percentage = progress.value) {
   panel.classList.remove("flashing", "success", "error");
@@ -43,12 +44,18 @@ async function loadVerifiedFirmware() {
 }
 
 async function flashOfficialFirmware() {
+  if (busy) return;
+  if (window.quantumAutonomousBench?.usbBusy || (window.quantumRobot?.usbBusy && !window.quantumRobot.connected)) {
+    setStatus("error", "USB EM OUTRO PAINEL", "Pare e desconecte o autônomo isolado ou conclua a conexão pendente antes de gravar.", 0);
+    return;
+  }
   if (!WebSerialTransport.isSupported()) {
     throw new Error("Use Google Chrome ou Microsoft Edge no computador. Este navegador não oferece Web Serial.");
   }
   if (!window.isSecureContext) throw new Error("A gravação USB exige o endereço HTTPS oficial do site.");
   if (!window.confirm("As rodas estão suspensas e é seguro reiniciar o Arduino para gravar o firmware oficial?")) return;
 
+  busy = true;
   button.disabled = true;
   button.textContent = "Preparando…";
   setStatus("flashing", "PREPARANDO", "Baixando e verificando o firmware oficial…", 2);
@@ -82,6 +89,7 @@ async function flashOfficialFirmware() {
     window.QuantumControl?.log?.(cancelled ? "INFO" : "ERROR", "FIRMWARE", message);
   } finally {
     try { await transport?.close(); } catch { /* porta já encerrada */ }
+    busy = false;
     button.disabled = false;
     button.textContent = "Gravar no Arduino UNO";
   }
@@ -98,4 +106,5 @@ window.quantumFirmwareFlasher = Object.freeze({
   flash: flashOfficialFirmware,
   firmwareUrl: FIRMWARE_URL.href,
   board: "arduino-uno",
+  get busy() { return busy; },
 });

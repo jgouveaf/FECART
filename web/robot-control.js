@@ -45,6 +45,7 @@
   let transportOpen = false;
   let connected = false;
   let closing = false;
+  let connecting = false;
   let closePromise = null;
   let readBuffer = "";
   let discardingReadLine = false;
@@ -488,7 +489,11 @@
   }
 
   async function connectRobot() {
-    if (transportOpen || closing) return false;
+    if (transportOpen || closing || connecting) return false;
+    if (window.quantumAutonomousBench?.usbBusy || window.quantumFirmwareFlasher?.busy) {
+      setConnection("USB EM OUTRO PAINEL", "OFFLINE", "Use Parar e desconectar no autônomo isolado em Códigos, ou aguarde a gravação terminar.");
+      return false;
+    }
     if (window.location?.protocol === "file:") {
       setConnection("ABRA O SITE HTTPS", "ERROR", "O controle físico foi bloqueado. Use https://jgouveaf.github.io/FECART/.");
       reportError("Web Serial bloqueado em página aberta diretamente pelo disco.");
@@ -500,6 +505,7 @@
       return false;
     }
 
+    connecting = true;
     const connectionToken = ++connectionGeneration;
     const operationToken = ++operationGeneration;
     rejectSupersededOperationWaiters(operationToken);
@@ -551,6 +557,8 @@
       }
       await closePort({ sendEstop: transportOpen, reason: "CONNECT_FAILED", preserveStatus: true });
       return false;
+    } finally {
+      connecting = false;
     }
   }
 
@@ -1109,6 +1117,7 @@
     emergencyStop: toggleEmergency,
     send(command) { return acceptIntent(String(command || "").toUpperCase(), "api", { fresh: true }); },
     get connected() { return connected; },
+    get usbBusy() { return connecting || closing || transportOpen || !!port; },
     get mode() { return activeMode; },
     get confirmedMode() { return confirmedMode; },
     get connectionGeneration() { return connectionGeneration; },

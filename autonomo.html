@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Autônomo isolado — Quantum Tracker</title>
+  <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f4f6f8;color:#172b3a;font:16px/1.55 system-ui,sans-serif}
+    main{max-width:900px;margin:32px auto;padding:0 20px}a{color:#1266a1}h1{font-size:2rem;margin-bottom:8px}h2{font-size:1.25rem}
+    section{background:white;border:1px solid #ced7df;border-radius:8px;padding:24px;margin:20px 0}
+    .note{border-left:4px solid #a46100;background:#fff8e9;padding:16px}.actions{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0}
+    button{font:inherit;font-weight:650;border:1px solid #1266a1;border-radius:5px;padding:12px 20px;background:#1266a1;color:white;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}button.stop{background:#b51e30;border-color:#b51e30}button.secondary{background:white;color:#1266a1}
+    button:focus-visible,a:focus-visible{outline:3px solid #da8800;outline-offset:3px}progress{width:100%}
+    dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px}dt{font-size:.85rem;color:#526575}dd{margin:0;font-weight:700;font-size:1.1rem}
+    pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f6f8;padding:12px;max-height:230px;overflow:auto;font-size:.85rem}small{color:#526575}
+  </style>
+</head>
+<body><main>
+  <a href="index.html#codigos">← Voltar ao projeto integrado</a>
+  <h1>Autônomo isolado</h1>
+  <p>Só Arduino UNO, motores e sensor. Sem câmera, gestos ou troca de modo.</p>
+  <p class="note"><strong>Ensaio supervisionado.</strong> Comece com as rodas suspensas. Este firmware substitui o integrado na placa, mas não apaga seus arquivos. Ele inicia parado. Não ligue os motores enquanto o sensor não medir corretamente um objeto a uma distância conhecida.</p>
+  <section aria-labelledby="installTitle">
+    <h2 id="installTitle">1. Gravar esta versão no UNO</h2>
+    <p>Feche a conexão do painel integrado e o Monitor Serial. Use Chrome ou Edge no computador.</p>
+    <div class="actions"><button id="autoFlash">Gravar autônomo isolado</button><a href="firmware/autonomo_isolado/autonomo_isolado.ino" download>Baixar código .ino</a></div>
+    <progress id="autoProgress" max="100" value="0" aria-label="Progresso da gravação"></progress>
+    <p id="autoFlashStatus" role="status">Grave apenas quando estiver pronto para testar.</p>
+    <small>D7 → IN1 · D6 → IN2 · D5 → IN3 · D4 → IN4 · D3 → TRIG · D2 → ECHO. ENA e ENB com jumpers.</small>
+  </section>
+  <section aria-labelledby="operateTitle">
+    <h2 id="operateTitle">2. Conferir o sensor e iniciar</h2>
+    <div class="actions">
+      <button id="autoConnect">Conectar Arduino USB</button>
+      <button id="autoStart" disabled>Iniciar autônomo</button>
+      <button id="autoStop" class="stop" disabled>Parar</button>
+      <button id="autoDisconnect" class="secondary" disabled>Parar e desconectar</button>
+    </div>
+    <p id="autoStatus" role="status">Desconectado.</p>
+    <dl>
+      <div><dt>Distância</dt><dd id="autoDistance">—</dd></div>
+      <div><dt>Eco bruto (µs)</dt><dd id="autoEcho">—</dd></div>
+      <div><dt>Fase do programa</dt><dd id="autoPhase">—</dd></div>
+      <div><dt>Ordem aos motores</dt><dd id="autoCommand">—</dd></div>
+      <div><dt>Número da leitura</dt><dd id="autoSample">—</dd></div>
+      <div><dt>Tempo desde o boot</dt><dd id="autoUptime">—</dd></div>
+    </dl>
+    <p>Anda enquanto há caminho livre. Ao detectar obstáculo, para, recua por 0,4 s, gira por 0,65 s e mede de novo. O ângulo real precisa de calibração. Se ainda houver obstáculo, gira novamente sem repetir a ré. Sem leitura válida, para e continua medindo.</p>
+    <p class="note">Depois de iniciado, o autônomo executa na placa, sem temporizador de missão. Se perder o USB ou fechar o navegador, não conte com o botão Parar: use a chave de alimentação. Para sair normalmente, use <strong>Parar e desconectar</strong>.</p>
+    <small>Telemetria informa o que o programa ordenou, não confirma rotação das rodas. Este painel aceita somente o firmware isolado AUTO:READY:1.</small>
+    <pre id="autoLog" aria-label="Últimas mensagens do Arduino">Aguardando conexão.</pre>
+  </section>
+  <noscript>Ative JavaScript para usar a comunicação USB.</noscript>
+</main><script type="module" src="web/autonomous-bench.js?v=1"></script></body>
+</html>

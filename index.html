@@ -48,11 +48,8 @@
         <a class="nav-link" href="#simulador" data-section="simulador"><span>◇</span> Simulador</a>
         <a class="nav-link" href="#camera-gestos" data-section="camera-gestos"><span>◉</span> Câmera &amp; gestos</a>
         <a class="nav-link" href="#codigos" data-section="codigos"><span>⌘</span> Códigos</a>
-        <a class="nav-link" href="#identidades" data-section="identidades"><span>◎</span> Identidades</a>
         <a class="nav-link" href="#diagnostico" data-section="diagnostico"><span>⚡</span> Diagnóstico</a>
         <a class="nav-link" href="#logs" data-section="logs"><span>≡</span> Logs</a>
-        <a class="nav-link" href="#etapas" data-section="etapas"><span>✓</span> Etapas</a>
-        <a class="nav-link" href="#sistema" data-section="sistema"><span>⚙</span> Sistema</a>
       </nav>
       <div class="sidebar-note">
         <span class="status-dot"></span>
@@ -90,14 +87,14 @@
 
         <article class="progress-card">
           <div class="card-heading">
-            <div><span class="section-tag">Situação do sistema</span><h3>Validação física pendente</h3></div>
-            <strong>ETAPA 10</strong>
+            <div><span class="section-tag">Situação do sistema</span><h3>Modo 1 validado em bancada</h3></div>
+            <strong>UNO · USB</strong>
           </div>
           <div class="progress-track"><span style="width:70%"></span></div>
-          <p>O software passou nos testes automatizados. O carrinho real ainda precisa concluir os ensaios de motor, sensor e desconexão.</p>
+          <p>Motor, polaridade e desvio a 5 cm foram confirmados com as rodas suspensas. O uso no piso ainda exige calibrar distância e tempo de curva.</p>
           <div class="mini-stats">
             <div><strong>APROVADA</strong><span>suíte automatizada</span></div>
-            <div><strong>0</strong><span>ensaios físicos</span></div>
+            <div><strong>1</strong><span>modo físico aprovado</span></div>
           </div>
         </article>
       </section>
@@ -115,12 +112,12 @@
           <span class="pill neutral">4 passos</span>
         </div>
         <ol class="quick-guide-grid">
-          <li><b>1</b><div><strong>Prepare o firmware</strong><span>Abra <a href="#codigos">Códigos</a>, use o original ou importe um arquivo <code>.ino</code> e baixe a versão escolhida.</span><small>Esperado: status “PRONTO” ou “EDITADO NESTE NAVEGADOR”.</small></div></li>
+          <li><b>1</b><div><strong>Prepare o firmware</strong><span>Abra <a href="#codigos">Códigos</a> e mantenha selecionado o Código principal oficial.</span><small>O editor é para consulta; o botão de gravação usa a versão compilada e verificada.</small></div></li>
           <li><b>2</b><div><strong>Grave pelo site</strong><span>Em Códigos, clique em “Gravar no Arduino UNO” e selecione a porta da placa.</span><small>Esperado: gravação e verificação chegam a 100%.</small></div></li>
           <li><b>3</b><div><strong>Libere e conecte a porta</strong><span>Feche IDE e Monitor Serial. No painel, clique em “Conectar Arduino USB” e escolha a mesma porta.</span><small>Esperado: ROBÔ “ONLINE” e COMUNICAÇÃO “ONLINE”.</small></div></li>
-          <li><b>4</b><div><strong>Escolha e teste o modo</strong><span>Comece com as rodas levantadas. Teste Autônomo, depois câmera ou gestos.</span><small>Esperado: telemetria atualizando e parada ao perder a conexão.</small></div></li>
+          <li><b>4</b><div><strong>Escolha e teste o modo</strong><span>Comece com as rodas levantadas. O Modo 1 roda localmente; os Modos 2 e 3 dependem do site.</span><small>Esperado: telemetria V6 atualizando e motores bloqueados quando o sensor falha.</small></div></li>
         </ol>
-        <div class="guide-warning" role="note"><strong>Importante:</strong> o botão de gravação instala o firmware oficial compilado. Uma edição manual do texto ainda precisa ser compilada antes de ser enviada.</div>
+        <div class="guide-warning" role="note"><strong>Importante:</strong> o botão de gravação instala o firmware oficial compilado. Uma edição manual do texto ainda precisa ser compilada antes de ser enviada. A arquitetura usa Arduino UNO por cabo USB; não usa ESP32 nem Bluetooth.</div>
       </section>
 
       <section id="simulador" class="page-section panel simulator-panel">
@@ -373,54 +370,12 @@
 
       <section id="codigos" class="page-section panel code-panel">
         <div class="section-heading">
-          <div><span class="section-tag">Arduino UNO · gravação pelo site</span><h2>Códigos do robô</h2><p>Comece pelo autônomo isolado: motores e sensor, sem câmera, gestos ou troca de modo. Tudo neste painel.</p></div>
+          <div><span class="section-tag">Arduino UNO · gravação pelo site</span><h2>Firmware oficial</h2><p>Um único firmware V6 preserva o Modo 1 aprovado e recebe os comandos dos outros modos por USB.</p></div>
         </div>
-        <div id="autonomo-isolado" class="autonomous-panel" aria-labelledby="autoTitle">
-          <h3 id="autoTitle">Autônomo isolado v2 · confirmação do sensor</h3>
-          <p class="guide-warning"><strong>Ensaio supervisionado.</strong> Comece com as rodas suspensas. Esta versão substitui o firmware integrado na placa e inicia parada. Não ligue os motores enquanto o sensor não medir corretamente um objeto a uma distância conhecida.</p>
-          <section class="autonomous-step" aria-labelledby="autoInstallTitle">
-            <h4 id="autoInstallTitle">1. Gravar esta versão no UNO</h4>
-            <p>Desligue a alimentação dos motores, mantendo o UNO no USB. Feche o Arduino IDE e qualquer outra conexão com a placa. Use Chrome ou Edge no computador.</p>
-            <div class="robot-actions">
-              <button class="primary-button" id="autoFlash" type="button">Gravar autônomo isolado</button>
-              <a class="secondary-button" href="firmware/autonomo_isolado/autonomo_isolado.ino" download>Baixar código .ino</a>
-            </div>
-            <progress id="autoProgress" max="100" value="0" aria-label="Progresso da gravação do autônomo isolado"></progress>
-            <p id="autoFlashStatus" role="status">Atualização v2: grave novamente para aplicar a confirmação do sensor. Atualizar só a página não atualiza o Arduino.</p>
-            <div class="pin-strip"><span><b>D7</b> IN1</span><span><b>D6</b> IN2</span><span><b>D5</b> IN3</span><span><b>D4</b> IN4</span><span><b>D3</b> TRIG</span><span><b>D2</b> ECHO</span></div>
-            <small>ENA e ENB com jumpers. A gravação usa o arquivo compilado do autônomo isolado, não o editor da versão integrada abaixo.</small>
-          </section>
-          <section class="autonomous-step" aria-labelledby="autoOperateTitle">
-            <h4 id="autoOperateTitle">2. Conferir o sensor e iniciar</h4>
-            <div class="robot-actions">
-              <button class="primary-button" id="autoConnect" type="button">Conectar Arduino USB</button>
-              <button class="primary-button" id="autoStart" disabled type="button">Iniciar autônomo</button>
-              <button class="danger-button" id="autoStop" disabled type="button">Parar</button>
-              <button class="secondary-button" id="autoDisconnect" disabled type="button">Parar e desconectar</button>
-            </div>
-            <p id="autoStatus" role="status">Desconectado.</p>
-            <dl class="autonomous-telemetry">
-              <div><dt>Distância bruta</dt><dd id="autoDistance">—</dd></div>
-              <div><dt>Eco bruto (µs)</dt><dd id="autoEcho">—</dd></div>
-              <div><dt>Confirmação do sensor</dt><dd id="autoSensorStatus">—</dd></div>
-              <div><dt>Fase do programa</dt><dd id="autoPhase">—</dd></div>
-              <div><dt>Ordem aos motores</dt><dd id="autoCommand">—</dd></div>
-              <div><dt>Número da leitura</dt><dd id="autoSample">—</dd></div>
-              <div><dt>Tempo desde o boot</dt><dd id="autoUptime">—</dd></div>
-            </dl>
-            <p>Para na primeira leitura de até 35 cm e confirma duas novas medidas parado antes de desviar. Um pico isolado não inicia ré; duas leituras livres permitem retomar. A distância bruta continua visível, sem esconder os saltos. Sem eco válido, para e continua medindo. O ângulo da curva precisa de calibração.</p>
-            <p class="guide-warning">Após Iniciar, o programa continua na placa sem temporizador de missão. Se perder o USB ou fechar o navegador, não conte com o botão Parar: use a chave de alimentação. Para sair normalmente, use <strong>Parar e desconectar</strong>.</p>
-            <small>Telemetria mostra ordens do firmware, não confirma rotação das rodas. Este painel aceita somente AUTO:READY:2; não use os controles de três modos com esta versão.</small>
-            <pre id="autoLog" aria-label="Últimas mensagens do autônomo isolado">Aguardando conexão.</pre>
-          </section>
-        </div>
-        <details id="integratedFirmware" class="integrated-firmware">
-          <summary>Versão integrada — três modos, editor e testes anteriores</summary>
-          <p class="guide-warning">Para voltar aos três modos, primeiro use <strong>Parar e desconectar</strong> no autônomo isolado, grave o firmware integrado abaixo e conecte em Câmeras &amp; robô. Apenas um painel pode usar a USB por vez.</p>
           <div class="section-heading">
-          <div><span class="section-tag">Firmware integrado</span><h3>Três modos e códigos de diagnóstico</h3><p>Estes controles não operam o firmware autônomo isolado.</p></div>
+          <div><span class="section-tag">Modo 1 aprovado · três modos</span><h3>Código principal e diagnósticos</h3><p>Grave uma vez; depois selecione o modo pelo controle USB.</p></div>
           <div class="code-actions">
-            <button class="primary-button compact" id="runCode">Rodar autônomo</button>
+            <button class="primary-button compact" id="runCode">Ativar Modo 1</button>
             <button class="secondary-button" id="updateCode" type="button">Atualizar código</button>
             <button class="secondary-button" id="copyCode">Copiar código</button>
             <a class="secondary-button" id="downloadCode" download>Baixar .ino</a>
@@ -441,7 +396,7 @@
           <div class="firmware-flasher-copy">
             <span class="section-tag">Instalação USB direta</span>
             <h3>Gravar firmware oficial no Arduino UNO</h3>
-            <p>Fecha a versão antiga e instala o firmware testado com os três modos. Feche o Arduino IDE e mantenha as rodas suspensas.</p>
+            <p>Instala o firmware V6 com o Modo 1 aprovado a 5 cm e o protocolo USB dos três modos. Feche o Arduino IDE e mantenha as rodas suspensas.</p>
           </div>
           <div class="guide-warning" aria-label="Teste físico das direções">
             <strong>Teste físico por USB — rodas suspensas</strong>
@@ -516,47 +471,6 @@
           </div>
           <p class="config-status" id="configStatus" role="status" aria-live="polite">Usando valores padrão.</p>
         </div>
-        </details>
-      </section>
-
-      <section id="identidades" class="page-section panel">
-        <div class="section-heading">
-          <div><span class="section-tag">Etapas 2 e 3</span><h2>Visão e identidades</h2><p>Resultados comprovados com arquivos locais, sem abrir webcam.</p></div>
-          <span class="pill neutral">Offline validado</span>
-        </div>
-        <div class="feature-grid">
-          <article><span>01</span><h3>Detecção de pessoas</h3><p>YOLO testado em variações de luz, desfoque, escala e resolução.</p><strong>13/13 IDs persistentes</strong></article>
-          <article><span>02</span><h3>Reconhecimento facial</h3><p>Cadastro com uma única face, bloqueio de duplicatas e rollback seguro.</p><strong>InsightFace validado</strong></article>
-          <article><span>03</span><h3>Dados persistentes</h3><p>Fotos, embeddings e registros sobrevivem ao reinício e só somem ao excluir.</p><strong>SQLite + arquivos locais</strong></article>
-        </div>
-        <p class="notice">Esta página pública não envia rostos ao servidor. Os cadastros feitos na câmera ficam somente no armazenamento local deste navegador.</p>
-      </section>
-
-      <section id="etapas" class="page-section panel">
-        <div class="section-heading">
-          <div><span class="section-tag">Roteiro oficial</span><h2>Etapas do projeto</h2><p>As Etapas 1–9 são validadas sem o robô físico.</p></div>
-        </div>
-        <ol class="roadmap">
-          <li class="done"><span>1</span><div><strong>Autonomia básica</strong><small>Simulação, sensor e desvio</small></div><em>Concluída</em></li>
-          <li class="done"><span>2</span><div><strong>Detecção e IDs</strong><small>Pessoas e rastreamento</small></div><em>Concluída</em></li>
-          <li class="done"><span>3</span><div><strong>Cadastro persistente</strong><small>Fotos e reconhecimento</small></div><em>Concluída</em></li>
-          <li class="done"><span>4</span><div><strong>Seguir humano</strong><small>Segurança tem prioridade</small></div><em>Concluída</em></li>
-          <li class="done"><span>5</span><div><strong>Controle de movimento</strong><small>Auditoria e stress</small></div><em>Concluída</em></li>
-          <li class="done"><span>6</span><div><strong>Controle de câmera</strong><small>Qualidade e estabilidade</small></div><em>Concluída</em></li>
-          <li class="done"><span>7</span><div><strong>Gestos</strong><small>Prioridade de comandos</small></div><em>Concluída</em></li>
-          <li class="done"><span>8</span><div><strong>Localização indireta</strong><small>RSSI aproximado</small></div><em>Concluída</em></li>
-          <li class="done"><span>9</span><div><strong>Integração geral</strong><small>Todos os módulos</small></div><em>Concluída</em></li>
-          <li class="current"><span>10</span><div><strong>Aplicação física</strong><small>Arduino UNO por USB e três modos</small></div><em>Em validação</em></li>
-        </ol>
-      </section>
-
-      <section id="sistema" class="page-section panel system-panel">
-        <div><span class="section-tag">Arquitetura segura</span><h2>O que funciona neste site?</h2></div>
-        <div class="system-grid">
-          <div><strong>No navegador</strong><p>Câmera facial, gestos, cadastro local e Web Serial para o Arduino UNO.</p></div>
-          <div><strong>No Arduino</strong><p>Três modos, timeout de comandos, HC-SR04 e parada de emergência.</p></div>
-          <div><strong>Arquitetura do robô</strong><p>Arduino UNO conectado ao computador por cabo USB. Este projeto não usa ESP32 nem Bluetooth.</p></div>
-        </div>
       </section>
 
       <footer><span>Quantum Tracker · FECART 2026</span><span>João · Gustavo · Renato</span></footer>
@@ -565,14 +479,13 @@
   <script src="web/user-config.js?v=2" defer></script>
   <script src="web/auth-gate.js?v=2" defer></script>
   <script src="web/control-state.js?v=1" defer></script>
-  <script src="web/arduino-codes.js?v=13" defer></script>
+  <script src="web/arduino-codes.js?v=14" defer></script>
   <script src="web/simulator-controller.js?v=2" defer></script>
   <script src="web/code-editor-utils.js?v=1" defer></script>
-  <script src="web/app.js?v=17" defer></script>
-  <script type="module" src="web/arduino-flasher.js?v=7"></script>
-  <script type="module" src="web/autonomous-bench.js?v=3"></script>
+  <script src="web/app.js?v=18" defer></script>
+  <script type="module" src="web/arduino-flasher.js?v=8"></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
-  <script src="web/robot-control.js?v=17" defer></script>
+  <script src="web/robot-control.js?v=18" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/face-identity-math.js?v=2" defer></script>
   <script src="web/gesture-math.js?v=6" defer></script>

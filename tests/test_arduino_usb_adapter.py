@@ -17,7 +17,7 @@ class TestArduinoUSBAdapter(unittest.TestCase):
         self.assertFalse(ok)
         self.assertFalse(adapter.connected)
 
-    def test_protocol_is_uno_v5_at_9600_baud(self) -> None:
+    def test_protocol_is_uno_v6_at_9600_baud(self) -> None:
         self.assertEqual(ArduinoUSBAdapter._COMMANDS["FRENTE"], "CMD:FRENTE")
         self.assertEqual(ArduinoUSBAdapter._COMMANDS["RE"], "CMD:TRAS")
         self.assertEqual(ArduinoUSBAdapter.connect.__defaults__, (9600,))
@@ -28,7 +28,7 @@ class TestArduinoUSBAdapter(unittest.TestCase):
             RobotCommand.STOP, RobotState.STOPPED, None, 0.0, 0.0,
         ))
         self.assertEqual(payload["command"], "PARAR")
-        self.assertEqual(payload["transport"], "ARDUINO_UNO_USB_V5")
+        self.assertEqual(payload["transport"], "ARDUINO_UNO_USB_V6")
 
 
 if __name__ == "__main__":

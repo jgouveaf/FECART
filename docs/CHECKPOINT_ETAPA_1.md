@@ -1,72 +1,69 @@
-# Checkpoint - Etapa 1: Robo autonomo basico
+# Checkpoint — Etapa 1: Modo 1 autônomo
 
 ## Status
 
-CONCLUIDA EM SOFTWARE/SIMULACAO. A validacao no equipamento fisico nao faz
-parte desta etapa e permanece reservada para a Etapa 10.
+**Base funcional aprovada em bancada em 04/09/2026.** O usuário confirmou com
+as rodas suspensas o novo HC-SR04, a polaridade de frente e ré e a curva suave
+com uma roda em movimento e a outra parada. A referência física aprovada é
+`firmware/autonomo_ide_5cm/autonomo_ide_5cm.ino`.
 
-## Implementado
+O firmware integrado V6 do site incorpora a mesma polaridade e sequência. O
+limite de 5 cm continua sendo somente de bancada: distância de operação e tempo
+de curva precisam ser calibrados no piso antes de uso livre.
 
-- testes isolados de motores e HC-SR04 reservados para a Etapa 10;
-- firmware autonomo sem app, Bluetooth, ESP32, gestos ou comandos USB;
-- confirmacao de obstaculo por duas de tres leituras;
-- sequencia parar, girar no proprio eixo e continuar;
-- eliminacao do recuo cego, pois nao existe sensor traseiro;
-- curvas alternadas direita/esquerda e progressivamente maiores;
-- parada de seguranca apos cinco desvios em uma janela movel de quinze segundos;
-- simulador logico da maquina de estados;
-- simulador 2D com corpo circular, paredes, caixas, feixe ultrassonico e colisao;
-- guia de pinagem e diagnostico fotografico para uso futuro na Etapa 10.
+## Comportamento aprovado
 
-## Arquivos alterados
+- pinagem: IN1 D7, IN2 D6, IN3 D5, IN4 D4, TRIG D3 e ECHO D2;
+- frente: `LOW, HIGH, LOW, HIGH`;
+- ré: `HIGH, LOW, HIGH, LOW`;
+- direita: roda esquerda para frente e roda direita parada;
+- esquerda: roda esquerda parada e roda direita para frente;
+- primeira leitura próxima para imediatamente;
+- duas novas leituras próximas confirmam a manobra;
+- sequência: pausa de 150 ms, ré de 400 ms, pausa de 150 ms e curva de 650 ms;
+- duas leituras livres liberam o avanço após a curva;
+- bloqueio persistente prolonga apenas a curva, sem repetir a ré às cegas;
+- sensor sem eco para o movimento e exige duas leituras válidas para recuperar;
+- não há temporizador de missão nem limite automático de desvios.
 
-- `firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino`
-- `firmware/teste_motores/teste_motores.ino`
-- `firmware/teste_sensor_hcsr04/teste_sensor_hcsr04.ino`
-- `firmware/simulacao/simulador_robo.py`
-- `firmware/simulacao/test_simulador_robo.py`
-- `firmware/simulacao/arena_2d.py`
-- `firmware/simulacao/test_arena_2d.py`
-- `firmware/README_ETAPA_1.md`
-- `docs/DIAGNOSTICO_INICIAL.md`
-- `docs/PESQUISA_ETAPA_1.md`
-- `docs/CHECKPOINT_ETAPA_1.md`
+## Integração no site
 
-## Testes executados
+- firmware oficial identificado por `QT:READY:V6`;
+- um único HEX oficial atende aos três modos;
+- o Modo 1 executa localmente no UNO e não depende de heartbeat do navegador;
+- os Modos 2 e 3 continuam supervisionados por USB e param após 1,5 s sem novo
+  comando;
+- o site grava o HEX compilado e verifica seu SHA-256 antes de abrir a porta;
+- editor de código é para consulta e download, não para compilação arbitrária;
+- o painel isolado redundante foi removido da página principal para impedir uso
+  simultâneo ou confusão entre dois firmwares.
 
-- compilacao para Arduino UNO com Arduino CLI 1.5.1 do IDE 2.3.10;
-- caminho livre, ruido isolado, ausencia de eco e confirmacao 2/3;
-- sequencia de parada, curva e retomada;
-- alternancia e aumento progressivo de curvas;
-- cinco obstaculos na janela movel e expiracao de eventos antigos;
-- sincronizacao entre constantes do simulador e do sketch;
-- geometria de raios, feixe ultrassonico e colisao circular;
-- quatro arenas: parede, objeto pequeno, varios objetos e corredor;
-- vinte repeticoes de estresse de sessenta segundos.
+## Evidência disponível
 
-## Resultados
+- teste físico informado pelo usuário: sketch isolado aprovado com rodas
+  suspensas;
+- compilação do V6 para Arduino UNO: 7.192 bytes de flash e 400 bytes de SRAM;
+- testes de máquina de estados executam as funções C++ reais com tempo e IO
+  simulados;
+- simulador lógico cobre falha do sensor, picos, obstáculos repetidos e parada;
+- testes Web Serial cobrem handshake, ACK, timeout, desconexão e ESTOP;
+- testes de navegador cobrem carregamento, layout, câmera simulada e fluxo de
+  gravação sem abrir hardware automaticamente.
 
-- dezenove testes automatizados passaram sem conexao com o robo;
-- quatro arenas de trinta segundos terminaram sem colisao;
-- vinte repeticoes de estresse terminaram sem colisao;
-- firmware final compilou: 1974 bytes de flash e 38 bytes de RAM;
-- nenhum resultado fisico foi inventado.
+## Limitações honestas
 
-## Bugs corrigidos
+- telemetria confirma a ordem elétrica, não que a roda girou fisicamente;
+- simulação não mede bateria, corrente, atrito, inércia, mau contato ou ângulo;
+- um HC-SR04 frontal não enxerga a traseira durante a ré;
+- 5 cm não oferece margem de frenagem comprovada no piso;
+- o firmware integrado V6 ainda deve ser ensaiado fisicamente de forma
+  supervisionada antes de considerar a implantação encerrada.
 
-- recuo automatico sem sensor traseiro;
-- janela fixa de desvios, substituida por janela movel real;
-- falsa suposicao de que um HC-SR04 frontal escolhe o lado livre;
-- curva de duracao unica em bloqueios repetidos.
+## Próximo ensaio físico
 
-## Limitacoes
-
-- simulacao nao testa corrente, bateria, mau contato, polaridade, atrito ou motor;
-- um HC-SR04 fixo e frontal nao determina qual lado esta livre;
-- os parametros fisicos do modelo sao aproximacoes e serao calibrados na Etapa 10;
-- a pinagem fotografada e a alimentacao serao corrigidas somente na Etapa 10.
-
-## Proximo passo
-
-Iniciar a Etapa 2 com auditoria offline da captura, deteccao de pessoas,
-tracking e consistencia de IDs. Nao conectar nem enviar sketches ao robo.
+1. Gravar o V6 oficial pelo site com os motores desligados.
+2. Conectar novamente, confirmar `Firmware V6`, deixar rodas suspensas e liberar
+   o ESTOP.
+3. Ativar o Modo 1 e conferir frente, parada, ré, curva e retomada.
+4. Testar falha do sensor e parada de emergência sem colocar o carrinho no chão.
+5. Só então elevar gradualmente o limite de 5 cm e calibrar o uso no piso.

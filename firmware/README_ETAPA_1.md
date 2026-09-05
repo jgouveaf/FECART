@@ -1,9 +1,9 @@
 # Quantum Tracker — Arduino UNO e controle USB
 
-Firmware integrado para Arduino UNO, L298N, dois motores DC e HC-SR04. Ele
+Firmware integrado V6 para Arduino UNO, L298N, dois motores DC e HC-SR04. Ele
 mantém a segurança no próprio Arduino e aceita comandos do site pelo cabo USB.
-Bluetooth, câmera e IA executam no computador; o Arduino não depende deles para
-detectar o obstáculo à frente.
+Câmera e visão executam no computador; o Arduino não depende delas para
+detectar o obstáculo à frente. O projeto atual não usa ESP32 nem Bluetooth.
 
 ## Pinagem confirmada
 
@@ -25,36 +25,47 @@ OUT1/OUT2 e o outro em OUT3/OUT4. O negativo da bateria, o GND do L298N e o GND
 do Arduino precisam estar unidos. A alimentação dos motores entra no borne
 `12V`/`VMS` e `GND`; nunca coloque as pilhas diretamente no pino 5V do Arduino.
 
-## Instalar com Arduino IDE 2.3.10
+## Instalar pelo site ou pelo Arduino IDE 2.3.10
+
+O fluxo principal é abrir a aba **Códigos** do site e clicar em **Gravar no
+Arduino UNO**. Esse botão envia o HEX oficial previamente compilado e verifica
+se o arquivo servido é exatamente a versão esperada. O editor de texto do site
+é para consulta e download; alterações manuais ainda precisam ser compiladas.
+
+Como alternativa:
 
 1. Abra `firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino`.
 2. Selecione **Arduino Uno** e a porta COM correta.
 3. Feche o Monitor Serial e feche qualquer site/app que esteja usando essa COM.
 4. Deixe as rodas suspensas, confira a polaridade da alimentação e clique em
    **Carregar**.
-5. A compilação validada usa 7.278 bytes de flash e 418 bytes de RAM. O sketch
+5. A compilação validada usa 7.192 bytes de flash e 400 bytes de RAM. O sketch
    não precisa de biblioteca externa.
 
-O Arduino IDE é necessário somente para instalar ou atualizar o firmware. O
-código permanece gravado no UNO depois que o cabo ou a alimentação são
-desligados. Depois do envio, feche o Monitor Serial e o Arduino IDE para liberar
-a porta COM.
+O código permanece gravado no UNO depois que o cabo ou a alimentação são
+desligados. Depois de usar o IDE, feche o Monitor Serial e o Arduino IDE para
+liberar a porta COM ao site.
 
 Sem o site conectado, o Modo 1 começa automaticamente. Para usar o painel,
 abra-o no Chrome ou Edge para computador, clique em **Conectar Arduino USB** e
 escolha o Arduino UNO. O UNO reinicia quando a porta serial é aberta. Após
-anunciar `QT:READY:V5`, o firmware mantém as rodas paradas por mais 750 ms para
+anunciar `QT:READY:V6`, o firmware mantém as rodas paradas por mais 750 ms para
 o painel concluir o handshake e confirmar `ESTOP` antes de qualquer movimento.
 
 ## Os três modos
 
 ### Modo 1 — autônomo
 
-O Arduino anda continuamente depois da primeira leitura válida do HC-SR04.
-Duas leituras consecutivas de até 20 cm iniciam o desvio: parar, recuar uma
-única vez, virar, confirmar duas leituras livres na nova direção e continuar.
-O lado da curva é alternado. Esse modo continua funcionando mesmo sem site
-conectado.
+O Arduino começa a andar depois de duas leituras válidas do HC-SR04. A primeira
+leitura de até 5 cm já para as rodas; duas novas leituras próximas confirmam o
+desvio: recuar uma única vez, fazer uma curva suave e confirmar duas leituras
+livres na nova direção. Se ainda estiver bloqueado, prolonga somente a curva,
+sem repetir a ré. O lado é alternado entre manobras. Esse modo continua
+funcionando mesmo sem site conectado.
+
+**O limite de 5 cm foi aprovado somente com as rodas suspensas e não é uma
+distância segura validada para uso no piso.** Ele deve ser calibrado antes do
+ensaio livre.
 
 ### Modo 2 — seguir pessoa
 
@@ -62,11 +73,6 @@ A câmera do rosto escolhe a maior pessoa detectada e envia `ESQUERDA`, `FRENTE`
 ou `DIREITA` conforme a posição dela no quadro. Ao perder o rosto, o comando é
 `PARAR`. O HC-SR04 continua tendo prioridade e executa o desvio antes de voltar
 ao seguimento.
-
-O painel BLE exibe apenas intensidade/proximidade do sinal. Um único receptor
-RSSI não informa se a pessoa está à esquerda ou à direita; portanto o robô não
-se movimenta às cegas atrás de uma parede. Para localização direcional real,
-são necessários vários receptores fixos ou outro sistema de posicionamento.
 
 ### Modo 3 — gestos
 
@@ -86,13 +92,16 @@ comando novo por 1,5 s, o próprio Arduino também para.
 ## Camadas de segurança
 
 - `PARAR` e `ESTOP` cancelam um desvio em andamento.
-- Nenhum motor é liberado antes da primeira leitura válida do HC-SR04.
+- Nenhum motor é liberado antes de duas leituras válidas do HC-SR04.
 - O HC-SR04 é verificado nos três modos e sempre vence um comando da câmera.
 - Após uma curva, duas leituras livres confirmam o novo caminho antes do avanço.
-- Cinco leituras inválidas consecutivas do sensor travam os motores.
-- Cinco obstáculos em 15 segundos ativam a parada de emergência.
+- Uma leitura inválida do sensor interrompe a manobra ou o avanço; duas novas
+  leituras válidas são exigidas para recuperar.
+- Não existe temporizador de missão nem contador que pare o Modo 1 após alguns
+  ciclos de desvio.
 - Nos Modos 2 e 3, ausência de comandos por 1,5 segundo para os motores.
-- O site bloqueia o robô se a comunicação USB ficar silenciosa por 2,2 segundos.
+- Silêncio ou perda da USB para os Modos 2 e 3 fecha o movimento em segurança.
+  No Modo 1, a autonomia local permanece funcionando na placa.
 - Linhas seriais corrompidas ou longas são descartadas até o próximo fim de linha.
 - Somente `OK:CMD:...` confirma um comando; telemetria antiga nunca vale como ACK.
 - O botão de emergência só deve ser liberado depois de conferir o entorno e as

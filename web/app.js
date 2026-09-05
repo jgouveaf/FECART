@@ -405,7 +405,7 @@
   const MAX_CODE_FILE_BYTES = codeEditorUtils.MAX_CODE_FILE_BYTES;
 
   const PROGRAM_LABELS = Object.freeze({
-    principal: "Rodar autônomo",
+    principal: "Ativar Modo 1",
     motores: "Rodar teste dos motores",
     sensor: "Rodar teste do sensor",
   });

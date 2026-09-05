@@ -97,7 +97,7 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertNotIn("sensorSeguro()", self.firmware)
 
     def test_serial_handshake_and_mode_commit_require_acknowledgement(self) -> None:
-        self.assertIn('REQUIRED_FIRMWARE_READY = "QT:READY:V5"', self.robot_js)
+        self.assertIn('REQUIRED_FIRMWARE_READY = "QT:READY:V6"', self.robot_js)
         self.assertIn('enqueueLine("HELLO"', self.robot_js)
         self.assertIn('readyLine !== REQUIRED_FIRMWARE_READY', self.robot_js)
         self.assertIn('CONFIRME A LIBERAÇÃO', self.robot_js)
@@ -116,7 +116,7 @@ class TestWebRobotControlOffline(unittest.TestCase):
     def test_boot_keeps_motors_stopped_during_serial_handshake_window(self) -> None:
         self.assertRegex(self.firmware, r"JANELA_COMANDO_INICIAL_MS\s*=\s*750UL")
         setup = self.firmware.split("void setup()", 1)[1].split("void loop()", 1)[0]
-        self.assertIn('Serial.println(F("QT:READY:V5"))', setup)
+        self.assertIn('Serial.println(F("QT:READY:V6"))', setup)
         self.assertIn("aguardarComandoInicial()", setup)
         guard = self.firmware.split("void aguardarComandoInicial()", 1)[1].split("void setup()", 1)[0]
         self.assertIn("pararMotores()", guard)
@@ -130,17 +130,19 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn('consecutiveMotionFailures >= 2', self.robot_js)
         self.assertIn('Dois comandos de movimento ficaram sem confirmação', self.robot_js)
 
-    def test_sensor_failure_is_reported_but_does_not_latch_motor_stop(self) -> None:
+    def test_sensor_failure_stops_motion_until_two_valid_readings(self) -> None:
         self.assertIn("bool sensorInicializado = false", self.firmware)
         self.assertIn("sensorInicializado = true", self.firmware)
         self.assertIn("falhasConsecutivasSensor", self.firmware)
+        self.assertIn("leiturasValidasSensor = 0", self.firmware)
+        self.assertIn("!sensorPronto()", self.firmware)
         self.assertNotIn("bool sensorSeguro()", self.firmware)
         self.assertNotIn('Serial.print(F("SENSOR_INIT"))', self.firmware)
 
     def test_new_direction_requires_two_clear_ultrasonic_measurements(self) -> None:
-        self.assertRegex(self.firmware, r"LEITURAS_CAMINHO_LIVRE\s*=\s*2")
-        self.assertIn("leiturasLivresAposCurva >= LEITURAS_CAMINHO_LIVRE", self.firmware)
-        self.assertIn("estadoDesvio == DESVIO_PAUSA_CURVA", self.firmware)
+        self.assertRegex(self.firmware, r"LEITURAS_CONFIRMACAO\s*=\s*2")
+        self.assertIn("leiturasLivresConsecutivas >= LEITURAS_CONFIRMACAO", self.firmware)
+        self.assertIn("case DESVIO_PAUSA_CURVA:", self.firmware)
 
     def test_corrupted_serial_frames_are_discarded_completely(self) -> None:
         self.assertIn("bool descartandoLinhaSerial = false", self.firmware)
@@ -173,8 +175,9 @@ class TestWebRobotControlOffline(unittest.TestCase):
     def test_ultrasonic_sensor_remains_above_external_commands(self) -> None:
         self.assertIn("obstaculoConfirmado()", self.firmware)
         self.assertIn("iniciarDesvio(agora)", self.firmware)
-        sensor_guard = self.firmware.index("if (comandoExigeFrenteLivre(desejado) && obstaculoConfirmado())")
-        command_application = self.firmware.index("aplicarComando(desejado)")
+        loop = self.firmware.split("void loop()", 1)[1]
+        sensor_guard = loop.index("if (comandoExigeFrenteLivre(desejado) && !sensorPronto())")
+        command_application = loop.index("aplicarComando(desejado)")
         self.assertLess(sensor_guard, command_application)
 
     def test_firmware_loop_has_no_blocking_movement_delays(self) -> None:
@@ -206,12 +209,13 @@ class TestWebRobotControlOffline(unittest.TestCase):
         relative = "firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino"
         self.assertEqual(self.bundle[relative], self.firmware)
 
-    def test_post_turn_recovery_requires_recent_clear_sensor_confirmation(self) -> None:
-        self.assertIn("falhasConsecutivasSensor >= 2", self.firmware)
-        self.assertIn("agora - ultimaLeituraLivreEm > 240UL", self.firmware)
-        self.assertIn("agora - ultimaLeituraLivreEm <= 240UL", self.firmware)
-        self.assertIn("leiturasLivresAposCurva >= LEITURAS_CAMINHO_LIVRE", self.firmware)
-        self.assertIn('Serial.print(F("WAIT_SENSOR"))', self.firmware)
+    def test_post_turn_recovery_requires_clear_sensor_confirmation(self) -> None:
+        pause = self.firmware.split("case DESVIO_PAUSA_CURVA:", 1)[1].split("default:", 1)[0]
+        self.assertIn("caminhoLivreConfirmado()", pause)
+        self.assertIn("obstaculoConfirmado()", pause)
+        self.assertIn('Serial.println(F("EVENTO:CURVA_CONTINUA"))', pause)
+        self.assertNotIn("BUSCA_ECO", self.firmware)
+        self.assertNotIn("CURVA_EXTRA", self.firmware)
 
 
 if __name__ == "__main__":

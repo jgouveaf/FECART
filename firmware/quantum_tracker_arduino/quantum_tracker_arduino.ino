@@ -17,14 +17,14 @@
   - AUTONOMO funciona localmente, mesmo sem site ou cabo USB;
   - SEGUIR e GESTOS param se nenhum novo CMD:* chegar por 1,5 s;
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
-  - apos a curva, falta de eco inicia busca limitada, nunca avanco as cegas;
-  - curvas usam as duas rodas ao mesmo tempo, em sentidos opostos;
-  - obstaculo frontal inicia um desvio completo; a leitura e ignorada somente
-    enquanto o chassi esta girando, pois nesse momento o sensor ainda aponta
-    por alguns instantes para o obstaculo que originou a manobra;
+  - Modo 1 usa a sequencia aprovada em bancada: parar, re e curva suave;
+  - curvas de desvio mantem uma roda para frente e a outra parada;
+  - falha do sensor para o movimento que exige caminho frontal e aguarda duas
+    leituras validas; ausencia de eco nunca e tratada como caminho livre;
+  - a primeira leitura proxima para; duas novas leituras confirmam o desvio;
   - apos a curva, duas leituras livres confirmam a nova direcao antes de avancar;
   - mensagens seriais longas sao descartadas integralmente ate a proxima linha;
-  - um obstaculo inicia re e giros de 90 graus ate encontrar caminho livre.
+  - um obstaculo inicia uma unica re e curvas adicionais ate liberar o caminho.
 */
 
 // L298N: mantenha os jumpers ENA e ENB instalados.
@@ -37,7 +37,8 @@ const byte IN4 = 4;
 const byte TRIG = 3;
 const byte ECHO = 2;
 
-const float DISTANCIA_OBSTACULO_CM = 35.0;
+// Limite aprovado no ensaio de bancada. Nao e distancia final de uso no chao.
+const float DISTANCIA_OBSTACULO_CM = 5.0;
 const unsigned long INTERVALO_SENSOR_MS = 80UL;
 const unsigned long INTERVALO_TELEMETRIA_MS = 250UL;
 const unsigned long TIMEOUT_COMANDO_MS = 1500UL;
@@ -45,15 +46,10 @@ const unsigned long TIMEOUT_COMANDO_MS = 1500UL;
 // permitir que um site já aberto faça o handshake. Depois, o AUTONOMO é local.
 const unsigned long JANELA_COMANDO_INICIAL_MS = 750UL;
 
-const unsigned int TEMPO_PAUSA_MS = 200;
-const unsigned int TEMPO_RE_MS = 750;
+const unsigned int TEMPO_PAUSA_MS = 150;
+const unsigned int TEMPO_RE_MS = 400;
 const unsigned int TEMPO_CURVA_MS = 650;
-const unsigned int TEMPO_SAIDA_MS = 500;
-const unsigned int TEMPO_ANALISE_CURVA_MS = 650;
-const unsigned int TEMPO_BUSCA_ECO_MS = 1000;
-const byte LIMITE_BUSCAS_ECO = 2;
-
-const byte LEITURAS_CAMINHO_LIVRE = 2;
+const byte LEITURAS_CONFIRMACAO = 2;
 
 enum ModoRobo { MODO_AUTONOMO = 1, MODO_SEGUIR = 2, MODO_GESTOS = 3 };
 enum ComandoMovimento { CMD_PARAR, CMD_FRENTE, CMD_TRAS, CMD_DIREITA, CMD_ESQUERDA, CMD_GIRAR };
@@ -63,8 +59,7 @@ enum EstadoDesvio {
   DESVIO_RE,
   DESVIO_PAUSA_RE,
   DESVIO_CURVA,
-  DESVIO_PAUSA_CURVA,
-  DESVIO_SAIDA
+  DESVIO_PAUSA_CURVA
 };
 
 ModoRobo modo = MODO_AUTONOMO;
@@ -76,15 +71,15 @@ unsigned long ultimoSensorEm = 0;
 unsigned long ultimaTelemetriaEm = 0;
 unsigned long ultimoComandoEm = 0;
 unsigned long estadoDesvioDesde = 0;
-unsigned long ultimaLeituraLivreEm = 0;
 
 float distanciaAtualCm = -1;
 byte falhasConsecutivasSensor = 0;
-byte leiturasLivresAposCurva = 0;
+byte leiturasValidasSensor = 0;
+byte leiturasLivresConsecutivas = 0;
 byte obstaculosConsecutivos = 0;
-byte buscasSemEco = 0;
 bool proximaCurvaDireita = true;
 bool curvaAtualDireita = true;
+bool confirmandoObstaculo = false;
 bool paradaEmergencia = false;
 bool sensorInicializado = false;
 bool descartandoLinhaSerial = false;
@@ -94,6 +89,11 @@ char linhaSerial[34];
 byte tamanhoLinha = 0;
 
 void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
+  // Evita inverter a ponte H diretamente entre duas escritas.
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
   digitalWrite(IN1, in1);
   digitalWrite(IN2, in2);
   digitalWrite(IN3, in3);
@@ -116,29 +116,27 @@ void andarParaTras() {
 }
 
 void girarDireita() {
-  // As duas rodas recebem potencia: esquerda para frente, direita para tras.
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
+  // Curva aprovada: roda esquerda para frente, roda direita parada.
+  aplicarMotores(LOW, HIGH, LOW, LOW);
   comandoAplicado = CMD_DIREITA;
 }
 
 void girarEsquerda() {
-  // As duas rodas recebem potencia: esquerda para tras, direita para frente.
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, HIGH);
+  // Curva aprovada: roda esquerda parada, roda direita para frente.
+  aplicarMotores(LOW, LOW, LOW, HIGH);
   comandoAplicado = CMD_ESQUERDA;
 }
 
 void girarNoLugar() {
-  girarDireita();
+  // Comando remoto separado da curva suave usada no desvio autonomo.
+  aplicarMotores(LOW, HIGH, HIGH, LOW);
   comandoAplicado = CMD_GIRAR;
 }
 
 void aplicarComando(ComandoMovimento comando) {
+  // Nao chaveia a ponte H novamente quando a ordem nao mudou. Isso evita
+  // micropausas e ruido eletrico causados por desligar/ligar a cada loop.
+  if (comando == comandoAplicado) return;
   switch (comando) {
     case CMD_FRENTE: andarParaFrente(); break;
     case CMD_TRAS: andarParaTras(); break;
@@ -168,42 +166,49 @@ void atualizarSensor(unsigned long agora) {
   ultimoSensorEm = agora;
   distanciaAtualCm = medirDistanciaCm();
 
-  // Sem eco: ignora somente esta leitura. O sensor nao para o robo.
+  // Sem eco nao significa caminho livre. Zera todas as confirmacoes para que
+  // o movimento frontal so volte depois de duas leituras validas novas.
   if (distanciaAtualCm < 0) {
     if (falhasConsecutivasSensor < 255) falhasConsecutivasSensor++;
-    // Uma falha isolada não apaga uma leitura livre recente. Falhas
-    // repetidas ou uma leitura antiga continuam exigindo nova confirmação.
-    if (falhasConsecutivasSensor >= 2 || agora - ultimaLeituraLivreEm > 240UL) {
-      leiturasLivresAposCurva = 0;
-    }
+    leiturasValidasSensor = 0;
+    leiturasLivresConsecutivas = 0;
     obstaculosConsecutivos = 0;
     return;
   }
 
   sensorInicializado = true;
   falhasConsecutivasSensor = 0;
+  if (leiturasValidasSensor < LEITURAS_CONFIRMACAO) leiturasValidasSensor++;
 
   // Durante a curva o HC-SR04 ainda pode enxergar o obstaculo antigo.
   if (estadoDesvio == DESVIO_CURVA) {
     obstaculosConsecutivos = 0;
-    leiturasLivresAposCurva = 0;
+    leiturasLivresConsecutivas = 0;
   } else if (distanciaAtualCm <= DISTANCIA_OBSTACULO_CM) {
-    leiturasLivresAposCurva = 0;
+    leiturasLivresConsecutivas = 0;
     if (obstaculosConsecutivos < 255) obstaculosConsecutivos++;
   } else {
     obstaculosConsecutivos = 0;
-    if (estadoDesvio == DESVIO_PAUSA_CURVA) {
-      if (agora - ultimaLeituraLivreEm > 240UL) leiturasLivresAposCurva = 0;
-      if (leiturasLivresAposCurva < 255) leiturasLivresAposCurva++;
-      ultimaLeituraLivreEm = agora;
-    } else {
-      leiturasLivresAposCurva = 0;
+    if (leiturasLivresConsecutivas < LEITURAS_CONFIRMACAO) {
+      leiturasLivresConsecutivas++;
     }
   }
 }
 
 bool obstaculoConfirmado() {
-  return distanciaAtualCm > 0 && obstaculosConsecutivos >= 2;
+  return distanciaAtualCm > 0
+      && obstaculosConsecutivos >= LEITURAS_CONFIRMACAO;
+}
+
+bool caminhoLivreConfirmado() {
+  return distanciaAtualCm > DISTANCIA_OBSTACULO_CM
+      && leiturasLivresConsecutivas >= LEITURAS_CONFIRMACAO;
+}
+
+bool sensorPronto() {
+  return sensorInicializado
+      && distanciaAtualCm > 0
+      && leiturasValidasSensor >= LEITURAS_CONFIRMACAO;
 }
 
 bool comandoExigeFrenteLivre(ComandoMovimento comando) {
@@ -215,15 +220,17 @@ bool comandoExigeFrenteLivre(ComandoMovimento comando) {
 
 void cancelarDesvio() {
   estadoDesvio = DESVIO_INATIVO;
-  leiturasLivresAposCurva = 0;
+  obstaculosConsecutivos = 0;
+  leiturasLivresConsecutivas = 0;
+  confirmandoObstaculo = false;
   pararMotores();
 }
 
 void iniciarDesvio(unsigned long agora) {
   pararMotores();
   obstaculosConsecutivos = 0;
-  leiturasLivresAposCurva = 0;
-  buscasSemEco = 0;
+  leiturasLivresConsecutivas = 0;
+  confirmandoObstaculo = false;
   curvaAtualDireita = proximaCurvaDireita;
   proximaCurvaDireita = !proximaCurvaDireita;
   estadoDesvio = DESVIO_PAUSA_INICIAL;
@@ -250,7 +257,7 @@ void atualizarDesvio(unsigned long agora) {
       }
       break;
     case DESVIO_PAUSA_RE:
-      if (decorrido >= 150UL) {
+      if (decorrido >= TEMPO_PAUSA_MS) {
         // O robo possui sensor apenas na frente. Recuar repetidamente sem um
         // sensor traseiro seria inseguro; depois de uma unica re, ele executa
         // a curva completa e volta a avaliar a nova direcao.
@@ -264,43 +271,26 @@ void atualizarDesvio(unsigned long agora) {
       if (decorrido >= TEMPO_CURVA_MS) {
         pararMotores();
         estadoDesvio = DESVIO_PAUSA_CURVA;
-        leiturasLivresAposCurva = 0;
+        obstaculosConsecutivos = 0;
+        leiturasLivresConsecutivas = 0;
         estadoDesvioDesde = agora;
       }
       break;
     case DESVIO_PAUSA_CURVA:
-      // Aguarda o HC-SR04 apontar para a nova direcao. Se ainda houver
-      // obstaculo, gira mais 90 graus sem recuar novamente.
-      if (decorrido >= 250UL && distanciaAtualCm > DISTANCIA_OBSTACULO_CM
-          && agora - ultimaLeituraLivreEm <= 240UL
-          && leiturasLivresAposCurva >= LEITURAS_CAMINHO_LIVRE) {
-        andarParaFrente();
-        estadoDesvio = DESVIO_SAIDA;
-        estadoDesvioDesde = agora;
-      } else if (decorrido >= TEMPO_ANALISE_CURVA_MS && obstaculoConfirmado()) {
-        obstaculosConsecutivos = 0;
-        leiturasLivresAposCurva = 0;
-        if (curvaAtualDireita) girarDireita(); else girarEsquerda();
-        estadoDesvio = DESVIO_CURVA;
-        estadoDesvioDesde = agora;
-        Serial.println(F("EVENTO:CURVA_EXTRA"));
-      } else if (decorrido >= TEMPO_BUSCA_ECO_MS && distanciaAtualCm < 0
-                 && buscasSemEco < LIMITE_BUSCAS_ECO) {
-        // Procura eco em outra direcao, sem avancar nem repetir a re.
-        // O limite impede giros interminaveis se o sensor desconectar.
-        buscasSemEco++;
-        obstaculosConsecutivos = 0;
-        leiturasLivresAposCurva = 0;
-        if (curvaAtualDireita) girarDireita(); else girarEsquerda();
-        estadoDesvio = DESVIO_CURVA;
-        estadoDesvioDesde = agora;
-        Serial.println(F("EVENTO:BUSCA_ECO"));
-      }
-      break;
-    case DESVIO_SAIDA:
-      if (decorrido >= TEMPO_SAIDA_MS) {
+      // Aguarda duas leituras da nova direcao. Caminho livre encerra a
+      // manobra; se continuar bloqueado, prolonga somente a curva.
+      pararMotores();
+      if (caminhoLivreConfirmado()) {
         estadoDesvio = DESVIO_INATIVO;
         obstaculosConsecutivos = 0;
+        leiturasLivresConsecutivas = 0;
+      } else if (obstaculoConfirmado()) {
+        obstaculosConsecutivos = 0;
+        leiturasLivresConsecutivas = 0;
+        if (curvaAtualDireita) girarDireita(); else girarEsquerda();
+        estadoDesvio = DESVIO_CURVA;
+        estadoDesvioDesde = agora;
+        Serial.println(F("EVENTO:CURVA_CONTINUA"));
       }
       break;
     default: break;
@@ -335,8 +325,7 @@ void enviarStatus(unsigned long agora, bool forcar = false) {
   Serial.print(nomeComando(comandoAplicado));
   Serial.print(F("|STATE:"));
   if (paradaEmergencia) Serial.print(F("ESTOP"));
-  else if (estadoDesvio == DESVIO_PAUSA_CURVA && distanciaAtualCm < 0
-           && buscasSemEco >= LIMITE_BUSCAS_ECO) Serial.print(F("WAIT_SENSOR"));
+  else if (!sensorPronto()) Serial.print(F("SENSOR_FAIL"));
   else if (modo != MODO_AUTONOMO && !controleUsbAtivo) Serial.print(F("LINK_WAIT"));
   else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
   else Serial.print(nomeModo());
@@ -400,7 +389,7 @@ void processarLinha(char* linha, unsigned long agora) {
     Serial.println(F("OK:RESET_ESTOP"));
   } else if (strcmp(linha, "HELLO") == 0) {
     // Permite identificar o firmware mesmo quando abrir a porta nao reinicia o UNO.
-    Serial.println(F("QT:READY:V5"));
+    Serial.println(F("QT:READY:V6"));
   } else if (strcmp(linha, "PING") == 0) {
     // PING confirma apenas o enlace. So CMD:* renova a validade do movimento.
     Serial.println(F("PONG"));
@@ -409,7 +398,11 @@ void processarLinha(char* linha, unsigned long agora) {
 }
 
 void lerSerial(unsigned long agora) {
-  while (Serial.available() > 0) {
+  // Limita o trabalho por ciclo para telemetria/sensor nunca ficarem famintos
+  // se o navegador ou um cabo defeituoso inundar a UART.
+  byte bytesProcessados = 0;
+  while (Serial.available() > 0 && bytesProcessados < 48) {
+    bytesProcessados++;
     const char recebido = (char)Serial.read();
     if (recebido == '\n' || recebido == '\r') {
       if (descartandoLinhaSerial) {
@@ -455,7 +448,7 @@ void setup() {
   Serial.begin(9600);
   delay(2000);
   ultimoComandoEm = millis();
-  Serial.println(F("QT:READY:V5"));
+  Serial.println(F("QT:READY:V6"));
   Serial.println(F("OK:MODE:1"));
   aguardarComandoInicial();
 }
@@ -480,16 +473,49 @@ void loop() {
     return;
   }
 
+  const ComandoMovimento desejado = comandoDesejadoPeloModo();
+
+  // Qualquer perda de eco durante uma manobra interrompe os motores. A
+  // sequencia so podera recomecar depois que o sensor recuperar duas leituras.
+  if (estadoDesvio != DESVIO_INATIVO && !sensorPronto()) {
+    cancelarDesvio();
+    enviarStatus(agora);
+    return;
+  }
+
+  if (comandoExigeFrenteLivre(desejado) && !sensorPronto()) {
+    pararMotores();
+    enviarStatus(agora);
+    return;
+  }
+
   if (estadoDesvio != DESVIO_INATIVO) {
     atualizarDesvio(agora);
     enviarStatus(agora);
     return;
   }
 
-  const ComandoMovimento desejado = comandoDesejadoPeloModo();
-  if (comandoExigeFrenteLivre(desejado) && obstaculoConfirmado()) {
-    iniciarDesvio(agora);
+  if (comandoExigeFrenteLivre(desejado)) {
+    if (confirmandoObstaculo) {
+      pararMotores();
+      if (obstaculoConfirmado()) {
+        iniciarDesvio(agora);
+      } else if (caminhoLivreConfirmado()) {
+        confirmandoObstaculo = false;
+        aplicarComando(desejado);
+      }
+    } else if (distanciaAtualCm <= DISTANCIA_OBSTACULO_CM) {
+      // A primeira leitura ja para. As proximas duas decidem se era ruido ou
+      // um obstaculo real, evitando tanto colisao quanto falso desvio.
+      confirmandoObstaculo = true;
+      obstaculosConsecutivos = 0;
+      leiturasLivresConsecutivas = 0;
+      pararMotores();
+    } else {
+      aplicarComando(desejado);
+    }
   } else {
+    confirmandoObstaculo = false;
     aplicarComando(desejado);
   }
 

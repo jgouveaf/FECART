@@ -37,7 +37,8 @@
   const MAX_QUEUED_MOTION_AGE_MS = Number(testConfig.maxQueuedMotionAgeMs) || 350;
   const MAX_READ_BUFFER = 512;
   const MAX_RECOVERABLE_READ_ERRORS = Number(testConfig.maxRecoverableReadErrors) || 2;
-  const REQUIRED_FIRMWARE_READY = "QT:READY:V5";
+  const OBSTACLE_DISTANCE_CM = 5;
+  const REQUIRED_FIRMWARE_READY = "QT:READY:V6";
 
   let port = null;
   let reader = null;
@@ -287,7 +288,7 @@
     resolveLineWaiters(line);
 
     if (line.startsWith("QT:READY:")) {
-      if (stateStatus) stateStatus.textContent = line === REQUIRED_FIRMWARE_READY ? "FIRMWARE V5 PRONTO" : "FIRMWARE INCOMPATÍVEL";
+      if (stateStatus) stateStatus.textContent = line === REQUIRED_FIRMWARE_READY ? "FIRMWARE V6 PRONTO" : "FIRMWARE INCOMPATÍVEL";
       log("INFO", "ARDUINO", `Resposta de identificação: ${line}. Pode ocorrer ao iniciar ou responder HELLO; não confirma movimento.`);
       return;
     }
@@ -301,8 +302,7 @@
       const eventName = line.slice(7).replaceAll("_", " ");
       if (line === "EVENTO:SENSOR_RECUPERADO" && emergencyOwner === "sensor") setEmergencyUi(false);
       const descriptions = {
-        "EVENTO:CURVA_EXTRA": "Firmware ordenou outra curva porque ainda detectou obstáculo. Giro físico não medido.",
-        "EVENTO:BUSCA_ECO": "Firmware ordenou giro de busca após falta de eco. Giro físico não medido.",
+        "EVENTO:CURVA_CONTINUA": "Firmware prolongou a curva porque a nova direção ainda está bloqueada. Giro físico não medido.",
         "EVENTO:DESVIO_INICIADO": "Firmware iniciou a sequência de desvio após detectar obstáculo. Movimento físico não medido.",
       };
       log("INFO", "ARDUINO", descriptions[line] || eventName);
@@ -330,14 +330,7 @@
     if (distanceStatus) distanceStatus.textContent = distance === null || !Number.isFinite(distance) ? "SEM ECO" : `${distance.toFixed(1)} cm`;
     if (values.CMD && commandStatus) commandStatus.textContent = values.CMD;
     if (stateStatus) stateStatus.textContent = firmwareState;
-    if (values.STATE === "WAIT_SENSOR" && stateStatus) {
-      stateStatus.textContent = "AGUARDANDO SENSOR · RETOMA AO CONFIRMAR CAMINHO LIVRE";
-    }
-
     if (values.STATE === "ESTOP") setEmergencyUi(true, "ESTOP", emergencyOwner || "firmware");
-    else if (values.STATE === "SENSOR_INIT" && stateStatus) {
-      stateStatus.textContent = "AGUARDANDO PRIMEIRA LEITURA DO SENSOR";
-    }
     else if (values.STATE === "SENSOR_FAIL" && !["operator", "fault", "transition"].includes(emergencyOwner)) {
       setEmergencyUi(true, "SENSOR SEM RESPOSTA · MOTORES BLOQUEADOS", "sensor");
     } else if (emergencyActive && ["firmware", "sensor"].includes(emergencyOwner) && !modeTransitioning) {
@@ -347,7 +340,7 @@
     const obstacle = values.STATE === "DESVIANDO"
       ? "DESVIANDO"
       : Number.isFinite(distance)
-        ? (distance <= 20 ? "DETECTADO" : "LIVRE")
+        ? (distance <= OBSTACLE_DISTANCE_CM ? "DETECTADO" : "LIVRE")
         : "SEM LEITURA";
     patch("robot", {
       connected,
@@ -544,7 +537,7 @@
       consecutiveMotionFailures = 0;
       pendingMotion = null;
       setControlsForConnection("ONLINE");
-      setConnection("CONECTADO · BLOQUEADO", "ONLINE", `Firmware V5 confirmado em ${MODE_NAMES[activeMode]}. Confira as rodas e clique em “Liberar após conferir”.`);
+      setConnection("CONECTADO · BLOQUEADO", "ONLINE", `Firmware V6 confirmado em ${MODE_NAMES[activeMode]}. Confira as rodas e clique em “Liberar após conferir”.`);
       renderMode(activeMode);
       updateDeliveryHint();
       log("WARNING", "SEGURANÇA", `Arduino sincronizado em ${MODE_NAMES[activeMode]} e mantido em ESTOP até liberação explícita`);

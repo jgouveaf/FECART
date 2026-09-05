@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import sys
 import unittest
@@ -42,7 +43,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="registeredPeople"',
             'id="codigos"',
             'id="arduinoCode"',
-            'web/arduino-codes.js?v=13',
+            'web/arduino-codes.js?v=14',
             'web/user-config.js?v=2',
             'web/control-state.js?v=1',
             'web/camera-controller.js?v=2',
@@ -50,10 +51,9 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/gesture-math.js?v=6',
             'web/gesture-calibration.js?v=1',
             'id="flashOfficialFirmware"',
-            'web/arduino-flasher.js?v=7',
-            'web/autonomous-bench.js?v=3',
+            'web/arduino-flasher.js?v=8',
             'web/simulator-controller.js?v=2',
-            'web/robot-control.js?v=17',
+            'web/robot-control.js?v=18',
             'web/code-editor-utils.js?v=1',
             'web/face-identity-math.js?v=2',
             'web/face-identities.js?v=14',
@@ -71,6 +71,17 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("Aguardar 100%", self.html)
         self.assertIn("O firmware oficial pode ser instalado diretamente pelo site.", self.html)
         self.assertIn('id="flashOfficialFirmware"', self.html)
+        self.assertIn("Modo 1 aprovado a 5 cm", self.html)
+        for obsolete in ('id="autonomo-isolado"', 'id="identidades"', 'id="etapas"', 'id="sistema"'):
+            self.assertNotIn(obsolete, self.html)
+
+    def test_official_hex_matches_the_hash_required_by_the_web_flasher(self) -> None:
+        flasher = (ROOT / "web" / "arduino-flasher.js").read_text(encoding="utf-8")
+        match = re.search(r'FIRMWARE_SHA256 = "([a-f0-9]{64})"', flasher)
+        self.assertIsNotNone(match)
+        hex_text = (ROOT / "firmware" / "compiled" / "quantum_tracker_arduino.ino.hex").read_text(encoding="utf-8")
+        digest = hashlib.sha256(hex_text.replace("\r\n", "\n").encode("utf-8")).hexdigest()
+        self.assertEqual(digest, match.group(1))
 
     def test_every_code_source_exists_and_is_an_arduino_sketch(self) -> None:
         sources = re.findall(r'data-code-source="([^"]+)"', self.html)

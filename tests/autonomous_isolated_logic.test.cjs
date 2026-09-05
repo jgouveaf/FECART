@@ -3,24 +3,24 @@
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../firmware/autonomo_isolado/autonomo_isolado.ino'), 'utf8');
-function body(name) {
-  const found = source.indexOf(`void ${name}(`);
+function body(name, sketch = source) {
+  const found = sketch.indexOf(`void ${name}(`);
   assert.ok(found >= 0, name);
-  const start = source.indexOf('{', found);
+  const start = sketch.indexOf('{', found);
   let depth = 1, end = start + 1;
-  while (depth) { if (source[end] === '{') depth++; if (source[end] === '}') depth--; end++; }
-  return source.slice(start + 1, end - 1)
+  while (depth) { if (sketch[end] === '{') depth++; if (sketch[end] === '}') depth--; end++; }
+  return sketch.slice(start + 1, end - 1)
     .replace(/\bconst char /g, 'const ').replace(/\bbyte /g, 'let ')
     .replace(/\b(\d+)UL\b/g, '$1').replace(/sizeof\(linha\)/g, '20');
 }
-function env() {
+function env(sketch = source) {
   const e = { now: 0, pulse: 5800, fase: 0, habilitado: false, direita: true,
     permitirRe: true, leiturasValidas: 0, leiturasPerto: 0, leiturasLivres: 0, faseDesde: 0, sensorDesde: 0,
     telemetriaDesde: 0, ecoUs: 0, amostra: 0, distanciaCm: -1, motor: 'PARAR',
     linha: [], tamanho: 0, descartar: false, input: [], output: [], commands: [],
     LOW: 0, HIGH: 1, TRIG: 3, ECHO: 2, F: x => x };
-  for (const m of source.matchAll(/const (?:unsigned long|float) (\w+) = ([\d.]+)(?:UL)?;/g)) e[m[1]] = Number(m[2]);
-  source.match(/enum Fase \{([^}]+)\}/)[1].split(',').forEach((s, i) => { e[s.trim()] = i; });
+  for (const m of sketch.matchAll(/const (?:unsigned long|float) (\w+) = ([\d.]+)(?:UL)?;/g)) e[m[1]] = Number(m[2]);
+  sketch.match(/enum Fase \{([^}]+)\}/)[1].split(',').forEach((s, i) => { e[s.trim()] = i; });
   e.millis = () => e.now;
   e.digitalWrite = () => {};
   e.delayMicroseconds = () => {};
@@ -31,7 +31,7 @@ function env() {
   e.Serial = { println: x => e.output.push(x), available: () => e.input.length, read: () => e.input.shift() };
   vm.createContext(e);
   for (const name of ['entrar', 'parar', 'medir', 'atualizar', 'processar', 'lerSerial']) {
-    vm.runInContext(`function ${name}(${name === 'entrar' ? 'nova, agora' : 'agora'}) {${body(name)}}`, e);
+    vm.runInContext(`function ${name}(${name === 'entrar' ? 'nova, agora' : 'agora'}) {${body(name, sketch)}}`, e);
   }
   e.tick = (cm, ms = 80) => {
     e.pulse = cm < 0 ? 0 : Math.round(cm * 58);
@@ -129,5 +129,8 @@ const tests = {
   serial_processing_is_bounded() { const e=env(); e.input.push(...'X'.repeat(200)); e.lerSerial(0); assert.equal(e.input.length,152); },
   opposite_motor_signals_for_turns() { const e=env(); for(const right of [true,false]) { e.direita=right; e.entrar(e.CURVA,0); assert.notEqual(e.pins[0],e.pins[2]); assert.notEqual(e.pins[1],e.pins[3]); } },
 };
-for(const [name,test] of Object.entries(tests)) { test(); console.log(`ok - ${name}`); }
-console.log(`${Object.keys(tests).length} isolated autonomous logic scenarios passed.`);
+if (require.main === module) {
+  for(const [name,test] of Object.entries(tests)) { test(); console.log(`ok - ${name}`); }
+  console.log(`${Object.keys(tests).length} isolated autonomous logic scenarios passed.`);
+}
+module.exports = { env };

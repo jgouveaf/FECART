@@ -5,20 +5,22 @@ L298N, o HC-SR04 e o painel web do Quantum Tracker.
 
 ## Resposta curta
 
-O Arduino IDE é usado **uma vez** para compilar e gravar
-`firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino` no UNO. O sketch
-fica na memória flash do ATmega328P e volta a executar sempre que a placa recebe
-energia ou é reiniciada. Ele só precisa ser gravado novamente quando o firmware
-for atualizado.
+O site pode gravar diretamente no UNO o HEX oficial, previamente compilado e
+verificado. O Arduino IDE 2.3.10 continua disponível como alternativa para
+compilar alterações no arquivo
+`firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino`. O sketch fica na
+memória flash do ATmega328P e volta a executar sempre que a placa recebe energia
+ou é reiniciada.
 
 Durante o uso normal, o Arduino IDE e o Monitor Serial devem ficar fechados. O
-site abre a mesma porta USB com Web Serial e envia apenas mensagens pequenas,
+site abre a porta USB com Web Serial e envia apenas mensagens pequenas,
 como `MODE:3` ou `CMD:PARAR`. O site **não recompila nem envia o sketch**.
 
 ```mermaid
 flowchart LR
-    IDE[Arduino IDE 2.3.10<br>instalação ou atualização] -->|grava uma vez| FLASH[Flash do Arduino UNO]
-    FLASH --> FW[Firmware Quantum V3]
+    SITEHEX[Site HTTPS<br>HEX oficial verificado] -->|grava firmware| FLASH[Flash do Arduino UNO]
+    IDE[Arduino IDE 2.3.10<br>alternativa para compilar] -->|grava firmware| FLASH
+    FLASH --> FW[Firmware Quantum V6]
     SITE[Painel HTTPS<br>Chrome ou Edge] <-->|USB Serial 9600 baud| FW
     FW --> L298N[L298N e motores]
     HCSR04[HC-SR04] -->|D3 TRIG · D2 ECHO| FW
@@ -42,7 +44,7 @@ USB por ATmega16U2. A compilação atual ocupa uma fração da memória disponí
 
 - abre a webcam e executa FaceID ou gestos localmente;
 - solicita ao usuário a porta do Arduino;
-- confirma o firmware `QT:READY:V5`;
+- confirma o firmware `QT:READY:V6`;
 - envia `ESTOP` antes de permitir movimento supervisionado;
 - envia modos e comandos e exige confirmação do UNO;
 - mostra telemetria, distância, estado e falhas.
@@ -82,13 +84,14 @@ o GND do L298N e o GND do Arduino precisam ser comuns.
 ## Procedimento operacional
 
 1. Desligue as baterias dos motores e deixe as rodas suspensas.
-2. No Arduino IDE 2.3.10, selecione **Arduino Uno** e a COM correta.
-3. Abra e envie o firmware principal.
-4. Feche o Monitor Serial e o Arduino IDE para liberar a COM.
+2. Abra a aba **Códigos** do site e clique em **Gravar no Arduino UNO**.
+3. Escolha a porta da placa e aguarde gravação e verificação chegarem a 100%.
+4. Se usar o Arduino IDE como alternativa, feche-o junto do Monitor Serial para
+   liberar a COM ao terminar.
 5. Ligue a alimentação correta dos motores.
 6. Abra <https://jgouveaf.github.io/FECART/> em Chrome ou Edge no computador.
 7. Clique em **Conectar Arduino USB** e escolha a porta do UNO.
-8. Aguarde `Firmware V5 confirmado`.
+8. Aguarde `Firmware V6 confirmado`.
 9. Confira rodas, fios e espaço livre; só então clique em
    **Liberar após conferir**.
 
@@ -107,8 +110,8 @@ automaticamente depois dessa janela.
   motor ligado em bornes errados ou fio solto.
 - Um cabo USB comum limita a distância do carrinho. Para cabos longos, use um
   extensor USB ativo adequado e valide comunicação antes de liberar as rodas.
-- O Bluetooth experimental do painel informa proximidade por RSSI; um único
-  receptor não fornece direção confiável através de paredes.
+- A arquitetura atual usa somente o cabo USB entre computador e Arduino; não há
+  ESP32 nem transporte Bluetooth no fluxo ativo.
 
 ## Diagnóstico rápido
 

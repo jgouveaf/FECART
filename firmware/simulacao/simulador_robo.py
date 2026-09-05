@@ -1,9 +1,7 @@
-"""Simulador deterministico do firmware integrado do Quantum Tracker.
+"""Modelo determinístico do firmware integrado V6.
 
-O modelo espelha a maquina de estados, o protocolo serial, a polaridade dos
-motores e os tempos do sketch ``quantum_tracker_arduino.ino``. Ele nao tenta
-simular a eletrica real (bateria, atrito, ruido ou inercia); seu objetivo e
-validar a logica antes de qualquer teste no carrinho.
+Espelha protocolo, temporização e máquina de estados, mas não simula bateria,
+atrito, inércia, ruído elétrico nem rotação física do chassi.
 """
 
 from __future__ import annotations
@@ -34,7 +32,6 @@ class EstadoDesvio(Enum):
     PAUSA_RE = "PAUSA_RE"
     CURVA = "CURVA"
     PAUSA_CURVA = "PAUSA_CURVA"
-    SAIDA = "SAIDA"
 
 
 class EstadoOperacional(Enum):
@@ -42,7 +39,7 @@ class EstadoOperacional(Enum):
     SEGUIR = "SEGUIR"
     GESTOS = "GESTOS"
     DESVIANDO = "DESVIANDO"
-    SENSOR_INIT = "SENSOR_INIT"
+    LINK_WAIT = "LINK_WAIT"
     SENSOR_FAIL = "SENSOR_FAIL"
     ESTOP = "ESTOP"
 
@@ -55,7 +52,6 @@ class SaidaMotores:
     in4: int
 
 
-# Polaridades iguais as funcoes aplicarMotores() do sketch.
 PARADO = SaidaMotores(0, 0, 0, 0)
 FRENTE = SaidaMotores(0, 1, 0, 1)
 TRAS = SaidaMotores(1, 0, 1, 0)
@@ -74,50 +70,41 @@ SAIDAS_POR_COMANDO = {
 
 
 class SimuladorRobo:
-    DISTANCIA_OBSTACULO_CM = 20.0
+    DISTANCIA_OBSTACULO_CM = 5.0
     INTERVALO_SENSOR_MS = 80
     INTERVALO_TELEMETRIA_MS = 250
     TIMEOUT_COMANDO_MS = 1_500
-    JANELA_OBSTACULOS_MS = 15_000
-
-    TEMPO_PAUSA_MS = 200
-    TEMPO_RE_MS = 700
-    TEMPO_PAUSA_RE_MS = 150
-    TEMPO_CURVA_MS = 900
-    TEMPO_PAUSA_CURVA_MS = 150
-    TEMPO_SAIDA_MS = 600
-
-    LIMITE_FALHAS_SENSOR = 5
-    LEITURAS_VALIDAS_PARA_RECUPERAR = 3
-    LEITURAS_CAMINHO_LIVRE = 2
-    LIMITE_OBSTACULOS = 5
+    JANELA_COMANDO_INICIAL_MS = 750
+    TEMPO_PAUSA_MS = 150
+    TEMPO_RE_MS = 400
+    TEMPO_CURVA_MS = 650
+    LEITURAS_CONFIRMACAO = 2
     TAMANHO_LINHA_SERIAL = 33
 
     def __init__(self) -> None:
         self.agora_ms = 0
         self.modo = Modo.AUTONOMO
-        self.comando_recebido = Comando.FRENTE
+        self.comando_recebido = Comando.PARAR
         self.comando_aplicado = Comando.PARAR
         self.motores = PARADO
-
         self.estado_desvio = EstadoDesvio.INATIVO
         self.estado_desvio_desde_ms = 0
         self.ultimo_comando_ms = 0
-
         self.distancia_atual_cm: float | None = None
         self.falhas_consecutivas_sensor = 0
-        self.leituras_validas_recuperacao = 0
-        self.leituras_livres_apos_curva = 0
-        self.sensor_bloqueado = False
-        self.sensor_inicializado = False
+        self.leituras_validas_sensor = 0
+        self.leituras_livres_consecutivas = 0
         self.obstaculos_consecutivos = 0
-        self.tempos_obstaculos_ms: list[int] = []
+        self.sensor_inicializado = False
+        self.confirmando_obstaculo = False
+        self.proxima_curva_direita = True
+        self.curva_atual_direita = True
+        self.parada_emergencia = False
+        self.controle_usb_ativo = False
+        self.desvios_iniciados = 0
         self._linha_serial = ""
         self._descartando_linha_serial = False
-
-        self.proxima_curva_direita = True
-        self.parada_emergencia = False
-        self.saida_serial: list[str] = ["QT:READY:V5", "OK:MODE:1"]
+        self.saida_serial: list[str] = ["QT:READY:V6", "OK:MODE:1"]
         self.historico: list[
             tuple[int, Modo, EstadoDesvio, Comando, SaidaMotores]
         ] = []
@@ -127,39 +114,41 @@ class SimuladorRobo:
     def sensor_seguro(self) -> bool:
         return (
             self.sensor_inicializado
-            and not self.sensor_bloqueado
-            and self.falhas_consecutivas_sensor < self.LIMITE_FALHAS_SENSOR
+            and self.distancia_atual_cm is not None
+            and self.leituras_validas_sensor >= self.LEITURAS_CONFIRMACAO
         )
 
     @property
     def obstaculo_confirmado(self) -> bool:
         return (
             self.distancia_atual_cm is not None
-            and self.obstaculos_consecutivos >= 2
+            and self.obstaculos_consecutivos >= self.LEITURAS_CONFIRMACAO
         )
 
     @property
-    def quantidade_obstaculos(self) -> int:
-        return len(self.tempos_obstaculos_ms)
+    def caminho_livre_confirmado(self) -> bool:
+        return (
+            self.distancia_atual_cm is not None
+            and self.distancia_atual_cm > self.DISTANCIA_OBSTACULO_CM
+            and self.leituras_livres_consecutivas >= self.LEITURAS_CONFIRMACAO
+        )
 
     @property
     def quantidade_desvios(self) -> int:
-        """Alias historico: cada desvio iniciado corresponde a um obstaculo."""
-        return self.quantidade_obstaculos
+        return self.desvios_iniciados
+
+    @property
+    def quantidade_obstaculos(self) -> int:
+        return self.desvios_iniciados
 
     @property
     def estado_operacional(self) -> EstadoOperacional:
         if self.parada_emergencia:
             return EstadoOperacional.ESTOP
-        if (
-            self.sensor_bloqueado
-            or self.falhas_consecutivas_sensor >= self.LIMITE_FALHAS_SENSOR
-        ):
-            return EstadoOperacional.SENSOR_FAIL
-        if not self.sensor_inicializado:
-            return EstadoOperacional.SENSOR_INIT
         if not self.sensor_seguro:
             return EstadoOperacional.SENSOR_FAIL
+        if self.modo is not Modo.AUTONOMO and not self.controle_usb_ativo:
+            return EstadoOperacional.LINK_WAIT
         if self.estado_desvio is not EstadoDesvio.INATIVO:
             return EstadoOperacional.DESVIANDO
         return {
@@ -173,129 +162,85 @@ class SimuladorRobo:
 
     def _registrar(self) -> None:
         registro = (
-            self.agora_ms,
-            self.modo,
-            self.estado_desvio,
-            self.comando_aplicado,
-            self.motores,
+            self.agora_ms, self.modo, self.estado_desvio,
+            self.comando_aplicado, self.motores,
         )
         if not self.historico or self.historico[-1] != registro:
             self.historico.append(registro)
 
     def _aplicar_comando(self, comando: Comando) -> None:
+        if comando is self.comando_aplicado:
+            return
         self.comando_aplicado = comando
         self.motores = SAIDAS_POR_COMANDO[comando]
         self._registrar()
 
     def _parar(self) -> None:
-        self._aplicar_comando(Comando.PARAR)
+        self.comando_aplicado = Comando.PARAR
+        self.motores = PARADO
+        self._registrar()
 
     def _cancelar_desvio(self) -> None:
         self.estado_desvio = EstadoDesvio.INATIVO
-        self.leituras_livres_apos_curva = 0
+        self.obstaculos_consecutivos = 0
+        self.leituras_livres_consecutivas = 0
+        self.confirmando_obstaculo = False
         self._parar()
 
     @staticmethod
     def _comando_exige_frente_livre(comando: Comando) -> bool:
         return comando in {
-            Comando.FRENTE,
-            Comando.DIREITA,
-            Comando.ESQUERDA,
-            Comando.GIRAR,
+            Comando.FRENTE, Comando.DIREITA, Comando.ESQUERDA, Comando.GIRAR,
         }
-
-    def _registrar_obstaculo(self) -> bool:
-        self.tempos_obstaculos_ms = [
-            tempo
-            for tempo in self.tempos_obstaculos_ms
-            if self.agora_ms - tempo <= self.JANELA_OBSTACULOS_MS
-        ]
-        if len(self.tempos_obstaculos_ms) < self.LIMITE_OBSTACULOS:
-            self.tempos_obstaculos_ms.append(self.agora_ms)
-        return len(self.tempos_obstaculos_ms) >= self.LIMITE_OBSTACULOS
 
     def _iniciar_desvio(self) -> None:
         self._parar()
         self.obstaculos_consecutivos = 0
-        self.leituras_livres_apos_curva = 0
-        if self._registrar_obstaculo():
-            self.parada_emergencia = True
-            self.estado_desvio = EstadoDesvio.INATIVO
-            self._emitir("ALERTA:5_OBSTACULOS")
-            return
+        self.leituras_livres_consecutivas = 0
+        self.confirmando_obstaculo = False
+        self.curva_atual_direita = self.proxima_curva_direita
+        self.proxima_curva_direita = not self.proxima_curva_direita
         self.estado_desvio = EstadoDesvio.PAUSA_INICIAL
         self.estado_desvio_desde_ms = self.agora_ms
+        self.desvios_iniciados += 1
         self._emitir("EVENTO:DESVIO_INICIADO")
         self._registrar()
 
     def ler_sensor(self, distancia_cm: float | int | None) -> None:
-        """Injeta uma leitura do HC-SR04 e executa uma iteracao do loop.
-
-        ``None``, zero e valores fora de 2..400 cm representam timeout/erro.
-        Assim como no sketch, o obstaculo exige duas leituras proximas seguidas.
-        """
+        """Injeta uma leitura; ``None``/fora de 2..400 representa sem eco."""
         if distancia_cm is None or not 2 <= float(distancia_cm) <= 400:
             self.distancia_atual_cm = None
             self.falhas_consecutivas_sensor = min(
                 255, self.falhas_consecutivas_sensor + 1
             )
-            self.leituras_validas_recuperacao = 0
-            self.leituras_livres_apos_curva = 0
+            self.leituras_validas_sensor = 0
+            self.leituras_livres_consecutivas = 0
             self.obstaculos_consecutivos = 0
-            if (
-                self.falhas_consecutivas_sensor >= self.LIMITE_FALHAS_SENSOR
-                and not self.sensor_bloqueado
-            ):
-                self.sensor_bloqueado = True
-                self.estado_desvio = EstadoDesvio.INATIVO
-                self._parar()
-                self._emitir("ALERTA:SENSOR_BLOQUEADO")
         else:
             self.distancia_atual_cm = float(distancia_cm)
             self.sensor_inicializado = True
             self.falhas_consecutivas_sensor = 0
-            if self.sensor_bloqueado:
-                self.leituras_validas_recuperacao = min(
-                    255, self.leituras_validas_recuperacao + 1
-                )
-                if (
-                    self.leituras_validas_recuperacao
-                    >= self.LEITURAS_VALIDAS_PARA_RECUPERAR
-                ):
-                    self.sensor_bloqueado = False
-                    self.leituras_validas_recuperacao = 0
-                    self._emitir("EVENTO:SENSOR_RECUPERADO")
-            else:
-                self.leituras_validas_recuperacao = 0
-
+            self.leituras_validas_sensor = min(
+                self.LEITURAS_CONFIRMACAO, self.leituras_validas_sensor + 1
+            )
             if self.estado_desvio is EstadoDesvio.CURVA:
                 self.obstaculos_consecutivos = 0
-                self.leituras_livres_apos_curva = 0
+                self.leituras_livres_consecutivas = 0
             elif self.distancia_atual_cm <= self.DISTANCIA_OBSTACULO_CM:
-                self.leituras_livres_apos_curva = 0
+                self.leituras_livres_consecutivas = 0
                 self.obstaculos_consecutivos = min(
                     255, self.obstaculos_consecutivos + 1
                 )
             else:
                 self.obstaculos_consecutivos = 0
-                if self.estado_desvio is EstadoDesvio.PAUSA_CURVA:
-                    self.leituras_livres_apos_curva = min(
-                        255, self.leituras_livres_apos_curva + 1
-                    )
-                else:
-                    self.leituras_livres_apos_curva = 0
-
+                self.leituras_livres_consecutivas = min(
+                    self.LEITURAS_CONFIRMACAO,
+                    self.leituras_livres_consecutivas + 1,
+                )
         self._executar_controle()
 
     def _atualizar_desvio(self) -> None:
-        if self.obstaculo_confirmado and self.estado_desvio in {
-            EstadoDesvio.PAUSA_CURVA,
-            EstadoDesvio.SAIDA,
-        }:
-            self._iniciar_desvio()
-
         decorrido = self.agora_ms - self.estado_desvio_desde_ms
-
         if (
             self.estado_desvio is EstadoDesvio.PAUSA_INICIAL
             and decorrido >= self.TEMPO_PAUSA_MS
@@ -312,15 +257,12 @@ class SimuladorRobo:
             self.estado_desvio_desde_ms = self.agora_ms
         elif (
             self.estado_desvio is EstadoDesvio.PAUSA_RE
-            and decorrido >= self.TEMPO_PAUSA_RE_MS
+            and decorrido >= self.TEMPO_PAUSA_MS
         ):
             self.obstaculos_consecutivos = 0
-            comando = (
-                Comando.DIREITA
-                if self.proxima_curva_direita
-                else Comando.ESQUERDA
+            self._aplicar_comando(
+                Comando.DIREITA if self.curva_atual_direita else Comando.ESQUERDA
             )
-            self._aplicar_comando(comando)
             self.estado_desvio = EstadoDesvio.CURVA
             self.estado_desvio_desde_ms = self.agora_ms
         elif (
@@ -328,54 +270,76 @@ class SimuladorRobo:
             and decorrido >= self.TEMPO_CURVA_MS
         ):
             self._parar()
-            self.proxima_curva_direita = not self.proxima_curva_direita
             self.estado_desvio = EstadoDesvio.PAUSA_CURVA
-            self.leituras_livres_apos_curva = 0
-            self.estado_desvio_desde_ms = self.agora_ms
-        elif (
-            self.estado_desvio is EstadoDesvio.PAUSA_CURVA
-            and decorrido >= self.TEMPO_PAUSA_CURVA_MS
-            and self.leituras_livres_apos_curva >= self.LEITURAS_CAMINHO_LIVRE
-        ):
-            self._aplicar_comando(Comando.FRENTE)
-            self.estado_desvio = EstadoDesvio.SAIDA
-            self.estado_desvio_desde_ms = self.agora_ms
-        elif (
-            self.estado_desvio is EstadoDesvio.SAIDA
-            and decorrido >= self.TEMPO_SAIDA_MS
-        ):
-            self.estado_desvio = EstadoDesvio.INATIVO
             self.obstaculos_consecutivos = 0
-            self._registrar()
+            self.leituras_livres_consecutivas = 0
+            self.estado_desvio_desde_ms = self.agora_ms
+        elif self.estado_desvio is EstadoDesvio.PAUSA_CURVA:
+            self._parar()
+            if self.caminho_livre_confirmado:
+                self.estado_desvio = EstadoDesvio.INATIVO
+                self.obstaculos_consecutivos = 0
+                self.leituras_livres_consecutivas = 0
+            elif self.obstaculo_confirmado:
+                self.obstaculos_consecutivos = 0
+                self.leituras_livres_consecutivas = 0
+                self._aplicar_comando(
+                    Comando.DIREITA
+                    if self.curva_atual_direita
+                    else Comando.ESQUERDA
+                )
+                self.estado_desvio = EstadoDesvio.CURVA
+                self.estado_desvio_desde_ms = self.agora_ms
+                self._emitir("EVENTO:CURVA_CONTINUA")
 
     def _executar_controle(self) -> None:
-        if self.parada_emergencia or not self.sensor_seguro:
+        if self.parada_emergencia:
             self._parar()
             return
 
-        if (
-            self.modo is not Modo.AUTONOMO
-            and self.agora_ms - self.ultimo_comando_ms > self.TIMEOUT_COMANDO_MS
+        modo_remoto = self.modo in {Modo.SEGUIR, Modo.GESTOS}
+        if modo_remoto and (
+            not self.controle_usb_ativo
+            or self.agora_ms - self.ultimo_comando_ms > self.TIMEOUT_COMANDO_MS
         ):
+            self.controle_usb_ativo = False
             self.comando_recebido = Comando.PARAR
             self._cancelar_desvio()
+            return
 
+        desejado = (
+            Comando.FRENTE if self.modo is Modo.AUTONOMO else self.comando_recebido
+        )
+        if self.estado_desvio is not EstadoDesvio.INATIVO and not self.sensor_seguro:
+            self._cancelar_desvio()
+            return
+        if self._comando_exige_frente_livre(desejado) and not self.sensor_seguro:
+            self._parar()
+            return
         if self.estado_desvio is not EstadoDesvio.INATIVO:
             self._atualizar_desvio()
             return
 
-        desejado = (
-            Comando.FRENTE
-            if self.modo is Modo.AUTONOMO
-            else self.comando_recebido
-        )
-        if self.obstaculo_confirmado and self._comando_exige_frente_livre(desejado):
-            self._iniciar_desvio()
+        if self._comando_exige_frente_livre(desejado):
+            if self.confirmando_obstaculo:
+                self._parar()
+                if self.obstaculo_confirmado:
+                    self._iniciar_desvio()
+                elif self.caminho_livre_confirmado:
+                    self.confirmando_obstaculo = False
+                    self._aplicar_comando(desejado)
+            elif self.distancia_atual_cm <= self.DISTANCIA_OBSTACULO_CM:
+                self.confirmando_obstaculo = True
+                self.obstaculos_consecutivos = 0
+                self.leituras_livres_consecutivas = 0
+                self._parar()
+            else:
+                self._aplicar_comando(desejado)
         else:
+            self.confirmando_obstaculo = False
             self._aplicar_comando(desejado)
 
     def avancar_tempo(self, milissegundos: int) -> None:
-        """Avanca o relogio em passos curtos, como chamadas repetidas de loop()."""
         if milissegundos < 0:
             raise ValueError("o tempo nao pode ser negativo")
         restante = milissegundos
@@ -393,13 +357,14 @@ class SimuladorRobo:
             Comando.FRENTE if self.modo is Modo.AUTONOMO else Comando.PARAR
         )
         self.ultimo_comando_ms = self.agora_ms
+        self.controle_usb_ativo = False
         self._cancelar_desvio()
         self._emitir(f"OK:MODE:{numero}")
-        self._executar_controle()
 
     def receber_comando(self, comando: Comando) -> None:
         self.comando_recebido = comando
         self.ultimo_comando_ms = self.agora_ms
+        self.controle_usb_ativo = True
         if comando is Comando.PARAR or (
             self.modo is not Modo.AUTONOMO and comando is Comando.TRAS
         ):
@@ -408,15 +373,13 @@ class SimuladorRobo:
         self._executar_controle()
 
     def processar_linha(self, linha: str) -> list[str]:
-        """Processa uma linha do protocolo e devolve somente as novas respostas."""
         inicio = len(self.saida_serial)
         linha = linha.strip()
         if linha in {"MODE:1", "MODE:2", "MODE:3"}:
             self.selecionar_modo(int(linha[-1]))
         elif linha.startswith("CMD:"):
-            nome = linha[4:]
             try:
-                self.receber_comando(Comando(nome))
+                self.receber_comando(Comando(linha[4:]))
             except ValueError:
                 self._emitir("ERRO:COMANDO_INVALIDO")
         elif linha == "ESTOP":
@@ -425,22 +388,17 @@ class SimuladorRobo:
             self._emitir("OK:ESTOP")
         elif linha == "RESET_ESTOP":
             self.parada_emergencia = False
-            self.tempos_obstaculos_ms.clear()
             self.comando_recebido = (
-                Comando.FRENTE
-                if self.modo is Modo.AUTONOMO
-                else Comando.PARAR
+                Comando.FRENTE if self.modo is Modo.AUTONOMO else Comando.PARAR
             )
             self.ultimo_comando_ms = self.agora_ms
+            self.controle_usb_ativo = False
             self._cancelar_desvio()
             self._emitir("OK:RESET_ESTOP")
-            self._executar_controle()
         elif linha == "HELLO":
-            self._emitir("QT:READY:V5")
+            self._emitir("QT:READY:V6")
         elif linha == "PING":
-            # Deliberadamente nao altera ultimo_comando_ms.
             self._emitir("PONG")
-            self._executar_controle()
         elif linha == "STATUS":
             self._emitir(self.telemetria())
         else:
@@ -448,7 +406,6 @@ class SimuladorRobo:
         return self.saida_serial[inicio:]
 
     def receber_bytes(self, dados: str | bytes) -> list[str]:
-        """Espelha o parser byte a byte do Arduino, inclusive overflow."""
         inicio = len(self.saida_serial)
         texto = dados.decode("ascii", errors="ignore") if isinstance(dados, bytes) else dados
         for caractere in texto:
@@ -472,9 +429,7 @@ class SimuladorRobo:
 
     def telemetria(self) -> str:
         distancia = (
-            "ERR"
-            if self.distancia_atual_cm is None
-            else f"{self.distancia_atual_cm:.1f}"
+            "ERR" if self.distancia_atual_cm is None else f"{self.distancia_atual_cm:.1f}"
         )
         return (
             f"QT|MODE:{int(self.modo)}|DIST:{distancia}"
@@ -482,27 +437,24 @@ class SimuladorRobo:
             f"|STATE:{self.estado_operacional.value}"
         )
 
-    def executar_desvio_completo(self, distancia_obstaculo: float = 10.0) -> None:
-        """Atalho de teste que percorre exatamente um ciclo de desvio."""
+    def executar_desvio_completo(self, distancia_obstaculo: float = 4.0) -> None:
+        self.ler_sensor(100)
+        self.ler_sensor(100)
         self.ler_sensor(distancia_obstaculo)
         self.ler_sensor(distancia_obstaculo)
-        if self.parada_emergencia:
-            return
+        self.ler_sensor(distancia_obstaculo)
         self.avancar_tempo(self.TEMPO_PAUSA_MS)
-        self.ler_sensor(40)
         self.avancar_tempo(self.TEMPO_RE_MS)
-        self.avancar_tempo(self.TEMPO_PAUSA_RE_MS)
+        self.avancar_tempo(self.TEMPO_PAUSA_MS)
         self.avancar_tempo(self.TEMPO_CURVA_MS)
-        self.ler_sensor(40)
-        self.ler_sensor(40)
-        self.avancar_tempo(self.TEMPO_PAUSA_CURVA_MS)
-        self.avancar_tempo(self.TEMPO_SAIDA_MS)
+        self.ler_sensor(100)
+        self.ler_sensor(100)
+        self.avancar_tempo(10)
 
 
 def demonstracao() -> None:
     robo = SimuladorRobo()
-    robo.ler_sensor(100)
-    robo.executar_desvio_completo(15)
+    robo.executar_desvio_completo()
     for tempo, modo, desvio, comando, motores in robo.historico:
         print(
             f"{tempo:5d} ms | M{int(modo)} | {desvio.value:14s} | "

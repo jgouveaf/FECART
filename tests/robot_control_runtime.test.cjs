@@ -105,7 +105,7 @@ class FakePort {
     this.configuration = configuration;
     this.opened = true;
     if (this.options.ready !== false) {
-      setTimeout(() => this.emit(this.options.readyLine || "QT:READY:V5"), this.options.readyDelayMs || 0);
+      setTimeout(() => this.emit(this.options.readyLine || "QT:READY:V6"), this.options.readyDelayMs || 0);
     }
   }
   async close() {
@@ -122,7 +122,7 @@ class FakePort {
     if (line === "HELLO" && this.options.helloReady) {
       this.helloCount = (this.helloCount || 0) + 1;
       if (this.helloCount < (this.options.helloReadyAfter || 1)) return null;
-      return this.options.readyLine || "QT:READY:V5";
+      return this.options.readyLine || "QT:READY:V6";
     }
     if (line.startsWith("MODE:")) return `OK:${line}`;
     if (line.startsWith("CMD:")) return `OK:${line}`;
@@ -641,22 +641,23 @@ async function main() {
     },
     async function testEventsDoNotClaimMeasuredMovement() {
       const environment = createEnvironment();
-      environment.robot._test.parseTelemetry("EVENTO:CURVA_EXTRA");
-      assert.match(environment.control.logs.at(-1).message, /Firmware ordenou/);
+      environment.robot._test.parseTelemetry("EVENTO:CURVA_CONTINUA");
+      assert.match(environment.control.logs.at(-1).message, /Firmware prolongou/);
       assert.match(environment.control.logs.at(-1).message, /Giro físico não medido/);
-      environment.robot._test.parseTelemetry("QT:READY:V5");
+      environment.robot._test.parseTelemetry("QT:READY:V6");
       assert.match(environment.control.logs.at(-1).message, /responder HELLO/);
       await cleanup(environment);
     },
-    async function testWaitingSensorIsVisibleAndDoesNotLatchEstop() {
+    async function testSensorFailureIsVisibleAndRecoversOnValidTelemetry() {
       const environment = createEnvironment();
       await environment.robot.connect();
       await releaseSafety(environment);
-      environment.robot._test.parseTelemetry("QT|MODE:1|DIST:ERR|CMD:PARAR|STATE:WAIT_SENSOR");
-      assert.match(environment.elements.robotStateStatus.textContent, /AGUARDANDO SENSOR/);
-      assert.equal(environment.control.state.safety.emergency, false);
+      environment.robot._test.parseTelemetry("QT|MODE:1|DIST:ERR|CMD:PARAR|STATE:SENSOR_FAIL");
+      assert.match(environment.elements.robotStateStatus.textContent, /SENSOR SEM RESPOSTA/);
+      assert.equal(environment.control.state.safety.emergency, true);
       environment.robot._test.parseTelemetry("QT|MODE:1|DIST:50|CMD:FRENTE|STATE:AUTONOMO");
       assert.equal(environment.elements.robotStateStatus.textContent, "AUTONOMO");
+      assert.equal(environment.control.state.safety.emergency, false);
       await cleanup(environment);
     },
     testRobotStatusKeepsTechnicalStateAndReadableLabel,

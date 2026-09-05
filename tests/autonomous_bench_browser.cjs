@@ -125,85 +125,28 @@ async function mockedPage(browser, incompatible = false) {
     assert.deepEqual(invalidHex.errors,[]);
     await invalidHex.page.close();
 
+    // The main site now exposes one unambiguous official firmware workflow.
     const integrated = await mockedPage(browser);
     const main = integrated.page;
     await main.goto(url.replace('autonomo.html', 'index.html#codigos'));
-    await main.waitForFunction(() => window.quantumAutonomousBench && window.quantumRobot && window.quantumFirmwareFlasher);
-    assert.equal(await main.locator('#codigos #autoConnect').isVisible(), true);
-    assert.equal(await main.locator('#integratedFirmware').getAttribute('open'), null);
-    assert.equal(await main.evaluate(()=>portRequestCount), 0, 'loading the main site cannot open USB');
-    await main.locator('#autoConnect').click();
-    // Isolation also holds during the handshake, before AUTO:READY.
-    assert.equal(await main.evaluate(()=>window.quantumRobot.connect()), false);
-    await main.evaluate(()=>window.quantumFirmwareFlasher.flash());
-    assert.match(await main.locator('#firmwareFlashStatus').textContent(), /USB EM OUTRO PAINEL/);
-    assert.equal(await main.evaluate(()=>portRequestCount), 1);
-    await main.waitForFunction(()=>document.querySelector('#autoStatus').textContent.includes('conectado e parado'));
-    assert.equal(await main.locator('#autoDistance').textContent(), '20.0 cm');
-    await main.locator('#autoStart').click();
-    await main.waitForFunction(()=>document.querySelector('#autoStatus').textContent.includes('Autônomo iniciado'));
-    await main.locator('#autoStop').click();
-    await main.waitForFunction(()=>document.querySelector('#autoStatus').textContent.includes('Parada confirmada'));
-    assert.equal((await main.evaluate(()=>serialWrites)).some(line=>line.startsWith('MODE:') || line.startsWith('CMD:')), false);
-    await main.locator('#autoDisconnect').click();
-    await main.waitForFunction(()=>document.querySelector('#autoStatus').textContent==='Parado e desconectado.');
-
-    // Reverse direction: integrated connection holds USB while the chooser is pending.
-    await main.evaluate(()=>{holdPortChooser(); window.pendingConnect = window.quantumRobot.connect();});
-    await main.waitForFunction(()=>portRequestCount === 2);
-    assert.equal(await main.evaluate(()=>window.quantumRobot.usbBusy), true);
-    assert.equal(await main.evaluate(()=>window.quantumRobot.connect()), false);
-    await main.locator('#autoConnect').click();
-    assert.match(await main.locator('#autoStatus').textContent(), /USB em uso pela versão integrada/);
-    await main.locator('#autoFlash').click();
-    assert.match(await main.locator('#autoFlashStatus').textContent(), /USB em uso pela versão integrada/);
-    await main.evaluate(()=>window.quantumFirmwareFlasher.flash());
-    assert.equal(await main.evaluate(()=>portRequestCount), 2);
-    await main.evaluate(()=>cancelPortChooser());
-    await main.evaluate(()=>window.pendingConnect);
-    assert.equal(await main.evaluate(()=>window.quantumRobot.usbBusy), false, 'cancelled chooser must release integrated ownership');
-
-    // A flash operation also owns USB before it has opened the port.
-    await main.evaluate(()=>holdPortChooser());
-    await main.locator('#autoFlash').click();
-    await main.waitForFunction(()=>portRequestCount === 3);
-    assert.equal(await main.evaluate(()=>window.quantumRobot.connect()), false);
-    await main.evaluate(()=>window.quantumFirmwareFlasher.flash());
-    assert.equal(await main.evaluate(()=>portRequestCount), 3);
-    await main.evaluate(()=>cancelPortChooser());
-    await main.waitForFunction(()=>!window.quantumAutonomousBench.usbBusy);
-
-    // Integrated flasher blocks autonomous USB until its cancelled chooser is cleaned up.
-    await main.evaluate(()=>{holdPortChooser(); window.pendingFlash = window.quantumFirmwareFlasher.flash();});
-    await main.waitForFunction(()=>portRequestCount === 4);
-    await main.locator('#autoConnect').click();
-    await main.locator('#autoFlash').click();
-    assert.equal(await main.evaluate(()=>window.quantumRobot.connect()), false);
-    assert.equal(await main.evaluate(()=>portRequestCount), 4);
-    await main.evaluate(()=>cancelPortChooser());
-    await main.evaluate(()=>window.pendingFlash);
-    assert.equal(await main.evaluate(()=>window.quantumFirmwareFlasher.busy), false);
-
-    // The old editor remains available but is not mixed with isolated firmware controls.
-    await main.locator('#integratedFirmware > summary').click();
+    await main.waitForFunction(() => window.quantumRobot && window.quantumFirmwareFlasher);
+    assert.equal(await main.locator('#autonomo-isolado').count(), 0);
+    assert.equal(await main.locator('#integratedFirmware').count(), 0);
+    assert.equal(await main.locator('#flashOfficialFirmware').isVisible(), true);
     assert.equal(await main.locator('#codeTabMain').isVisible(), true);
+    assert.equal(await main.evaluate(()=>portRequestCount), 0, 'loading the main site cannot open USB');
     await main.locator('#codeTabSensor').click();
     await main.waitForFunction(()=>document.querySelector('#arduinoCode').value.includes('void setup()'));
-    await main.locator('#integratedFirmware > summary').click();
-    await main.locator('#autoConnect').click();
-    await main.waitForFunction(()=>document.querySelector('#autoStatus').textContent.includes('conectado e parado'));
-    await main.locator('#autoDisconnect').click();
-    await main.waitForFunction(()=>document.querySelector('#autoStatus').textContent==='Parado e desconectado.');
     await main.locator('#codigos').screenshot({path:path.join(root,'tests/artifacts/autonomo-main-site.png')});
     await main.setViewportSize({width:390,height:844});
     await main.waitForTimeout(350); // finish the responsive sidebar transition
-    await main.locator('#autoConnect').scrollIntoViewIfNeeded();
+    await main.locator('#flashOfficialFirmware').scrollIntoViewIfNeeded();
     assert.equal(await main.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await main.locator('#codigos').screenshot({path:path.join(root,'tests/artifacts/autonomo-main-mobile.png')});
     await main.screenshot({path:path.join(root,'tests/artifacts/autonomo-main-mobile-viewport.png')});
     assert.deepEqual(integrated.errors,[]);
     await main.close();
     console.log('PASS: isolated page, telemetry, START/STOP, STOP during pending START, disconnect, wrong firmware refusal, bad firmware hash refuses port opening, mobile overflow, no browser errors. USB simulated.');
-    console.log('PASS: main site embedded controls, separate integrated editor, mutual USB exclusion for connections/choosers/flashing, cancellation releases ownership, reconnect and mobile layout. USB simulated.');
+    console.log('PASS: main site exposes one official firmware workflow, keeps the editor, opens no USB on load and fits mobile.');
   } finally { await browser.close(); await new Promise(r=>server.close(r)); }
 })().catch(e=>{console.error(e);process.exitCode=1;server.close();});

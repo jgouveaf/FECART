@@ -1,7 +1,8 @@
 # Quantum Tracker — Arduino UNO, sensor e site
 
-Este documento descreve o fluxo físico validado para o Arduino UNO Rev3, o
-L298N, o HC-SR04 e o painel web do Quantum Tracker.
+Este documento descreve a integração para o Arduino UNO Rev3, o L298N, o HC-SR04
+e o painel web. A referência isolada foi aprovada em bancada; a V7 integrada
+ainda aguarda esse ensaio físico. O uso no piso não está aprovado.
 
 ## Resposta curta
 
@@ -20,7 +21,7 @@ como `MODE:3` ou `CMD:PARAR`. O site **não recompila nem envia o sketch**.
 flowchart LR
     SITEHEX[Site HTTPS<br>HEX oficial verificado] -->|grava firmware| FLASH[Flash do Arduino UNO]
     IDE[Arduino IDE 2.3.10<br>alternativa para compilar] -->|grava firmware| FLASH
-    FLASH --> FW[Firmware Quantum V6]
+    FLASH --> FW[Firmware Quantum V7]
     SITE[Painel HTTPS<br>Chrome ou Edge] <-->|USB Serial 9600 baud| FW
     FW --> L298N[L298N e motores]
     HCSR04[HC-SR04] -->|D3 TRIG · D2 ECHO| FW
@@ -35,7 +36,8 @@ flowchart LR
 - mede o HC-SR04;
 - executa o desvio de obstáculos;
 - mantém `PARAR`, `ESTOP`, falha do sensor e timeout no próprio firmware;
-- inicia no Modo 1 e funciona sem computador após a janela segura de boot.
+- inicia no Modo 1, parado em ESTOP; após liberação explícita, funciona sem
+  heartbeat do computador até parada, falha do sensor ou reset.
 
 O UNO Rev3 possui ATmega328P, 32 kB de flash, 2 kB de SRAM, USART e interface
 USB por ATmega16U2. A compilação atual ocupa uma fração da memória disponível.
@@ -44,7 +46,7 @@ USB por ATmega16U2. A compilação atual ocupa uma fração da memória disponí
 
 - abre a webcam e executa FaceID ou gestos localmente;
 - solicita ao usuário a porta do Arduino;
-- confirma o firmware `QT:READY:V6`;
+- confirma o firmware `QT:READY:V7`;
 - envia `ESTOP` antes de permitir movimento supervisionado;
 - envia modos e comandos e exige confirmação do UNO;
 - mostra telemetria, distância, estado e falhas.
@@ -91,14 +93,15 @@ o GND do L298N e o GND do Arduino precisam ser comuns.
 5. Ligue a alimentação correta dos motores.
 6. Abra <https://jgouveaf.github.io/FECART/> em Chrome ou Edge no computador.
 7. Clique em **Conectar Arduino USB** e escolha a porta do UNO.
-8. Aguarde `Firmware V6 confirmado`.
+8. Aguarde `Firmware V7 confirmado`.
 9. Confira rodas, fios e espaço livre; só então clique em
    **Liberar após conferir**.
 
-Ao abrir a serial, muitas placas UNO reiniciam. O firmware mantém os motores
-parados por 750 ms após anunciar que está pronto, permitindo que o site confirme
-`ESTOP` antes que o Modo 1 possa começar. Sem site conectado, o Modo 1 começa
-automaticamente depois dessa janela.
+Ao abrir a serial, muitas placas UNO reiniciam. Na V7, o firmware mantém o ESTOP
+ativo por tempo indeterminado até a liberação explícita do operador. Passar a
+janela de inicialização não inicia movimento. Depois de iniciado, o Modo 1 não
+depende de heartbeat USB; uma perda da conexão não equivale a uma parada física.
+Use a chave se não houver conexão. Um reset exige nova liberação.
 
 ## Alimentação e limitações físicas
 

@@ -8,7 +8,7 @@ from robot.robot_models import RobotCommand, RobotState
 
 
 class ArduinoUSBAdapter:
-    """Transporte USB do Arduino UNO usando o protocolo Quantum Tracker V6."""
+    """Transporte USB do Arduino UNO usando o protocolo Quantum Tracker V7."""
 
     _COMMANDS = {
         "FRENTE": "CMD:FRENTE",
@@ -99,7 +99,7 @@ class ArduinoUSBAdapter:
             "target_id": target_id,
             "speed": round(linear_speed, 3),
             "turn": round(angular_speed, 3),
-            "transport": "ARDUINO_UNO_USB_V6",
+            "transport": "ARDUINO_UNO_USB_V7",
         }, ensure_ascii=True)
 
     def send(self, payload: str) -> None:

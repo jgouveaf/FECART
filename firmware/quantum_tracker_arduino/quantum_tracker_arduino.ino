@@ -13,8 +13,9 @@
   HELLO | ESTOP | RESET_ESTOP | PING | STATUS
 
   Comportamento:
-  - PARAR e ESTOP continuam disponiveis para o operador;
-  - AUTONOMO funciona localmente, mesmo sem site ou cabo USB;
+  - boot/reset fica em ESTOP ate RESET_ESTOP explicito;
+  - PARAR no AUTONOMO permanece parado ate RESET_ESTOP;
+  - depois de liberado, AUTONOMO funciona localmente, mesmo sem site ou cabo USB;
   - SEGUIR e GESTOS param se nenhum novo CMD:* chegar por 1,5 s;
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
   - Modo 1 usa a sequencia aprovada em bancada: parar, re e curva suave;
@@ -43,7 +44,7 @@ const unsigned long INTERVALO_SENSOR_MS = 80UL;
 const unsigned long INTERVALO_TELEMETRIA_MS = 250UL;
 const unsigned long TIMEOUT_COMANDO_MS = 1500UL;
 // Mantém as rodas paradas logo após o boot para estabilizar a alimentação e
-// permitir que um site já aberto faça o handshake. Depois, o AUTONOMO é local.
+// permitir que um site ja aberto faca o handshake. Isso nao libera o ESTOP.
 const unsigned long JANELA_COMANDO_INICIAL_MS = 750UL;
 
 const unsigned int TEMPO_PAUSA_MS = 150;
@@ -80,7 +81,9 @@ byte obstaculosConsecutivos = 0;
 bool proximaCurvaDireita = true;
 bool curvaAtualDireita = true;
 bool confirmandoObstaculo = false;
-bool paradaEmergencia = false;
+bool paradaEmergencia = true;
+// Preserva uma unica re por encontro, inclusive se o sensor falhar na curva.
+bool permitirRe = true;
 bool sensorInicializado = false;
 bool descartandoLinhaSerial = false;
 bool controleUsbAtivo = false;
@@ -231,9 +234,11 @@ void iniciarDesvio(unsigned long agora) {
   obstaculosConsecutivos = 0;
   leiturasLivresConsecutivas = 0;
   confirmandoObstaculo = false;
-  curvaAtualDireita = proximaCurvaDireita;
-  proximaCurvaDireita = !proximaCurvaDireita;
-  estadoDesvio = DESVIO_PAUSA_INICIAL;
+  if (permitirRe) {
+    curvaAtualDireita = proximaCurvaDireita;
+    proximaCurvaDireita = !proximaCurvaDireita;
+  }
+  estadoDesvio = permitirRe ? DESVIO_PAUSA_INICIAL : DESVIO_PAUSA_RE;
   estadoDesvioDesde = agora;
   Serial.println(F("EVENTO:DESVIO_INICIADO"));
 }
@@ -243,7 +248,12 @@ void atualizarDesvio(unsigned long agora) {
   switch (estadoDesvio) {
     case DESVIO_PAUSA_INICIAL:
       pararMotores();
-      if (decorrido >= TEMPO_PAUSA_MS) {
+      if (distanciaAtualCm > DISTANCIA_OBSTACULO_CM) {
+        // O objeto saiu antes da re. Exige duas medidas novas parado.
+        cancelarDesvio();
+        confirmandoObstaculo = true;
+      } else if (decorrido >= TEMPO_PAUSA_MS) {
+        permitirRe = false;
         andarParaTras();
         estadoDesvio = DESVIO_RE;
         estadoDesvioDesde = agora;
@@ -281,6 +291,7 @@ void atualizarDesvio(unsigned long agora) {
       // manobra; se continuar bloqueado, prolonga somente a curva.
       pararMotores();
       if (caminhoLivreConfirmado()) {
+        permitirRe = true;
         estadoDesvio = DESVIO_INATIVO;
         obstaculosConsecutivos = 0;
         leiturasLivresConsecutivas = 0;
@@ -359,6 +370,10 @@ void receberComando(ComandoMovimento comando, unsigned long agora) {
   comandoRecebido = comando;
   ultimoComandoEm = agora;
   controleUsbAtivo = true;
+  if (comando == CMD_PARAR && modo == MODO_AUTONOMO) {
+    // O modo local nao pode sobrescrever uma parada no proximo loop.
+    paradaEmergencia = true;
+  }
   if (comando == CMD_PARAR || (modo != MODO_AUTONOMO && comando == CMD_TRAS)) {
     cancelarDesvio();
   }
@@ -385,11 +400,13 @@ void processarLinha(char* linha, unsigned long agora) {
     comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
     ultimoComandoEm = agora;
     controleUsbAtivo = false;
+    permitirRe = true;
+    leiturasValidasSensor = 0;
     cancelarDesvio();
     Serial.println(F("OK:RESET_ESTOP"));
   } else if (strcmp(linha, "HELLO") == 0) {
     // Permite identificar o firmware mesmo quando abrir a porta nao reinicia o UNO.
-    Serial.println(F("QT:READY:V6"));
+    Serial.println(F("QT:READY:V7"));
   } else if (strcmp(linha, "PING") == 0) {
     // PING confirma apenas o enlace. So CMD:* renova a validade do movimento.
     Serial.println(F("PONG"));
@@ -448,7 +465,7 @@ void setup() {
   Serial.begin(9600);
   delay(2000);
   ultimoComandoEm = millis();
-  Serial.println(F("QT:READY:V6"));
+  Serial.println(F("QT:READY:V7"));
   Serial.println(F("OK:MODE:1"));
   aguardarComandoInicial();
 }
@@ -502,6 +519,7 @@ void loop() {
         iniciarDesvio(agora);
       } else if (caminhoLivreConfirmado()) {
         confirmandoObstaculo = false;
+        permitirRe = true;
         aplicarComando(desejado);
       }
     } else if (distanciaAtualCm <= DISTANCIA_OBSTACULO_CM) {
@@ -512,6 +530,7 @@ void loop() {
       leiturasLivresConsecutivas = 0;
       pararMotores();
     } else {
+      if (caminhoLivreConfirmado()) permitirRe = true;
       aplicarComando(desejado);
     }
   } else {

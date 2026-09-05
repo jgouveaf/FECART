@@ -3,6 +3,11 @@
 Data: 04/09/2026
 Escopo: Arduino UNO, L298N, HC-SR04, Web Serial e painel público.
 
+> Registro histórico da V6, revisto em 05/09: a nota 9,9 abaixo não demonstrava
+> confiabilidade. A revisão encontrou falhas em partida, parada e gravação,
+> além de colisões na arena 2D. Consulte `CORRECOES_V7_2026-09-05.md` para o
+> resultado atual e as limitações abertas. A V7 ainda exige teste físico suspenso.
+
 ## Resultado
 
 O Modo 1 aprovado pelo usuário foi incorporado ao firmware oficial V6 sem

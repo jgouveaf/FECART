@@ -97,7 +97,7 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertNotIn("sensorSeguro()", self.firmware)
 
     def test_serial_handshake_and_mode_commit_require_acknowledgement(self) -> None:
-        self.assertIn('REQUIRED_FIRMWARE_READY = "QT:READY:V6"', self.robot_js)
+        self.assertIn('REQUIRED_FIRMWARE_READY = "QT:READY:V7"', self.robot_js)
         self.assertIn('enqueueLine("HELLO"', self.robot_js)
         self.assertIn('readyLine !== REQUIRED_FIRMWARE_READY', self.robot_js)
         self.assertIn('CONFIRME A LIBERAÇÃO', self.robot_js)
@@ -116,7 +116,8 @@ class TestWebRobotControlOffline(unittest.TestCase):
     def test_boot_keeps_motors_stopped_during_serial_handshake_window(self) -> None:
         self.assertRegex(self.firmware, r"JANELA_COMANDO_INICIAL_MS\s*=\s*750UL")
         setup = self.firmware.split("void setup()", 1)[1].split("void loop()", 1)[0]
-        self.assertIn('Serial.println(F("QT:READY:V6"))', setup)
+        self.assertIn('Serial.println(F("QT:READY:V7"))', setup)
+        self.assertIn("bool paradaEmergencia = true;", self.firmware)
         self.assertIn("aguardarComandoInicial()", setup)
         guard = self.firmware.split("void aguardarComandoInicial()", 1)[1].split("void setup()", 1)[0]
         self.assertIn("pararMotores()", guard)

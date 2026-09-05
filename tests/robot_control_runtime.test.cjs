@@ -105,7 +105,7 @@ class FakePort {
     this.configuration = configuration;
     this.opened = true;
     if (this.options.ready !== false) {
-      setTimeout(() => this.emit(this.options.readyLine || "QT:READY:V6"), this.options.readyDelayMs || 0);
+      setTimeout(() => this.emit(this.options.readyLine || "QT:READY:V7"), this.options.readyDelayMs || 0);
     }
   }
   async close() {
@@ -122,7 +122,7 @@ class FakePort {
     if (line === "HELLO" && this.options.helloReady) {
       this.helloCount = (this.helloCount || 0) + 1;
       if (this.helloCount < (this.options.helloReadyAfter || 1)) return null;
-      return this.options.readyLine || "QT:READY:V6";
+      return this.options.readyLine || "QT:READY:V7";
     }
     if (line.startsWith("MODE:")) return `OK:${line}`;
     if (line.startsWith("CMD:")) return `OK:${line}`;
@@ -606,6 +606,59 @@ async function testModeTransitionSurvivesCameraStartupFailureInEstop() {
 
 async function main() {
   const tests = [
+    async function testFirmwareUploadMustStopEvenInLocalAutonomousMode() {
+      const e = createEnvironment({}, { ackTimeoutMs: 500 });
+      await e.robot.connect();
+      await releaseSafety(e);
+      const before = e.port.writes.length;
+      await e.robot.disconnect({ requireStop: true });
+      assert.deepEqual(e.port.writes.slice(before), ["ESTOP"]);
+      assert.equal(e.port.closed, true);
+      assert.equal(e.robot.connected, false);
+      await cleanup(e);
+    },
+    async function testMissingStopAckBlocksFirmwareDisconnect() {
+      const e = createEnvironment({}, { ackTimeoutMs: 80 });
+      await e.robot.connect();
+      await releaseSafety(e);
+      e.port.options.noAckFor = ["ESTOP"];
+      await assert.rejects(() => e.robot.disconnect({ requireStop: true }), /Parada não confirmada/);
+      assert.equal(e.port.closed, false, "manter controle disponível se a parada falhar");
+      assert.equal(e.robot.connected, true);
+      assert.equal(e.control.state.safety.emergency, true);
+      e.port.options.noAckFor = [];
+      await cleanup(e);
+    },
+    async function testMainEmergencyCancelsPendingModeInsteadOfIgnoringClick() {
+      const e = createEnvironment({}, { ackTimeoutMs: 500 });
+      await e.robot.connect();
+      await releaseSafety(e);
+      e.port.options.ackDelayMs = 40;
+      const before = e.port.writes.length;
+      e.robot.requestMode(2, "test");
+      await waitFor(() => e.port.writes.slice(before).includes("ESTOP"));
+      const atStop = e.port.writes.length;
+      await e.robot.emergencyStop();
+      await wait(80);
+      assert.equal(e.port.writes.slice(atStop).includes("ESTOP"), true);
+      assert.equal(e.port.writes.slice(atStop).includes("RESET_ESTOP"), false);
+      assert.equal(e.control.state.safety.emergency, true);
+      assert.equal(e.control.pendingMode, null);
+      await cleanup(e);
+    },
+    async function testMainEmergencyCancelsActiveMotorPulse() {
+      const e = createEnvironment({}, { ackTimeoutMs: 500 });
+      await e.robot.connect();
+      const running = e.robot.runProgram("motores", "DIREITA").catch(error => error);
+      await waitFor(() => e.port.writes.includes("CMD:DIREITA"));
+      const before = e.port.writes.length;
+      await e.robot.emergencyStop();
+      await running;
+      assert.equal(e.port.writes.slice(before).includes("RESET_ESTOP"), false);
+      assert.equal(e.port.writes.at(-1), "ESTOP");
+      assert.equal(e.control.state.safety.emergency, true);
+      await cleanup(e);
+    },
     async function testPhysicalButtonsSendOnlySelectedDirectionAndStop() {
       for (const direction of ["FRENTE", "TRAS", "DIREITA", "ESQUERDA"]) {
         const e = createEnvironment({}, { ackTimeoutMs: 500 });
@@ -644,7 +697,7 @@ async function main() {
       environment.robot._test.parseTelemetry("EVENTO:CURVA_CONTINUA");
       assert.match(environment.control.logs.at(-1).message, /Firmware prolongou/);
       assert.match(environment.control.logs.at(-1).message, /Giro físico não medido/);
-      environment.robot._test.parseTelemetry("QT:READY:V6");
+      environment.robot._test.parseTelemetry("QT:READY:V7");
       assert.match(environment.control.logs.at(-1).message, /responder HELLO/);
       await cleanup(environment);
     },

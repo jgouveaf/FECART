@@ -8,7 +8,7 @@ const progress = document.getElementById("firmwareFlashProgress");
 const status = document.getElementById("firmwareFlashStatus");
 const FIRMWARE_URL = new URL("../firmware/compiled/quantum_tracker_arduino.ino.hex", import.meta.url);
 // Hash do conteúdo servido pelo GitHub Pages (Git normaliza o Intel HEX para LF).
-const FIRMWARE_SHA256 = "79f8afdb87be2c489fe45d457d5897a8073fa18f4606df6e6cd493eb3cc70255";
+const FIRMWARE_SHA256 = "209502ace25deb4220434295e2f6703d5bf559f496a1a98ebd51a3f53bcdf614";
 let busy = false;
 
 function setStatus(state, title, detail, percentage = progress.value) {
@@ -21,7 +21,8 @@ function setStatus(state, title, detail, percentage = progress.value) {
 
 function friendlyError(error) {
   if (error?.name === "NotFoundError") return "Seleção cancelada. Clique novamente, marque ‘Arduino Uno (COM…)’ e depois clique em Conectar.";
-  if (error?.name === "NetworkError") return "A porta está ocupada. Desconecte o painel e feche o Monitor Serial.";
+  if (error?.name === "SecurityError") return "O navegador bloqueou a seleção USB. Abra em HTTPS no Chrome/Edge e clique novamente em Gravar.";
+  if (error?.name === "NetworkError") return "Não foi possível abrir a porta. Confira o cabo e feche o Monitor Serial antes de tentar novamente.";
   const message = String(error?.message || error || "Erro desconhecido.");
   if (/sync/i.test(message)) return "O bootloader não respondeu. Confirme que é um Arduino UNO e tente novamente.";
   if (/signature/i.test(message)) return "A placa selecionada não respondeu como Arduino UNO/ATmega328P.";
@@ -50,25 +51,34 @@ async function flashOfficialFirmware() {
     return;
   }
   if (!WebSerialTransport.isSupported()) {
-    throw new Error("Use Google Chrome ou Microsoft Edge no computador. Este navegador não oferece Web Serial.");
+    setStatus("error", "NAVEGADOR INCOMPATÍVEL", "Use Google Chrome ou Microsoft Edge no computador. Este navegador não oferece Web Serial.", 0);
+    return;
   }
-  if (!window.isSecureContext) throw new Error("A gravação USB exige o endereço HTTPS oficial do site.");
-  if (!window.confirm("As rodas estão suspensas e é seguro reiniciar o Arduino para gravar o firmware oficial?")) return;
+  if (!window.isSecureContext) {
+    setStatus("error", "ABRA O SITE HTTPS", "A gravação USB exige o endereço HTTPS oficial do site.", 0);
+    return;
+  }
+  if (!window.confirm("A alimentação dos motores está desligada e as rodas estão suspensas? O Arduino será reiniciado para gravar o firmware oficial.")) return;
 
   busy = true;
   button.disabled = true;
   button.textContent = "Preparando…";
-  setStatus("flashing", "PREPARANDO", "Baixando e verificando o firmware oficial…", 2);
+  setStatus("flashing", "SELECIONE O ARDUINO", "Na janela do navegador, escolha a porta do Arduino UNO.", 2);
   let transport = null;
+  let openAttempted = false;
   try {
-    if (window.quantumRobot?.connected) {
-      setStatus("flashing", "PARANDO O ROBÔ", "Enviando ESTOP e liberando a porta USB…", 4);
-      await window.quantumRobot.disconnect();
-    }
-    const hex = await loadVerifiedFirmware();
-    setStatus("flashing", "SELECIONE O ARDUINO", "Na janela do navegador, escolha a porta do Arduino UNO.", 6);
+    // A seleção exige ativação transitória. Não esperar download, hash ou
+    // desconexão antes de requestPort: numa rede lenta o clique pode expirar.
+    // Escolher a porta não a abre; cancelar mantém a conexão atual intacta.
     transport = await WebSerialTransport.requestPort();
+    if (window.quantumRobot?.connected) {
+      setStatus("flashing", "PARANDO O ROBÔ", "Aguardando confirmação de ESTOP antes de liberar a porta USB…", 4);
+      await window.quantumRobot.disconnect({ requireStop: true });
+    }
+    setStatus("flashing", "VERIFICANDO FIRMWARE", "Baixando e verificando o firmware oficial…", 6);
+    const hex = await loadVerifiedFirmware();
     const board = BOARDS["arduino-uno"];
+    openAttempted = true;
     await transport.open(board.baudRate);
     const programmer = new STK500(transport, board, {
       retry: { syncAttempts: 8, retryDelayMs: 250 },
@@ -88,7 +98,10 @@ async function flashOfficialFirmware() {
     setStatus(cancelled ? "" : "error", cancelled ? "PORTA NÃO CONFIRMADA" : "NÃO FOI POSSÍVEL GRAVAR", message, 0);
     window.QuantumControl?.log?.(cancelled ? "INFO" : "ERROR", "FIRMWARE", message);
   } finally {
-    try { await transport?.close(); } catch { /* porta já encerrada */ }
+    // Não fechar a porta apenas selecionada se ela ainda pertence ao controle.
+    if (openAttempted) {
+      try { await transport?.close(); } catch { /* porta já encerrada */ }
+    }
     busy = false;
     button.disabled = false;
     button.textContent = "Gravar no Arduino UNO";

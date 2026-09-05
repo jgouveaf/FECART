@@ -11,6 +11,7 @@ from .simulador_robo import (
 
 
 def preparar_caminho_livre(robo: SimuladorRobo) -> None:
+    robo.processar_linha("RESET_ESTOP")
     robo.ler_sensor(100)
     robo.ler_sensor(100)
 
@@ -21,14 +22,68 @@ def confirmar_obstaculo(robo: SimuladorRobo, distancia: float = 4.0) -> None:
     robo.ler_sensor(distancia)
 
 
-class TesteFirmwareIntegradoV6(unittest.TestCase):
-    def test_boot_fica_parado_ate_duas_leituras_validas(self) -> None:
+class TesteFirmwareIntegradoV7(unittest.TestCase):
+    def test_boot_fica_parado_ate_liberacao_explicita_e_duas_leituras_novas(self) -> None:
         robo = SimuladorRobo()
+        robo.ler_sensor(100)
+        robo.ler_sensor(100)
+        for comando in ("HELLO", "PING", "STATUS", "MODE:1", "CMD:FRENTE"):
+            robo.processar_linha(comando)
+        robo.avancar_tempo(60_000)
+        self.assertEqual(robo.estado_operacional, EstadoOperacional.ESTOP)
+        self.assertEqual(robo.motores, PARADO)
+        robo.processar_linha("RESET_ESTOP")
         robo.ler_sensor(100)
         self.assertEqual(robo.motores, PARADO)
         self.assertEqual(robo.estado_operacional, EstadoOperacional.SENSOR_FAIL)
         robo.ler_sensor(100)
         self.assertEqual(robo.motores, FRENTE)
+
+    def test_cmd_parar_autonomo_fica_travado_ate_reset_estop(self) -> None:
+        robo = SimuladorRobo()
+        preparar_caminho_livre(robo)
+        self.assertEqual(robo.processar_linha("CMD:PARAR"), ["OK:CMD:PARAR"])
+        for distancia in (100, 4, None, 100, 100):
+            robo.ler_sensor(distancia)
+        robo.processar_linha("MODE:1")
+        robo.processar_linha("CMD:FRENTE")
+        robo.avancar_tempo(60_000)
+        self.assertEqual(robo.motores, PARADO)
+        self.assertEqual(robo.estado_operacional, EstadoOperacional.ESTOP)
+        preparar_caminho_livre(robo)
+        self.assertEqual(robo.motores, FRENTE)
+
+    def test_falha_sensor_nao_repete_re_do_mesmo_obstaculo(self) -> None:
+        for tempo in (150, 550, 700, 1350):
+            with self.subTest(interrupcao_ms=tempo):
+                robo = SimuladorRobo()
+                preparar_caminho_livre(robo)
+                confirmar_obstaculo(robo)
+                robo.avancar_tempo(tempo)
+                direcao = robo.curva_atual_direita
+                for _ in range(3):
+                    robo.ler_sensor(None)
+                    self.assertEqual(robo.motores, PARADO)
+                    for _ in range(4):
+                        robo.ler_sensor(4)
+                    robo.avancar_tempo(150)
+                    self.assertEqual(robo.estado_desvio, EstadoDesvio.CURVA)
+                    self.assertEqual(robo.curva_atual_direita, direcao)
+                    comandos = [registro[3] for registro in robo.historico]
+                    self.assertEqual(comandos.count(Comando.TRAS), 1)
+
+    def test_objeto_removido_antes_da_re_cancela_manobra(self) -> None:
+        robo = SimuladorRobo()
+        preparar_caminho_livre(robo)
+        confirmar_obstaculo(robo)
+        robo.ler_sensor(100)
+        robo.avancar_tempo(200)
+        self.assertEqual(robo.motores, PARADO)
+        robo.ler_sensor(100)
+        self.assertEqual(robo.motores, PARADO)
+        robo.ler_sensor(100)
+        self.assertEqual(robo.motores, FRENTE)
+        self.assertNotIn(TRAS, [registro[-1] for registro in robo.historico])
 
     def test_autonomo_nao_possui_timeout_de_missao(self) -> None:
         robo = SimuladorRobo()
@@ -74,6 +129,7 @@ class TesteFirmwareIntegradoV6(unittest.TestCase):
 
     def test_curvas_de_novos_desvios_alternam(self) -> None:
         robo = SimuladorRobo()
+        robo.processar_linha("RESET_ESTOP")
         robo.executar_desvio_completo()
         confirmar_obstaculo(robo)
         robo.avancar_tempo(150 + 400 + 150)
@@ -164,9 +220,9 @@ class TesteFirmwareIntegradoV6(unittest.TestCase):
         self.assertEqual(robo.receber_bytes("CMD:FRENTE\n"), ["OK:CMD:FRENTE"])
         self.assertEqual(robo.motores, FRENTE)
 
-    def test_protocolo_e_telemetria_v6(self) -> None:
+    def test_protocolo_e_telemetria_v7(self) -> None:
         robo = SimuladorRobo()
-        self.assertEqual(robo.processar_linha("HELLO"), ["QT:READY:V6"])
+        self.assertEqual(robo.processar_linha("HELLO"), ["QT:READY:V7"])
         preparar_caminho_livre(robo)
         self.assertEqual(
             robo.processar_linha("STATUS"),
@@ -175,6 +231,7 @@ class TesteFirmwareIntegradoV6(unittest.TestCase):
 
     def test_quinhentos_ciclos_de_obstaculo_nao_travam(self) -> None:
         robo = SimuladorRobo()
+        robo.processar_linha("RESET_ESTOP")
         for _ in range(500):
             robo.executar_desvio_completo()
             self.assertEqual(robo.estado_desvio, EstadoDesvio.INATIVO)

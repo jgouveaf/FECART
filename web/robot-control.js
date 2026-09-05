@@ -38,7 +38,7 @@
   const MAX_READ_BUFFER = 512;
   const MAX_RECOVERABLE_READ_ERRORS = Number(testConfig.maxRecoverableReadErrors) || 2;
   const OBSTACLE_DISTANCE_CM = 5;
-  const REQUIRED_FIRMWARE_READY = "QT:READY:V6";
+  const REQUIRED_FIRMWARE_READY = "QT:READY:V7";
 
   let port = null;
   let reader = null;
@@ -288,7 +288,7 @@
     resolveLineWaiters(line);
 
     if (line.startsWith("QT:READY:")) {
-      if (stateStatus) stateStatus.textContent = line === REQUIRED_FIRMWARE_READY ? "FIRMWARE V6 PRONTO" : "FIRMWARE INCOMPATÍVEL";
+      if (stateStatus) stateStatus.textContent = line === REQUIRED_FIRMWARE_READY ? "FIRMWARE V7 PRONTO" : "FIRMWARE INCOMPATÍVEL";
       log("INFO", "ARDUINO", `Resposta de identificação: ${line}. Pode ocorrer ao iniciar ou responder HELLO; não confirma movimento.`);
       return;
     }
@@ -484,7 +484,7 @@
   async function connectRobot() {
     if (transportOpen || closing || connecting) return false;
     if (window.quantumAutonomousBench?.usbBusy || window.quantumFirmwareFlasher?.busy) {
-      setConnection("USB EM OUTRO PAINEL", "OFFLINE", "Use Parar e desconectar no autônomo isolado em Códigos, ou aguarde a gravação terminar.");
+      setConnection("USB EM USO", "OFFLINE", "Aguarde a gravação ou a conexão em andamento terminar.");
       return false;
     }
     if (window.location?.protocol === "file:") {
@@ -537,7 +537,7 @@
       consecutiveMotionFailures = 0;
       pendingMotion = null;
       setControlsForConnection("ONLINE");
-      setConnection("CONECTADO · BLOQUEADO", "ONLINE", `Firmware V6 confirmado em ${MODE_NAMES[activeMode]}. Confira as rodas e clique em “Liberar após conferir”.`);
+      setConnection("CONECTADO · BLOQUEADO", "ONLINE", `Firmware V7 confirmado em ${MODE_NAMES[activeMode]}. Confira as rodas e clique em “Liberar após conferir”.`);
       renderMode(activeMode);
       updateDeliveryHint();
       log("WARNING", "SEGURANÇA", `Arduino sincronizado em ${MODE_NAMES[activeMode]} e mantido em ESTOP até liberação explícita`);
@@ -763,7 +763,13 @@
   }
 
   async function toggleEmergency() {
-    if (!connected || modeTransitioning) return;
+    if (!connected) return;
+    // Durante uma troca ou teste, o botão sempre cancela e para. Nunca deixa
+    // uma transição pendente impedir ESTOP ou interpretá-lo como liberação.
+    if (modeTransitioning || programRunning) {
+      await stopPhysicalTest();
+      return;
+    }
     const operationToken = ++operationGeneration;
     rejectSupersededOperationWaiters(operationToken);
     const connectionToken = connectionGeneration;
@@ -1014,8 +1020,8 @@
       if (program === "principal") {
         lastIntent = "FRENTE";
         lastFreshInputAt = performance.now();
-        lastAcknowledgedCommand = "FRENTE";
-        if (commandStatus) commandStatus.textContent = "FRENTE";
+        // MODE/RESET confirma ativação, não a direção aplicada: sensor ou
+        // manobra podem manter as rodas paradas. Aguarde a telemetria real.
         updateDeliveryHint();
         log("INFO", "CÓDIGOS", "Código principal iniciado no Modo 1 local e contínuo");
         return { program, label: "Autônomo rodando" };
@@ -1066,23 +1072,37 @@
   }
 
   async function stopPhysicalTest() {
-    if (!connected) return;
+    if (!connected) return false;
     const operationToken = ++operationGeneration;
     rejectSupersededOperationWaiters(operationToken);
     ++modeGeneration;
     pendingMotion = null;
     lastIntent = "PARAR";
     lastFreshInputAt = 0;
+    modeTransitioning = false;
+    if (control?.pendingMode) {
+      control.rejectMode?.(cancelled("Troca de modo cancelada pela parada."), "operator-stop");
+      renderMode(activeMode);
+    }
     setEmergencyUi(true, "PARADA SOLICITADA", "operator");
     try {
       await transact("ESTOP", line => line === "OK:ESTOP", { connectionToken: connectionGeneration, operationToken });
       setEmergencyUi(true, "PARADA CONFIRMADA", "operator");
       if (motorTestStatus) motorTestStatus.textContent = "Parada confirmada pelo firmware. Verifique as rodas.";
+      return true;
     } catch (error) {
       setEmergencyUi(true, "PARADA SEM CONFIRMAÇÃO", "fault");
       if (motorTestStatus) motorTestStatus.textContent = "Parada não confirmada. Desligue a alimentação dos motores.";
       reportError("Falha ao confirmar parada", error);
+      return false;
     }
+  }
+
+  async function disconnectForFirmware() {
+    if (!await stopPhysicalTest()) {
+      throw new Error("Parada não confirmada. Desligue os motores antes de tentar gravar novamente.");
+    }
+    await closePort({ sendEstop: false, reason: "FIRMWARE_UPLOAD" });
   }
 
   for (const button of motorTestButtons) button.addEventListener("click", async () => {
@@ -1105,7 +1125,9 @@
     connect: connectRobot,
     runProgram,
     stopPhysicalTest,
-    disconnect: () => closePort({ sendEstop: activeMode !== 1, reason: "API" }),
+    disconnect: (options = {}) => options.requireStop
+      ? disconnectForFirmware()
+      : closePort({ sendEstop: activeMode !== 1, reason: "API" }),
     requestMode,
     emergencyStop: toggleEmergency,
     send(command) { return acceptIntent(String(command || "").toUpperCase(), "api", { fresh: true }); },

@@ -1,4 +1,9 @@
-"""Arena 2D sem hardware para validar o desvio de obstaculos da Etapa 1."""
+"""Arena 2D exploratoria; nao certifica o desvio fisico da Etapa 1.
+
+Limitacao conhecida: curvas ainda rotacionam o centro do modelo, enquanto a
+montagem aprovada faz arco com uma roda parada. Os cenarios com colisao sao
+mantidos como falhas de qualificacao, nao como aprovacao para uso no piso.
+"""
 
 from __future__ import annotations
 
@@ -126,6 +131,14 @@ class RoboNaArena:
         self.menor_distancia_cm = self.ALCANCE_SENSOR_CM
         self.colisoes = 0
         self.proxima_leitura_sensor_ms = 0
+
+    def iniciar_autonomo(self) -> None:
+        """Representa a escolha/liberacao explicita do Modo 1 pelo operador."""
+        self.controle.processar_linha("MODE:1")
+        self.controle.processar_linha("RESET_ESTOP")
+
+    def parar(self) -> None:
+        self.controle.processar_linha("ESTOP")
 
     def _paredes_como_retangulos(self) -> tuple[Retangulo, ...]:
         espessura = 1.0
@@ -263,7 +276,9 @@ def cenarios_padrao() -> dict[str, tuple[Arena, tuple[float, float, float]]]:
 
 def demonstracao() -> None:
     for nome, (arena, pose) in cenarios_padrao().items():
-        resultado = RoboNaArena(arena, *pose).executar(30)
+        robo = RoboNaArena(arena, *pose)
+        robo.iniciar_autonomo()
+        resultado = robo.executar(30)
         print(
             f"{nome:24s} | colisoes={resultado.colisoes} "
             f"desvios={resultado.desvios} distancia={resultado.distancia_percorrida_cm:.1f} cm "

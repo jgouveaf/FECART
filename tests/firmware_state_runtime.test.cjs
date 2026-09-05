@@ -20,6 +20,7 @@ function body(name) {
   }
   return source.slice(start + 1, end - 1)
     .replace(/\bconst (unsigned long|bool|ComandoMovimento) /g, 'const ')
+    .replace(/\((?:ModoRobo|byte)\)/g, '')
     .replace(/\b(\d+)UL\b/g, '$1');
 }
 
@@ -29,7 +30,9 @@ function environment() {
     estadoDesvio: 0, estadoDesvioDesde: 0, ultimoSensorEm: 0,
     ultimoComandoEm: 0, falhasConsecutivasSensor: 0,
     leiturasValidasSensor: 0, leiturasLivresConsecutivas: 0,
-    obstaculosConsecutivos: 0, paradaEmergencia: false,
+    obstaculosConsecutivos: 0,
+    paradaEmergencia: /bool paradaEmergencia = true;/.test(source),
+    permitirRe: true,
     controleUsbAtivo: false, sensorInicializado: false,
     confirmandoObstaculo: false, proximaCurvaDireita: true,
     curvaAtualDireita: true, comandoRecebido: 0, comandoAplicado: 0,
@@ -49,7 +52,9 @@ function environment() {
     }
   }
 
-  env.Serial = { println: value => env.events.push(value) };
+  env.Serial = { print: () => {}, println: value => env.events.push(value) };
+  env.strcmp = (left, right) => left === right ? 0 : 1;
+  env.nomeComando = command => command;
   env.millis = () => env.now;
   env.lerSerial = () => {};
   env.enviarStatus = () => {};
@@ -75,10 +80,15 @@ function environment() {
   for (const name of ['atualizarSensor', 'obstaculoConfirmado',
     'caminhoLivreConfirmado', 'sensorPronto', 'comandoExigeFrenteLivre',
     'cancelarDesvio', 'iniciarDesvio', 'atualizarDesvio',
-    'comandoDesejadoPeloModo', 'loop']) {
-    const params = oneArgument.has(name)
+    'comandoDesejadoPeloModo', 'selecionarModo', 'receberComando',
+    'processarLinha', 'loop']) {
+    const namedParams = {
+      selecionarModo: 'numero, agora', receberComando: 'comando, agora',
+      processarLinha: 'linha, agora',
+    };
+    const params = namedParams[name] || (oneArgument.has(name)
       ? (name === 'comandoExigeFrenteLivre' ? 'comando' : 'agora')
-      : '';
+      : '');
     vm.runInContext(`function ${name}(${params}) {${body(name)}}`, env);
   }
 
@@ -92,15 +102,21 @@ function environment() {
   return env;
 }
 
-function testContinuousAutonomousHasNoMissionTimeout() {
+function runningEnvironment() {
   const env = environment();
+  env.processarLinha('RESET_ESTOP', env.now);
+  return env;
+}
+
+function testContinuousAutonomousHasNoMissionTimeout() {
+  const env = runningEnvironment();
   env.tick(100, 600000);
   assert.equal(env.comandoAplicado, env.CMD_FRENTE);
   assert.equal(env.estadoDesvio, env.DESVIO_INATIVO);
 }
 
 function testFirstNearReadingStopsBeforeConfirmation() {
-  const env = environment();
+  const env = runningEnvironment();
   env.tick(100, 160);
   assert.equal(env.comandoAplicado, env.CMD_FRENTE);
   env.tick(4, 80);
@@ -110,7 +126,7 @@ function testFirstNearReadingStopsBeforeConfirmation() {
 }
 
 function testNoiseSpikeRecoversWithoutReverse() {
-  const env = environment();
+  const env = runningEnvironment();
   env.tick(100, 160);
   env.tick(4, 80);
   env.tick(100, 160);
@@ -121,10 +137,11 @@ function testNoiseSpikeRecoversWithoutReverse() {
 }
 
 function testRepeatedObstacleCyclesAlwaysResume() {
-  const env = environment();
+  const env = runningEnvironment();
   for (let cycle = 0; cycle < 100; cycle++) {
     env.tick(4, 320);
     assert.equal(env.estadoDesvio, env.DESVIO_PAUSA_INICIAL);
+    env.tick(4, 1400);
     env.tick(100, 2200);
     assert.equal(env.estadoDesvio, env.DESVIO_INATIVO);
     assert.equal(env.comandoAplicado, env.CMD_FRENTE);
@@ -132,7 +149,7 @@ function testRepeatedObstacleCyclesAlwaysResume() {
 }
 
 function testMissingEchoStopsAndRequiresTwoValidReadings() {
-  const env = environment();
+  const env = runningEnvironment();
   env.tick(100, 160);
   assert.equal(env.comandoAplicado, env.CMD_FRENTE);
   env.tick(-1, 80);
@@ -147,7 +164,7 @@ function testMissingEchoStopsAndRequiresTwoValidReadings() {
 
 function testSensorFailureInterruptsEveryManeuverPhase() {
   for (let phase = 1; phase <= 5; phase++) {
-    const env = environment();
+    const env = runningEnvironment();
     env.sensorInicializado = true;
     env.leiturasValidasSensor = 2;
     env.distanciaAtualCm = 4;
@@ -160,7 +177,7 @@ function testSensorFailureInterruptsEveryManeuverPhase() {
 
 function testEstopDominatesEveryManeuverPhase() {
   for (let phase = 0; phase <= 5; phase++) {
-    const env = environment();
+    const env = runningEnvironment();
     env.estadoDesvio = phase;
     env.paradaEmergencia = true;
     env.tick(100, 2000);
@@ -170,7 +187,7 @@ function testEstopDominatesEveryManeuverPhase() {
 
 function testRemoteTimeoutStopsModesTwoAndThree() {
   for (const mode of [2, 3]) {
-    const env = environment();
+    const env = runningEnvironment();
     env.modo = mode;
     env.controleUsbAtivo = true;
     env.comandoRecebido = env.CMD_FRENTE;
@@ -180,7 +197,7 @@ function testRemoteTimeoutStopsModesTwoAndThree() {
 }
 
 function testPersistentObstacleCurvesWithoutSecondReverseOrBlindAdvance() {
-  const env = environment();
+  const env = runningEnvironment();
   env.tick(4, 320);
   env.tick(4, 8000);
   assert.notEqual(env.comandoAplicado, env.CMD_FRENTE);
@@ -198,6 +215,73 @@ function testApprovedMotorPolarityAndSoftTurns() {
   assert.match(body('girarEsquerda'), /aplicarMotores\(LOW, LOW, LOW, HIGH\)/);
 }
 
+function testBootAndResetRequireExplicitRelease() {
+  // Each fresh environment represents RAM reinitialization at boot/reset.
+  for (let boot = 0; boot < 3; boot++) {
+    const env = environment();
+    for (const line of ['HELLO', 'PING', 'STATUS', 'MODE:1', 'CMD:FRENTE']) {
+      env.processarLinha(line, env.now);
+      env.tick(100, 1000);
+    }
+    env.tick(100, 60000);
+    assert.equal(env.paradaEmergencia, true);
+    assert.equal(env.comandoAplicado, env.CMD_PARAR);
+    assert.equal(env.motions.includes(env.CMD_FRENTE), false);
+    env.processarLinha('RESET_ESTOP', env.now);
+    env.tick(100, 80);
+    assert.equal(env.comandoAplicado, env.CMD_PARAR);
+    env.tick(100, 80);
+    assert.equal(env.comandoAplicado, env.CMD_FRENTE);
+  }
+}
+
+function testAutonomousStopCommandIsLatched() {
+  const env = runningEnvironment();
+  env.tick(100, 160);
+  env.processarLinha('CMD:PARAR', env.now);
+  env.processarLinha('CMD:FRENTE', env.now);
+  env.processarLinha('MODE:1', env.now);
+  env.tick(-1, 80);
+  env.tick(100, 60000);
+  assert.equal(env.paradaEmergencia, true);
+  assert.equal(env.comandoAplicado, env.CMD_PARAR);
+  env.processarLinha('RESET_ESTOP', env.now);
+  env.tick(100, 160);
+  assert.equal(env.comandoAplicado, env.CMD_FRENTE);
+}
+
+function testSensorRecoveryNeverRepeatsReverseForSameObstacle() {
+  for (const phase of [2, 3, 4, 5]) {
+    const env = runningEnvironment();
+    env.tick(4, 320);
+    while (env.estadoDesvio !== phase && env.now < 3000) env.tick(4, 10);
+    assert.equal(env.estadoDesvio, phase);
+    const direction = env.curvaAtualDireita;
+    for (let interruption = 0; interruption < 3; interruption++) {
+      env.tick(-1, 80);
+      assert.equal(env.comandoAplicado, env.CMD_PARAR);
+      env.tick(4, 600);
+      assert.equal(env.estadoDesvio, env.DESVIO_CURVA);
+      assert.equal(env.curvaAtualDireita, direction);
+      assert.equal(env.motions.filter(command => command === env.CMD_TRAS).length, 1);
+    }
+    env.tick(100, 1800);
+    assert.equal(env.comandoAplicado, env.CMD_FRENTE);
+    env.tick(4, 600);
+    assert.equal(env.motions.filter(command => command === env.CMD_TRAS).length, 2);
+    assert.notEqual(env.curvaAtualDireita, direction);
+  }
+}
+
+function testRemovedObstacleCancelsPendingReverse() {
+  const env = runningEnvironment();
+  env.tick(4, 320);
+  env.tick(100, 500);
+  assert.equal(env.comandoAplicado, env.CMD_FRENTE);
+  assert.equal(env.estadoDesvio, env.DESVIO_INATIVO);
+  assert.equal(env.motions.includes(env.CMD_TRAS), false);
+}
+
 const tests = [testContinuousAutonomousHasNoMissionTimeout,
   testFirstNearReadingStopsBeforeConfirmation, testNoiseSpikeRecoversWithoutReverse,
   testRepeatedObstacleCyclesAlwaysResume,
@@ -205,7 +289,10 @@ const tests = [testContinuousAutonomousHasNoMissionTimeout,
   testSensorFailureInterruptsEveryManeuverPhase,
   testEstopDominatesEveryManeuverPhase, testRemoteTimeoutStopsModesTwoAndThree,
   testPersistentObstacleCurvesWithoutSecondReverseOrBlindAdvance,
-  testApprovedMotorPolarityAndSoftTurns];
+  testApprovedMotorPolarityAndSoftTurns, testBootAndResetRequireExplicitRelease,
+  testAutonomousStopCommandIsLatched,
+  testSensorRecoveryNeverRepeatsReverseForSameObstacle,
+  testRemovedObstacleCancelsPendingReverse];
 
 for (const test of tests) {
   test();

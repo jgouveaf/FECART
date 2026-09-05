@@ -1,6 +1,6 @@
 # Quantum Tracker — Arduino UNO e controle USB
 
-Firmware integrado V6 para Arduino UNO, L298N, dois motores DC e HC-SR04. Ele
+Firmware integrado V7 para Arduino UNO, L298N, dois motores DC e HC-SR04. Ele
 mantém a segurança no próprio Arduino e aceita comandos do site pelo cabo USB.
 Câmera e visão executam no computador; o Arduino não depende delas para
 detectar o obstáculo à frente. O projeto atual não usa ESP32 nem Bluetooth.
@@ -39,33 +39,35 @@ Como alternativa:
 3. Feche o Monitor Serial e feche qualquer site/app que esteja usando essa COM.
 4. Deixe as rodas suspensas, confira a polaridade da alimentação e clique em
    **Carregar**.
-5. A compilação validada usa 7.192 bytes de flash e 400 bytes de RAM. O sketch
+5. A compilação validada usa 7.296 bytes de flash e 401 bytes de RAM. O sketch
    não precisa de biblioteca externa.
 
 O código permanece gravado no UNO depois que o cabo ou a alimentação são
 desligados. Depois de usar o IDE, feche o Monitor Serial e o Arduino IDE para
 liberar a porta COM ao site.
 
-Sem o site conectado, o Modo 1 começa automaticamente. Para usar o painel,
-abra-o no Chrome ou Edge para computador, clique em **Conectar Arduino USB** e
-escolha o Arduino UNO. O UNO reinicia quando a porta serial é aberta. Após
-anunciar `QT:READY:V6`, o firmware mantém as rodas paradas por mais 750 ms para
-o painel concluir o handshake e confirmar `ESTOP` antes de qualquer movimento.
+Ao ligar ou reiniciar, o firmware permanece em ESTOP, sem partida automática.
+Abra o painel no Chrome ou Edge para computador, clique em **Conectar Arduino
+USB** e escolha o Arduino UNO. Abrir a serial pode reiniciar a placa. Aguarde
+`Firmware V7 confirmado` e, com as rodas suspensas, clique em **Ativar Modo 1**
+na aba Códigos. A liberação exige duas novas leituras válidas do sensor.
 
 ## Os três modos
 
 ### Modo 1 — autônomo
 
-O Arduino começa a andar depois de duas leituras válidas do HC-SR04. A primeira
+Após a liberação explícita, o Arduino anda depois de duas novas leituras válidas do HC-SR04. A primeira
 leitura de até 5 cm já para as rodas; duas novas leituras próximas confirmam o
 desvio: recuar uma única vez, fazer uma curva suave e confirmar duas leituras
 livres na nova direção. Se ainda estiver bloqueado, prolonga somente a curva,
-sem repetir a ré. O lado é alternado entre manobras. Esse modo continua
-funcionando mesmo sem site conectado.
+sem repetir a ré, inclusive após uma falha do sensor na curva. O lado é alternado
+entre manobras. Depois de iniciado, esse modo continua funcionando mesmo sem site
+conectado, mas um reset ou desligamento volta a exigir liberação.
 
 **O limite de 5 cm foi aprovado somente com as rodas suspensas e não é uma
 distância segura validada para uso no piso.** Ele deve ser calibrado antes do
-ensaio livre.
+ensaio livre. A arena 2D reprovou três cenários com esse ajuste; a V7 é destinada
+ao próximo teste supervisionado com rodas suspensas, não está liberada para o piso.
 
 ### Modo 2 — seguir pessoa
 
@@ -92,6 +94,10 @@ comando novo por 1,5 s, o próprio Arduino também para.
 ## Camadas de segurança
 
 - `PARAR` e `ESTOP` cancelam um desvio em andamento.
+- No Modo 1, `CMD:PARAR` permanece travado até `RESET_ESTOP`; nos modos remotos,
+  um novo comando pode substituir `PARAR`, mas nunca um `ESTOP` ainda ativo.
+- Gravar pelo site exige confirmação de `ESTOP` antes de fechar uma conexão
+  de controle existente. Sem confirmação, a gravação é cancelada.
 - Nenhum motor é liberado antes de duas leituras válidas do HC-SR04.
 - O HC-SR04 é verificado nos três modos e sempre vence um comando da câmera.
 - Após uma curva, duas leituras livres confirmam o novo caminho antes do avanço.

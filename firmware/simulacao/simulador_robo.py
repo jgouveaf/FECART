@@ -1,4 +1,4 @@
-"""Modelo determinístico do firmware integrado V6.
+"""Modelo determinístico do firmware integrado V7.
 
 Espelha protocolo, temporização e máquina de estados, mas não simula bateria,
 atrito, inércia, ruído elétrico nem rotação física do chassi.
@@ -99,12 +99,13 @@ class SimuladorRobo:
         self.confirmando_obstaculo = False
         self.proxima_curva_direita = True
         self.curva_atual_direita = True
-        self.parada_emergencia = False
+        self.parada_emergencia = True
+        self.permitir_re = True
         self.controle_usb_ativo = False
         self.desvios_iniciados = 0
         self._linha_serial = ""
         self._descartando_linha_serial = False
-        self.saida_serial: list[str] = ["QT:READY:V6", "OK:MODE:1"]
+        self.saida_serial: list[str] = ["QT:READY:V7", "OK:MODE:1"]
         self.historico: list[
             tuple[int, Modo, EstadoDesvio, Comando, SaidaMotores]
         ] = []
@@ -198,9 +199,12 @@ class SimuladorRobo:
         self.obstaculos_consecutivos = 0
         self.leituras_livres_consecutivas = 0
         self.confirmando_obstaculo = False
-        self.curva_atual_direita = self.proxima_curva_direita
-        self.proxima_curva_direita = not self.proxima_curva_direita
-        self.estado_desvio = EstadoDesvio.PAUSA_INICIAL
+        if self.permitir_re:
+            self.curva_atual_direita = self.proxima_curva_direita
+            self.proxima_curva_direita = not self.proxima_curva_direita
+        self.estado_desvio = (
+            EstadoDesvio.PAUSA_INICIAL if self.permitir_re else EstadoDesvio.PAUSA_RE
+        )
         self.estado_desvio_desde_ms = self.agora_ms
         self.desvios_iniciados += 1
         self._emitir("EVENTO:DESVIO_INICIADO")
@@ -241,13 +245,16 @@ class SimuladorRobo:
 
     def _atualizar_desvio(self) -> None:
         decorrido = self.agora_ms - self.estado_desvio_desde_ms
-        if (
-            self.estado_desvio is EstadoDesvio.PAUSA_INICIAL
-            and decorrido >= self.TEMPO_PAUSA_MS
-        ):
-            self._aplicar_comando(Comando.TRAS)
-            self.estado_desvio = EstadoDesvio.RE
-            self.estado_desvio_desde_ms = self.agora_ms
+        if self.estado_desvio is EstadoDesvio.PAUSA_INICIAL:
+            self._parar()
+            if self.distancia_atual_cm > self.DISTANCIA_OBSTACULO_CM:
+                self._cancelar_desvio()
+                self.confirmando_obstaculo = True
+            elif decorrido >= self.TEMPO_PAUSA_MS:
+                self.permitir_re = False
+                self._aplicar_comando(Comando.TRAS)
+                self.estado_desvio = EstadoDesvio.RE
+                self.estado_desvio_desde_ms = self.agora_ms
         elif (
             self.estado_desvio is EstadoDesvio.RE
             and decorrido >= self.TEMPO_RE_MS
@@ -277,6 +284,7 @@ class SimuladorRobo:
         elif self.estado_desvio is EstadoDesvio.PAUSA_CURVA:
             self._parar()
             if self.caminho_livre_confirmado:
+                self.permitir_re = True
                 self.estado_desvio = EstadoDesvio.INATIVO
                 self.obstaculos_consecutivos = 0
                 self.leituras_livres_consecutivas = 0
@@ -327,6 +335,7 @@ class SimuladorRobo:
                     self._iniciar_desvio()
                 elif self.caminho_livre_confirmado:
                     self.confirmando_obstaculo = False
+                    self.permitir_re = True
                     self._aplicar_comando(desejado)
             elif self.distancia_atual_cm <= self.DISTANCIA_OBSTACULO_CM:
                 self.confirmando_obstaculo = True
@@ -334,6 +343,8 @@ class SimuladorRobo:
                 self.leituras_livres_consecutivas = 0
                 self._parar()
             else:
+                if self.caminho_livre_confirmado:
+                    self.permitir_re = True
                 self._aplicar_comando(desejado)
         else:
             self.confirmando_obstaculo = False
@@ -357,7 +368,6 @@ class SimuladorRobo:
             Comando.FRENTE if self.modo is Modo.AUTONOMO else Comando.PARAR
         )
         self.ultimo_comando_ms = self.agora_ms
-        self.controle_usb_ativo = False
         self._cancelar_desvio()
         self._emitir(f"OK:MODE:{numero}")
 
@@ -365,6 +375,8 @@ class SimuladorRobo:
         self.comando_recebido = comando
         self.ultimo_comando_ms = self.agora_ms
         self.controle_usb_ativo = True
+        if comando is Comando.PARAR and self.modo is Modo.AUTONOMO:
+            self.parada_emergencia = True
         if comando is Comando.PARAR or (
             self.modo is not Modo.AUTONOMO and comando is Comando.TRAS
         ):
@@ -393,10 +405,12 @@ class SimuladorRobo:
             )
             self.ultimo_comando_ms = self.agora_ms
             self.controle_usb_ativo = False
+            self.permitir_re = True
+            self.leituras_validas_sensor = 0
             self._cancelar_desvio()
             self._emitir("OK:RESET_ESTOP")
         elif linha == "HELLO":
-            self._emitir("QT:READY:V6")
+            self._emitir("QT:READY:V7")
         elif linha == "PING":
             self._emitir("PONG")
         elif linha == "STATUS":
@@ -454,6 +468,7 @@ class SimuladorRobo:
 
 def demonstracao() -> None:
     robo = SimuladorRobo()
+    robo.processar_linha("RESET_ESTOP")
     robo.executar_desvio_completo()
     for tempo, modo, desvio, comando, motores in robo.historico:
         print(

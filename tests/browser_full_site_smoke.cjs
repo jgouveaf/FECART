@@ -58,7 +58,7 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
     }));
     await page.locator("#simGestureMode").click();
     const simulator = {};
-    for (const command of ["FRENTE", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]) {
+    for (const command of ["FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]) {
       const before = await page.evaluate(() => window.QuantumSimulator.snapshot());
       await page.locator(`[data-simulator-command="${command}"]`).click();
       await page.waitForTimeout(40);
@@ -71,6 +71,10 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
     await page.keyboard.press("2");
     await page.waitForTimeout(50);
     simulator.keyboard = await page.evaluate(() => window.QuantumSimulator.snapshot());
+    await page.keyboard.press("4");
+    simulator.keyboardReverse = await page.evaluate(() => window.QuantumSimulator.snapshot());
+    await page.keyboard.press("Space");
+    simulator.keyboardStop = await page.evaluate(() => window.QuantumSimulator.snapshot());
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("quantum:gesture-command", {
       detail: { command: "FRENTE", stable: true, confidence: 0.95 },
     })));
@@ -78,6 +82,11 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
     await page.waitForTimeout(1050);
     const gestureTimeout = await page.evaluate(() => window.QuantumSimulator.snapshot());
     simulator.gesture = { start: gestureStart, timeout: gestureTimeout };
+    await page.evaluate(() => {
+      window.dispatchEvent(new CustomEvent("quantum:gesture-command", { detail: { command: "TRAS", stable: true, confidence: .95 } }));
+      window.dispatchEvent(new CustomEvent("quantum:gesture-command", { detail: { command: "PARAR", stable: false, reason: "HAND_LOST" } }));
+    });
+    simulator.handLost = await page.evaluate(() => window.QuantumSimulator.snapshot());
     await page.locator("#simAutonomousMode").click();
     await page.locator("#startCamera").click();
     await page.waitForFunction(() => window.quantumCameraController.active, null, { timeout: 15000 });
@@ -133,12 +142,16 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
     const repeatedFaceModels = [...faceModelRequests.entries()].filter(([, count]) => count > 1);
     const simulatorPassed =
       Math.hypot(simulator.FRENTE.after.robot.x - simulator.FRENTE.applied.robot.x, simulator.FRENTE.after.robot.y - simulator.FRENTE.applied.robot.y) > 2
+      && simulator.TRAS.after.robot.x < simulator.TRAS.applied.robot.x - 2
       && simulator.DIREITA.after.robot.angle > simulator.DIREITA.applied.robot.angle
       && simulator.ESQUERDA.after.robot.angle < simulator.ESQUERDA.applied.robot.angle
       && Math.abs(simulator.PARAR.after.robot.angle - simulator.PARAR.applied.robot.angle) < 0.02
       && simulator.GIRAR.after.robot.angle > simulator.GIRAR.applied.robot.angle
       && simulator.keyboard.command === "DIREITA"
       && simulator.keyboard.source === "TECLADO"
+      && simulator.keyboardReverse.command === "TRAS"
+      && simulator.keyboardStop.command === "PARAR"
+      && simulator.handLost.command === "PARAR"
       && simulator.gesture.start.source === "GESTO"
       && simulator.gesture.start.command === "FRENTE"
       && simulator.gesture.timeout.command === "PARAR";

@@ -350,6 +350,31 @@ async function testModeTransitionAndStaleInputWatchdog() {
   await cleanup(environment);
 }
 
+async function testReverseGestureAndNoHandStopReachUsb() {
+  const environment = createEnvironment();
+  try {
+    await environment.robot.connect();
+    await releaseSafety(environment);
+    environment.robot.requestMode(3, "test");
+    // MODE:3 confirmado ainda pode estar aguardando o ACK de RESET_ESTOP.
+    await waitFor(() => environment.control.state.mode.id === 3 && environment.control.state.mode.phase === "ACTIVE");
+    environment.window.dispatchEvent(new TestCustomEvent("quantum:gesture-command", {
+      detail: { command: "TRAS", stable: true, confidence: .95 },
+    }));
+    await waitFor(() => environment.port.writes.includes("CMD:TRAS"));
+    const beforeStop = environment.port.writes.length;
+    environment.window.dispatchEvent(new TestCustomEvent("quantum:gesture-command", {
+      detail: { command: "PARAR", stable: false, confidence: 1, reason: "HAND_LOST" },
+    }));
+    await waitFor(() => environment.port.writes.slice(beforeStop).includes("CMD:PARAR"));
+    const firstStop = environment.port.writes.lastIndexOf("CMD:PARAR");
+    await wait(45);
+    assert.equal(environment.port.writes.slice(firstStop + 1).includes("CMD:TRAS"), false);
+  } finally {
+    await cleanup(environment);
+  }
+}
+
 async function testWrongModeAndSplitBrainFailClosed() {
   const environment = createEnvironment();
   await environment.robot.connect();
@@ -716,6 +741,7 @@ async function main() {
     testRobotStatusKeepsTechnicalStateAndReadableLabel,
     testHandshakeAndAcknowledgements,
     testModeTransitionAndStaleInputWatchdog,
+    testReverseGestureAndNoHandStopReachUsb,
     testModeTransitionSurvivesCameraStartupFailureInEstop,
     testWrongModeAndSplitBrainFailClosed,
     testModeAckTimeoutRollsBackAndStaysStopped,

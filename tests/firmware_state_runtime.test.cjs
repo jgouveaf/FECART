@@ -282,7 +282,30 @@ function testRemovedObstacleCancelsPendingReverse() {
   assert.equal(env.motions.includes(env.CMD_TRAS), false);
 }
 
+function testReverseGestureNeedsLiveCommandsAndStopOverridesIt() {
+  const env = runningEnvironment();
+  env.processarLinha('MODE:3', env.now);
+  for (let frame = 0; frame < 10; frame++) {
+    env.processarLinha('CMD:TRAS', env.now);
+    env.tick(100, 400);
+    assert.equal(env.comandoAplicado, env.CMD_TRAS);
+  }
+  env.processarLinha('CMD:PARAR', env.now);
+  env.tick(100, 10);
+  assert.equal(env.comandoAplicado, env.CMD_PARAR);
+  env.processarLinha('CMD:TRAS', env.now);
+  env.tick(100, 10);
+  assert.equal(env.comandoAplicado, env.CMD_TRAS);
+  env.tick(100, env.TIMEOUT_COMANDO_MS + 100);
+  assert.equal(env.comandoAplicado, env.CMD_PARAR);
+  env.processarLinha('ESTOP', env.now);
+  env.processarLinha('CMD:TRAS', env.now);
+  env.tick(100, 100);
+  assert.equal(env.comandoAplicado, env.CMD_PARAR);
+}
+
 const tests = [testContinuousAutonomousHasNoMissionTimeout,
+  testReverseGestureNeedsLiveCommandsAndStopOverridesIt,
   testFirstNearReadingStopsBeforeConfirmation, testNoiseSpikeRecoversWithoutReverse,
   testRepeatedObstacleCyclesAlwaysResume,
   testMissingEchoStopsAndRequiresTwoValidReadings,

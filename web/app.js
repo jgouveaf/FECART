@@ -329,7 +329,8 @@
     "1": "FRENTE", ArrowUp: "FRENTE", w: "FRENTE", W: "FRENTE",
     "2": "DIREITA", ArrowRight: "DIREITA", d: "DIREITA", D: "DIREITA",
     "3": "ESQUERDA", ArrowLeft: "ESQUERDA", a: "ESQUERDA", A: "ESQUERDA",
-    "4": "PARAR", ArrowDown: "PARAR", s: "PARAR", S: "PARAR", " ": "PARAR",
+    "4": "TRAS", ArrowDown: "TRAS",
+    s: "PARAR", S: "PARAR", " ": "PARAR",
     "5": "GIRAR", g: "GIRAR", G: "GIRAR",
   });
   simulatorCommandPanel.addEventListener("keydown", (event) => {
@@ -343,7 +344,7 @@
   });
   window.addEventListener("quantum:gesture-command", (event) => {
     const detail = event.detail || {};
-    if (detail.stable !== true || !detail.command) return;
+    if (!detail.command || (detail.command !== "PARAR" && detail.stable !== true)) return;
     setSimulatorCommand(detail.command, "GESTO");
   });
   window.addEventListener("quantum:person-tracking", (event) => {
@@ -693,7 +694,7 @@
       configApi.validCommands.forEach((command) => {
         const option = document.createElement("option");
         option.value = command;
-        option.textContent = command;
+        option.textContent = command === "TRAS" ? "RÉ" : command;
         select.appendChild(option);
       });
     });

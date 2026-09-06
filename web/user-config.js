@@ -11,7 +11,7 @@
   const VALID_COMMANDS = Object.freeze(["FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]);
 
   const DEFAULTS = Object.freeze({
-    gestureMap: Object.freeze({ 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "PARAR", 5: "GIRAR" }),
+    gestureMap: Object.freeze({ 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "TRAS", 5: "GIRAR" }),
     minConfidence: 0.65,
     commandCooldownMs: 300,
     unstableStopMs: 500,
@@ -34,16 +34,23 @@
       }
     }
     return Object.freeze({
+      mappingVersion: 2,
       gestureMap: Object.freeze(gestureMap),
       minConfidence: clampNumber(raw?.minConfidence, 0.3, 0.95, DEFAULTS.minConfidence),
       commandCooldownMs: clampNumber(raw?.commandCooldownMs, 200, 3000, DEFAULTS.commandCooldownMs),
-      unstableStopMs: clampNumber(raw?.unstableStopMs, 150, 3000, DEFAULTS.unstableStopMs),
+      unstableStopMs: clampNumber(raw?.unstableStopMs, 150, 500, DEFAULTS.unstableStopMs),
     });
   }
 
   function readStorage() {
     try {
-      return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "null");
+      const raw = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "null");
+      // Migrar apenas o antigo 4=PARAR. Preservar outros comandos/ajustes e
+      // respeitar remapeamentos feitos explicitamente depois desta versao.
+      if (raw && !raw.mappingVersion && raw.gestureMap?.[4]?.toUpperCase?.() === "PARAR") {
+        return { ...raw, gestureMap: { ...raw.gestureMap, 4: "TRAS" } };
+      }
+      return raw;
     } catch {
       return null;
     }

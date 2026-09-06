@@ -24,7 +24,7 @@
   const clearSamplesButton = document.getElementById("clearGestureSamples");
   const calibrationStatus = document.getElementById("gestureCalibrationStatus");
 
-  const defaultCommands = { 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "PARAR", 5: "GIRAR" };
+  const defaultCommands = { 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "TRAS", 5: "GIRAR" };
   let userConfig = window.QuantumUserConfig?.get() || null;
   let COMMANDS = Object.freeze(userConfig ? { ...userConfig.gestureMap } : defaultCommands);
   const CONNECTIONS = Object.freeze([
@@ -39,7 +39,7 @@
   let COMMAND_COOLDOWN_MS = userConfig?.commandCooldownMs ?? 300;
   const COMMAND_HEARTBEAT_MS = 400;
   const LOST_HAND_STOP_MS = 500;
-  let UNSTABLE_GESTURE_STOP_MS = userConfig?.unstableStopMs ?? 500;
+  let UNSTABLE_GESTURE_STOP_MS = Math.min(userConfig?.unstableStopMs ?? 500, 500);
   const INFERENCE_INTERVAL_MS = 50;
   const MODEL_IDLE_RELEASE_MS = 60000;
 
@@ -112,7 +112,7 @@
     document.querySelectorAll(".gesture-map [data-fingers]").forEach((item) => {
       const label = item.querySelector("span");
       const command = COMMANDS[Number(item.dataset.fingers)];
-      if (label && command) label.textContent = command.charAt(0) + command.slice(1).toLocaleLowerCase("pt-BR");
+      if (label && command) label.textContent = command === "TRAS" ? "Ré" : command.charAt(0) + command.slice(1).toLocaleLowerCase("pt-BR");
     });
   }
 
@@ -127,8 +127,8 @@
       return;
     }
     if (!count) {
-      commandElement.textContent = "NENHUM";
-      countElement.textContent = "Nenhum gesto detectado";
+      commandElement.textContent = "PARAR";
+      countElement.textContent = "Sem gesto válido · nenhuma ordem de movimento";
       return;
     }
     if (!stable) {
@@ -372,13 +372,13 @@
     clearCandidate();
     fingerStabilizer?.reset();
     renderFingerDiagnostics();
-    if (!lastHandAt || now - lastHandAt >= LOST_HAND_STOP_MS) {
-      if (confirmedCommand) {
-        control?.log("WARNING", "GESTOS", "Mão perdida; comando PARAR aplicado");
-        forceStop("HAND_LOST", false);
-      } else {
-        updateGestureUi(0, 0, false);
-      }
+    // Resultado explicitamente vazio: nao conservar o movimento antigo.
+    // O prazo LOST_HAND_STOP_MS continua protegendo video congelado/sem frames.
+    if (confirmedCommand) {
+      control?.log("WARNING", "GESTOS", "Mão perdida; comando PARAR aplicado");
+      forceStop("HAND_LOST", false);
+    } else {
+      updateGestureUi(0, 0, false);
     }
   }
 
@@ -398,6 +398,12 @@
     drawHand(landmarks);
     renderFingerDiagnostics(classification);
     ingestCalibrationFrame(result, landmarks, worldLandmarks, classification, now);
+    if (!COMMANDS[count]) {
+      // Zero dedos/mao fechada tambem significa ausencia de movimento pedido.
+      forceStop("NO_GESTURE", false);
+      fingerStabilizer?.reset();
+      return;
+    }
     if (confidence < MIN_CONFIDENCE) clearCandidate();
     const stable = confidence >= MIN_CONFIDENCE && confirmTemporal(count, now);
     const command = COMMANDS[count];
@@ -597,7 +603,7 @@
     COMMANDS = Object.freeze({ ...config.gestureMap });
     MIN_CONFIDENCE = config.minConfidence;
     COMMAND_COOLDOWN_MS = config.commandCooldownMs;
-    UNSTABLE_GESTURE_STOP_MS = config.unstableStopMs;
+    UNSTABLE_GESTURE_STOP_MS = Math.min(config.unstableStopMs, 500);
     forceStop("CONFIG_CHANGED");
     fingerStabilizer?.reset();
     renderGestureMapLabels();

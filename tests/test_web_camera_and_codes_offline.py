@@ -44,7 +44,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="codigos"',
             'id="arduinoCode"',
             'web/arduino-codes.js?v=15',
-            'web/user-config.js?v=3',
+            'web/user-config.js?v=4',
             'web/control-state.js?v=1',
             'web/camera-controller.js?v=2',
             'web/face-quality.js?v=1',
@@ -139,7 +139,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             self.assertIn(declaration, code)
 
     def test_browser_gesture_map_matches_project_rules(self) -> None:
-        expected = {1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "PARAR", 5: "GIRAR"}
+        expected = {1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "TRAS", 5: "GIRAR"}
         for fingers, command in expected.items():
             self.assertRegex(self.camera_js, rf'{fingers}:\s*"{command}"')
         self.assertIn("HandLandmarker", self.camera_js)
@@ -223,7 +223,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
     def test_camera_controller_uses_compatible_classic_bootstrap(self) -> None:
         self.assertIn('id="startCamera">Ativar câmera', self.html)
         self.assertIn('src="web/camera-controller.js?v=2" defer', self.html)
-        self.assertIn('src="web/camera-gestures.js?v=17" defer', self.html)
+        self.assertIn('src="web/camera-gestures.js?v=18" defer', self.html)
         self.assertNotIn('type="module" src="web/camera-gestures.js', self.html)
         self.assertIn("window.quantumCameraController", self.camera_controller_js)
         self.assertIn('startButton.textContent = "Ativar câmera"', self.camera_controller_js)

@@ -58,7 +58,7 @@ class TestWebDeliveryQuality(unittest.TestCase):
         self.assertIn('id="simulatorCommandPanel" tabindex="0"', HTML)
         self.assertIn('aria-describedby="simulatorHint testTargetStatus"', HTML)
         self.assertIn('id="simulatorHint" role="status" aria-live="polite"', HTML)
-        for marker in ('"1": "FRENTE"', 'ArrowRight: "DIREITA"', 'ArrowLeft: "ESQUERDA"', '"4": "PARAR"', '"5": "GIRAR"'):
+        for marker in ('"1": "FRENTE"', 'ArrowRight: "DIREITA"', 'ArrowLeft: "ESQUERDA"', '"4": "TRAS"', '" ": "PARAR"', '"5": "GIRAR"'):
             self.assertIn(marker, APP)
 
     def test_critical_dynamic_statuses_are_announced(self) -> None:
@@ -87,7 +87,7 @@ class TestWebDeliveryQuality(unittest.TestCase):
         self.assertNotRegex(HTML, r"\son(?:click|keydown|submit)=")
 
     def test_asset_versions_force_the_professional_release(self) -> None:
-        for marker in ("web/styles.css?v=22", "web/app.js?v=18", "web/code-editor-utils.js?v=1", "web/face-identity-math.js?v=2", "web/face-identities.js?v=14"):
+        for marker in ("web/styles.css?v=22", "web/app.js?v=19", "web/code-editor-utils.js?v=1", "web/face-identity-math.js?v=2", "web/face-identities.js?v=14"):
             self.assertIn(marker, HTML)
 
 

@@ -29,7 +29,7 @@ const Controller = window.QuantumSimulatorController.SimulatorCommandController;
 const controller = new Controller(900);
 const result = { default: controller.snapshot(0), commands: {} };
 result.gestureMode = controller.setMode("GESTOS", 100);
-for (const [index, command] of ["FRENTE", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"].entries()) {
+for (const [index, command] of ["FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"].entries()) {
   const now = 200 + index * 50;
   result.commands[command] = {
     accepted: controller.setCommand(command, "TESTE", now),
@@ -68,8 +68,8 @@ class TestWebSimulatorCommands(unittest.TestCase):
         self.assertEqual(self.result["gestureMode"]["mode"], "GESTOS")
         self.assertEqual(self.result["gestureMode"]["command"], "PARAR")
 
-    def test_all_five_commands_are_accepted(self) -> None:
-        for command in ("FRENTE", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"):
+    def test_all_six_commands_are_accepted(self) -> None:
+        for command in ("FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"):
             with self.subTest(command=command):
                 self.assertTrue(self.result["commands"][command]["accepted"])
                 self.assertEqual(self.result["commands"][command]["current"], command)

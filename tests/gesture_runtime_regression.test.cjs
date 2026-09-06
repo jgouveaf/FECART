@@ -147,6 +147,7 @@ function controller(config = {}) {
     context.window.testGesture.processResult({ landmarks: [hand(31)] }, now);
   }
   return { frame, events, element,
+    noHand: at => { now = at; context.window.testGesture.processResult({ landmarks: [] }, now); },
     commands: () => events.filter(e => e.type === 'quantum:gesture-command').map(e => e.detail),
     start: (count, at) => { now = at; classification(count); context.window.testGesture.start(); },
     tick: at => { now = at; nextFrame(at); },
@@ -190,7 +191,7 @@ test('nao anuncia gesto confirmado enquanto comando esta retido no cooldown', ()
   [1340, 1425, 1510, 1595].forEach(t => h.frame(5, t));
   if (h.commands().at(-1)?.command !== 'GIRAR') assert.notEqual(h.element('gestureCommand').textContent, 'GIRAR');
 });
-test('geometria e filtros juntos nao emitem GIRAR por um pico de polegar no gesto PARAR', () => {
+test('geometria e filtros juntos nao emitem GIRAR por um pico de polegar no gesto de re', () => {
   const api = math(), filter = new api.FingerStateStabilizer(), h = controller();
   for (let n = 0; n < 20; n++) {
     const points = hand(n === 10 ? 31 : 30);
@@ -198,7 +199,7 @@ test('geometria e filtros juntos nao emitem GIRAR por um pico de polegar no gest
     h.frame(result.count, 1000 + n * 75, result.confidence);
   }
   assert.equal(h.commands().some(c => c.command === 'GIRAR'), false);
-  assert.equal(h.commands().at(-1)?.command, 'PARAR');
+  assert.equal(h.commands().at(-1)?.command, 'TRAS');
 });
 test('a cadeia completa troca de cinco para quatro em ate 450ms a 13FPS sinteticos', () => {
   const api = math(), filter = new api.FingerStateStabilizer(), h = controller();
@@ -208,8 +209,63 @@ test('a cadeia completa troca de cinco para quatro em ate 450ms a 13FPS sintetic
     h.frame(result.count, 1000 + n * 75, result.confidence);
   }
   assert.equal(h.commands()[0]?.command, 'GIRAR');
-  const stop = h.commands().find(c => c.command === 'PARAR');
-  assert.ok(stop && stop.emittedAt - 1600 <= 450, JSON.stringify(h.commands()));
+  const reverse = h.commands().find(c => c.command === 'TRAS');
+  assert.ok(reverse && reverse.emittedAt - 1600 <= 450, JSON.stringify(h.commands()));
+});
+
+test('quatro dedos exige confirmacao de movimento e mantem re somente com evidencia viva', () => {
+  const h = controller();
+  h.frame(4, 1000); h.frame(4, 1075);
+  assert.equal(h.commands().length, 0, 're nao herda confirmacao rapida de PARAR');
+  for (let at = 1150; at <= 3550; at += 75) h.frame(4, at);
+  assert.ok(h.commands().length >= 5, 'renova o comando enquanto o gesto persiste');
+  assert.ok(h.commands().every(c => c.command === 'TRAS'));
+  h.noHand(3600);
+  assert.equal(h.commands().at(-1)?.command, 'PARAR');
+  assert.equal(h.commands().at(-1)?.emittedAt, 3600);
+  assert.equal(h.element('gestureCommand').textContent, 'PARAR');
+  for (let at = 3700; at < 5000; at += 100) h.noHand(at);
+  assert.equal(h.commands().at(-1)?.command, 'PARAR');
+  h.frame(4, 5100); h.frame(4, 5175);
+  assert.equal(h.commands().at(-1)?.command, 'PARAR', 'voltar a mao exige nova confirmacao');
+  h.frame(4, 5250);
+  assert.equal(h.commands().at(-1)?.command, 'TRAS');
+});
+
+test('mao fechada para e gesto incerto nao pode manter re por configuracao antiga de 3s', () => {
+  const h = controller({ gestureMap: { 1: 'FRENTE', 2: 'DIREITA', 3: 'ESQUERDA', 4: 'TRAS', 5: 'GIRAR' }, unstableStopMs: 3000 });
+  [1000, 1075, 1150].forEach(at => h.frame(4, at));
+  h.frame(0, 1200);
+  assert.equal(h.commands().at(-1)?.command, 'PARAR');
+  [2000, 2075, 2150].forEach(at => h.frame(4, at));
+  for (let at = 2200; at <= 2700; at += 100) h.frame(4, at, .1);
+  assert.equal(h.commands().at(-1)?.command, 'PARAR');
+  assert.equal(h.commands().at(-1)?.emittedAt, 2700);
+});
+
+test('configuracao migra 4=PARAR antigo para re sem apagar os outros ajustes', () => {
+  function config(raw) {
+    const storage = new Map(raw ? [['quantumUserConfig:v1', JSON.stringify(raw)]] : []);
+    const context = { CustomEvent: class { constructor(type, init) { this.detail = init.detail; } }, window: {
+      dispatchEvent() {}, localStorage: {
+        getItem: key => storage.get(key) ?? null,
+        setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key),
+      },
+    } };
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'web/user-config.js'), 'utf8'), context);
+    return { api: context.window.QuantumUserConfig, stored: () => JSON.parse(storage.get('quantumUserConfig:v1') || 'null') };
+  }
+  assert.equal(config().api.get().gestureMap[4], 'TRAS');
+  const old = { gestureMap: { 1: 'GIRAR', 4: 'PARAR' }, minConfidence: .8, commandCooldownMs: 700, unstableStopMs: 3000 };
+  const loaded = config(old);
+  assert.equal(loaded.api.get().gestureMap[4], 'TRAS');
+  assert.equal(loaded.api.get().gestureMap[1], 'GIRAR');
+  assert.equal(loaded.api.get().minConfidence, .8);
+  assert.equal(loaded.api.get().commandCooldownMs, 700);
+  assert.equal(loaded.api.get().unstableStopMs, 500);
+  loaded.api.save({ gestureMap: { 4: 'PARAR' } });
+  assert.equal(config(loaded.stored()).api.get().gestureMap[4], 'PARAR', 'remapeamento novo explicito deve persistir');
+  assert.equal(config({ gestureMap: { 4: 'ESQUERDA' } }).api.get().gestureMap[4], 'ESQUERDA');
 });
 
 test('replay mantem rotulos originais e so corrige blocos explicitamente indicados', () => {
@@ -243,7 +299,7 @@ if (process.env.QT_GESTURE_SAMPLES) test('amostras locais percorrem geometria, f
       batches.get(block.block).h.frame(filtered.count, sample.frameTimeMs, filtered.confidence);
     },
   });
-  const mapping = { 1: 'FRENTE', 2: 'DIREITA', 3: 'ESQUERDA', 4: 'PARAR', 5: 'GIRAR' };
+  const mapping = { 1: 'FRENTE', 2: 'DIREITA', 3: 'ESQUERDA', 4: 'TRAS', 5: 'GIRAR' };
   const delays = [];
   for (const [number, { h, start, expected }] of batches) {
     const command = mapping[expected];

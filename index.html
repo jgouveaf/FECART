@@ -195,6 +195,7 @@
               <span class="section-tag">Arduino UNO · 9600 baud</span>
               <strong><span class="status-dot idle" id="robotConnectionDot"></span><span id="robotConnectionStatus">DESCONECTADO</span></strong>
               <small id="robotConnectionHint">Feche o Arduino IDE e o Monitor Serial, conecte o cabo USB e use Chrome ou Edge.</small>
+              <a id="robotFirmwareRecovery" href="#codigos" hidden>Ir para Códigos e instalar o firmware oficial</a>
             </div>
             <div class="robot-actions">
               <button class="primary-button compact" id="connectRobot">Conectar Arduino USB</button>
@@ -487,7 +488,7 @@
   <script src="web/app.js?v=19" defer></script>
   <script type="module" src="web/arduino-flasher.js?v=9"></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
-  <script src="web/robot-control.js?v=19" defer></script>
+  <script src="web/robot-control.js?v=20" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/face-identity-math.js?v=2" defer></script>
   <script src="web/gesture-math.js?v=8" defer></script>

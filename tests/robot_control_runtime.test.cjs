@@ -206,7 +206,7 @@ function createEnvironment(portOptions = {}, testConfig = {}) {
 
   const ids = [
     "camera-gestos", "connectRobot", "disconnectRobot", "emergencyStop", "robotConnectionDot",
-    "robotConnectionStatus", "robotConnectionHint", "robotModeStatus", "robotCommandStatus",
+    "robotConnectionStatus", "robotConnectionHint", "robotFirmwareRecovery", "robotModeStatus", "robotCommandStatus",
     "robotDistanceStatus", "robotStateStatus", "gestureDeliveryStatus", "connectBeacon", "beaconStatus",
     "stopMotorTest", "motorTestStatus",
   ];
@@ -596,6 +596,117 @@ async function testHandshakeTimeoutAndVersionMismatch() {
   await cleanup(slowBootEnvironment);
 }
 
+async function testFailedHandshakeKeepsErrorAfterCleanup() {
+  const e = createEnvironment({ ready: false }, { readyTimeoutMs: 20 });
+  try {
+    assert.equal(await e.robot.connect(), false);
+    assert.equal(e.port.closed, true);
+    assert.equal(e.control.state.communication.lastTx, "ESTOP");
+    assert.equal(e.control.state.communication.status, "ERROR", "a escrita de segurança não pode ressuscitar CONNECTING");
+    assert.equal(e.control.state.robot.status, "ERROR");
+    assert.equal(e.elements.connectRobot.disabled, false);
+    assert.equal(e.elements.disconnectRobot.disabled, true);
+    assert.equal(e.robot.usbBusy, false);
+  } finally { await cleanup(e); }
+}
+
+async function testStandaloneSketchIsNotMistakenForSilentFirmware() {
+  for (const readyLine of ["AUTO:READY:1", "AUTO:READY:2", "AUTO|UP:1200|RUN:0", "IDE5|UP:1200|RUN:0"]) {
+    const e = createEnvironment({ readyLine });
+    try {
+      assert.equal(await e.robot.connect(), false);
+      assert.equal(e.elements.robotConnectionStatus.textContent, "CÓDIGO AUTÔNOMO SEPARADO");
+      assert.match(e.elements.robotConnectionHint.textContent, /aba Códigos/);
+      assert.equal(e.elements.robotFirmwareRecovery.hidden, false);
+      assert.equal(e.control.state.communication.status, "ERROR");
+      assert.equal(e.port.closed, true);
+      assert.equal(e.port.writes.some(line => line.startsWith("MODE:") || line === "RESET_ESTOP"), false);
+    } finally { await cleanup(e); }
+  }
+}
+
+async function testNoBytesAndUnidentifiedBytesHaveDifferentDiagnosis() {
+  for (const input of ["", "Distancia: 12 cm\n", "\u0000\ufffd\u0003", "x".repeat(600)]) {
+    const e = createEnvironment({ ready: false }, { readyTimeoutMs: 50 });
+    try {
+      const attempt = e.robot.connect();
+      await waitFor(() => e.port.opened);
+      if (input) e.port.emitRaw(input);
+      assert.equal(await attempt, false);
+      assert.equal(e.elements.robotConnectionStatus.textContent, input ? "PROTOCOLO NÃO CONFIRMADO" : "ARDUINO SEM RESPOSTA");
+      assert.match(e.elements.robotConnectionHint.textContent, input ? /recebeu \d+ bytes/ : /nenhum dado chegou/);
+      assert.equal(e.elements.robotFirmwareRecovery.hidden, true, "sem evidência de versão errada, não prescrever gravação às cegas");
+      assert.equal(e.control.state.communication.status, "ERROR");
+      assert.equal(e.port.closed, true);
+    } finally { await cleanup(e); }
+  }
+}
+
+async function testWrongVersionOffersExplicitRecoveryWithoutMotion() {
+  const e = createEnvironment({ readyLine: "QT:READY:V6" });
+  try {
+    assert.equal(await e.robot.connect(), false);
+    assert.equal(e.elements.robotConnectionStatus.textContent, "FIRMWARE INCOMPATÍVEL");
+    assert.match(e.elements.robotConnectionHint.textContent, /QT:READY:V6.*QT:READY:V7/);
+    assert.equal(e.elements.robotFirmwareRecovery.hidden, false);
+    assert.equal(e.port.writes.includes("RESET_ESTOP"), false);
+    assert.equal(e.control.state.communication.status, "ERROR");
+  } finally { await cleanup(e); }
+}
+
+async function testReadyWithoutSafetyAcksNeverConnects() {
+  for (const missing of ["ESTOP", "CMD:PARAR", "MODE:1"]) {
+    const e = createEnvironment({ noAckFor: [missing] });
+    try {
+      assert.equal(await e.robot.connect(), false);
+      assert.equal(e.elements.robotConnectionStatus.textContent, "COMANDO NÃO CONFIRMADO");
+      assert.match(e.elements.robotConnectionHint.textContent, /firmware V7 respondeu/);
+      assert.equal(e.elements.emergencyStop.disabled, true);
+      assert.equal(e.elements.robotFirmwareRecovery.hidden, true);
+      assert.equal(e.control.state.communication.status, "ERROR");
+      assert.equal(e.port.writes.includes("RESET_ESTOP"), false);
+      assert.equal(e.port.closed, true);
+    } finally { await cleanup(e); }
+  }
+}
+
+async function testLateTelemetryCannotOverwriteFailedConnection() {
+  const e = createEnvironment({ ready: false }, { readyTimeoutMs: 20 });
+  const originalWrite = e.port.writer.write;
+  e.port.writer.write = async bytes => {
+    await originalWrite(bytes);
+    if (new TextDecoder().decode(bytes).trim() === "ESTOP") {
+      e.port.emit("QT|MODE:3|DIST:80|CMD:FRENTE|STATE:GESTOS");
+      await wait(10);
+    }
+  };
+  try {
+    assert.equal(await e.robot.connect(), false);
+    assert.equal(e.control.state.communication.status, "ERROR");
+    assert.equal(e.control.state.robot.status, "ERROR");
+    assert.equal(e.control.state.communication.lastRx, "", "descartar read pendente que chegou durante a limpeza");
+    assert.equal(e.control.state.robot.command, "PARAR");
+  } finally { await cleanup(e); }
+}
+
+async function testRetryClearsDiagnosisAndStillRequiresExplicitRelease() {
+  const e = createEnvironment({ readyLine: "AUTO:READY:2" });
+  try {
+    assert.equal(await e.robot.connect(), false);
+    assert.equal(e.elements.robotFirmwareRecovery.hidden, false);
+    const replacement = new FakePort();
+    e.navigator.serial.requestPort = async () => replacement;
+    assert.equal(await e.robot.connect(), true);
+    assert.equal(e.elements.robotFirmwareRecovery.hidden, true);
+    assert.equal(e.control.state.communication.status, "ONLINE");
+    assert.equal(e.control.state.robot.status, "ONLINE");
+    assert.equal(e.control.state.safety.emergency, true);
+    assert.equal(replacement.writes.includes("RESET_ESTOP"), false);
+    assert.deepEqual(replacement.writes.filter(line => line.startsWith("CMD:")), ["CMD:PARAR"]);
+    assert.equal(e.robot.connected, true);
+  } finally { await cleanup(e); }
+}
+
 async function testConnectionErrorsAreActionable() {
   const environment = createEnvironment();
   const describe = environment.robot._test.describeConnectionError;
@@ -606,7 +717,7 @@ async function testConnectionErrorsAreActionable() {
   assert.match(cancelled.hint, /selecione a porta do Arduino UNO/);
   assert.equal(describe({ name: "SecurityError", message: "Permission denied" }).label, "PERMISSÃO USB BLOQUEADA");
   assert.equal(describe({ name: "NetworkError", message: "Failed to open serial port" }).label, "PORTA USB OCUPADA");
-  assert.equal(describe({ name: "Error", message: "Tempo esgotado aguardando QT:READY do firmware." }).label, "FIRMWARE NÃO RESPONDE");
+  assert.equal(describe({ name: "Error", message: "Tempo esgotado aguardando QT:READY do firmware." }).label, "PROTOCOLO NÃO CONFIRMADO");
 
   await cleanup(environment);
 }
@@ -755,6 +866,13 @@ async function main() {
     testRunPrincipalStartsLocalModeWithoutMotionHeartbeat,
     testKeyboardTransitionAndScopedSerialDisconnect,
     testHandshakeTimeoutAndVersionMismatch,
+    testFailedHandshakeKeepsErrorAfterCleanup,
+    testStandaloneSketchIsNotMistakenForSilentFirmware,
+    testNoBytesAndUnidentifiedBytesHaveDifferentDiagnosis,
+    testWrongVersionOffersExplicitRecoveryWithoutMotion,
+    testReadyWithoutSafetyAcksNeverConnects,
+    testLateTelemetryCannotOverwriteFailedConnection,
+    testRetryClearsDiagnosisAndStillRequiresExplicitRelease,
     testConnectionErrorsAreActionable,
   ];
   for (const test of tests) {

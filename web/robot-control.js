@@ -10,6 +10,7 @@
   const connectionDot = document.getElementById("robotConnectionDot");
   const connectionStatus = document.getElementById("robotConnectionStatus");
   const connectionHint = document.getElementById("robotConnectionHint");
+  const firmwareRecovery = document.getElementById("robotFirmwareRecovery");
   const modeStatus = document.getElementById("robotModeStatus");
   const commandStatus = document.getElementById("robotCommandStatus");
   const distanceStatus = document.getElementById("robotDistanceStatus");
@@ -47,6 +48,8 @@
   let connected = false;
   let closing = false;
   let connecting = false;
+  let handshakeRxBytes = 0;
+  let handshakeLastLine = "";
   let closePromise = null;
   let readBuffer = "";
   let discardingReadLine = false;
@@ -98,24 +101,27 @@
     log("ERROR", "ARDUINO", detail);
   }
 
-  function setConnection(text, status, hint = "") {
+  function setConnection(text, status, hint = "", showFirmwareRecovery = false) {
     if (connectionStatus) connectionStatus.textContent = text;
     if (connectionDot) {
       connectionDot.classList.toggle("idle", status !== "ONLINE");
       connectionDot.dataset.status = status.toLowerCase();
     }
     if (hint && connectionHint) connectionHint.textContent = hint;
+    if (firmwareRecovery) firmwareRecovery.hidden = !showFirmwareRecovery;
     patch("communication", { status }, { source: "robot-serial" });
     patch("robot", { connected: status === "ONLINE", status, statusLabel: text }, { source: "robot-serial" });
   }
 
   function markTx(line) {
-    patch("communication", { lastTx: line, status: splitBrainHandling ? "ERROR" : connected ? "ONLINE" : "CONNECTING" }, { source: "serial-tx" });
+    // Tráfego (inclusive ESTOP na limpeza de uma falha) não confirma conexão.
+    // Apenas o ciclo de conexão pode alterar este status.
+    patch("communication", { lastTx: line }, { source: "serial-tx" });
   }
 
   function markRx(line) {
     lastSerialRxAt = performance.now();
-    patch("communication", { lastRx: line, status: splitBrainHandling ? "ERROR" : connected ? "ONLINE" : "CONNECTING" }, { source: "serial-rx" });
+    patch("communication", { lastRx: line }, { source: "serial-rx" });
   }
 
   function renderMode(activeId = activeMode, requestedId = null) {
@@ -203,7 +209,9 @@
         rejectPromise(error);
       },
     };
-    timeoutId = window.setTimeout(() => waiter.reject(new Error(`Tempo esgotado aguardando ${label}.`)), timeoutMs);
+    timeoutId = window.setTimeout(() => waiter.reject(Object.assign(
+      new Error(`Tempo esgotado aguardando ${label}.`), { code: "SERIAL_RESPONSE_TIMEOUT" },
+    )), timeoutMs);
     lineWaiters.add(waiter);
     return { promise, cancel: (error = cancelled()) => waiter.reject(error) };
   }
@@ -283,7 +291,8 @@
   }
 
   function parseTelemetry(line) {
-    if (!line) return;
+    if (!line || closing) return;
+    if (connecting && !connected) handshakeLastLine = line.slice(0, 160);
     markRx(line);
     resolveLineWaiters(line);
 
@@ -357,6 +366,7 @@
   }
 
   function consumeSerialChunk(value, decoder) {
+    if (connecting && !connected) handshakeRxBytes += value.byteLength;
     let text = decoder.decode(value, { stream: true });
     if (discardingReadLine) {
       const newline = text.indexOf("\n");
@@ -392,6 +402,8 @@
         try {
           while (transportOpen && !closing && connectionToken === connectionGeneration) {
             const { value, done } = await currentReader.read();
+            // Um read já pendente pode retornar depois de cancelar/fechar a sessão.
+            if (closing || !transportOpen || connectionToken !== connectionGeneration) break;
             if (done) {
               if (!closing && transportOpen) throw new Error("A leitura serial foi encerrada inesperadamente.");
               break;
@@ -415,8 +427,12 @@
     }
   }
 
+  function isStandaloneFirmware(line) {
+    return /^(AUTO:READY:|AUTO\||IDE5\|)/.test(line);
+  }
+
   async function initializeFirmware(connectionToken, operationToken) {
-    const ready = waitForLine((line) => line.startsWith("QT:READY:"), {
+    const ready = waitForLine((line) => line.startsWith("QT:READY:") || isStandaloneFirmware(line), {
       connectionToken,
       timeoutMs: READY_TIMEOUT_MS,
       label: "QT:READY do firmware",
@@ -435,16 +451,34 @@
     let readyLine;
     try {
       readyLine = await ready.promise;
+    } catch (error) {
+      if (error.code === "SERIAL_RESPONSE_TIMEOUT") {
+        error.code = "FIRMWARE_IDENTIFICATION_TIMEOUT";
+        error.bytesReceived = handshakeRxBytes;
+        error.receivedLine = handshakeLastLine;
+      }
+      throw error;
     } finally {
       window.clearInterval(helloProbeTimer);
     }
-    if (readyLine !== REQUIRED_FIRMWARE_READY) throw new Error(`Firmware incompatível: recebido ${readyLine}; esperado ${REQUIRED_FIRMWARE_READY}.`);
+    if (readyLine !== REQUIRED_FIRMWARE_READY) {
+      throw Object.assign(new Error(`Firmware incompatível: recebido ${readyLine}; esperado ${REQUIRED_FIRMWARE_READY}.`), {
+        code: isStandaloneFirmware(readyLine) ? "STANDALONE_FIRMWARE" : "FIRMWARE_VERSION_MISMATCH",
+        receivedLine: readyLine.slice(0, 160),
+      });
+    }
 
-    await transact("ESTOP", (line) => line === "OK:ESTOP", { connectionToken, operationToken, label: "ESTOP inicial" });
-    setEmergencyUi(true, "INICIALIZAÇÃO SEGURA", "handshake");
-    await transact("CMD:PARAR", (line) => line === "OK:CMD:PARAR", { connectionToken, operationToken });
-    const desiredMode = Number(control?.state?.mode?.id) || activeMode;
-    await transact(`MODE:${desiredMode}`, (line) => line === `OK:MODE:${desiredMode}`, { connectionToken, operationToken });
+    let desiredMode;
+    try {
+      await transact("ESTOP", (line) => line === "OK:ESTOP", { connectionToken, operationToken, label: "ESTOP inicial" });
+      setEmergencyUi(true, "INICIALIZAÇÃO SEGURA", "handshake");
+      await transact("CMD:PARAR", (line) => line === "OK:CMD:PARAR", { connectionToken, operationToken });
+      desiredMode = Number(control?.state?.mode?.id) || activeMode;
+      await transact(`MODE:${desiredMode}`, (line) => line === `OK:MODE:${desiredMode}`, { connectionToken, operationToken });
+    } catch (error) {
+      if (error.code === "SERIAL_RESPONSE_TIMEOUT") error.code = "FIRMWARE_ACK_TIMEOUT";
+      throw error;
+    }
     confirmedMode = desiredMode;
     activeMode = desiredMode;
     setEmergencyUi(true, `${MODE_NAMES[desiredMode]} PRONTO · CONFIRME A LIBERAÇÃO`, "handshake");
@@ -465,6 +499,26 @@
     const name = String(error?.name || "");
     const message = String(error?.message || "");
     const normalized = message.toLowerCase();
+    if (error?.code === "STANDALONE_FIRMWARE") {
+      return { label: "CÓDIGO AUTÔNOMO SEPARADO", status: "ERROR", firmwareRecovery: true,
+        hint: "O UNO respondeu com o código autônomo de teste, que não recebe os gestos deste painel. Desligue a alimentação dos motores e instale o firmware oficial na aba Códigos; depois reconecte. Não conte com a parada deste painel nessa versão." };
+    }
+    if (error?.code === "FIRMWARE_VERSION_MISMATCH" || /firmware incompatível|firmware incompativel/.test(normalized)) {
+      return { label: "FIRMWARE INCOMPATÍVEL", status: "ERROR", firmwareRecovery: true,
+        hint: `O UNO respondeu ${error?.receivedLine || "com outra versão"}, mas este painel exige ${REQUIRED_FIRMWARE_READY}. Desligue a alimentação dos motores e instale o firmware oficial pela aba Códigos.` };
+    }
+    if (error?.code === "FIRMWARE_ACK_TIMEOUT") {
+      return { label: "COMANDO NÃO CONFIRMADO", status: "ERROR",
+        hint: `O firmware V7 respondeu, mas a inicialização segura não terminou. ${message} Desligue os motores e reconecte; se repetir, confira cabo USB e alimentação.` };
+    }
+    if (error?.code === "FIRMWARE_IDENTIFICATION_TIMEOUT") {
+      if (error.bytesReceived > 0) {
+        return { label: "PROTOCOLO NÃO CONFIRMADO", status: "ERROR",
+          hint: `A porta recebeu ${error.bytesReceived} bytes, mas não a identificação ${REQUIRED_FIRMWARE_READY}. Pode ser outro código ou velocidade serial diferente de 9600. Confira o programa instalado na aba Códigos. Não há controle confirmado dos motores.` };
+      }
+      return { label: "ARDUINO SEM RESPOSTA", status: "ERROR",
+        hint: "A porta abriu, mas nenhum dado chegou em resposta a HELLO. Desligue os motores, confira a porta escolhida, o cabo USB e o programa instalado. Se ainda estiver com o teste da IDE, instale o firmware oficial na aba Códigos." };
+    }
     if (name === "NotFoundError") {
       return { label: "SELEÇÃO CANCELADA", status: "OFFLINE", hint: "Nenhuma porta foi escolhida. Clique em conectar e selecione a porta do Arduino UNO." };
     }
@@ -475,8 +529,8 @@
       || /access denied|acesso negado|in use|ocupad|could not open|failed to open/.test(normalized)) {
       return { label: "PORTA USB OCUPADA", status: "ERROR", hint: "Feche o Monitor Serial e o Arduino IDE, retire e recoloque o cabo USB e tente novamente." };
     }
-    if (/qt:ready|firmware incompatível|firmware incompativel|aguardando qt:ready/.test(normalized)) {
-      return { label: "FIRMWARE NÃO RESPONDE", status: "ERROR", hint: "Grave novamente o Código principal no UNO, feche o Arduino IDE e reconecte pelo site." };
+    if (/qt:ready/.test(normalized)) {
+      return { label: "PROTOCOLO NÃO CONFIRMADO", status: "ERROR", hint: "Não foi possível identificar o firmware. Confira a porta e o programa instalado; o painel exige o firmware oficial V7 disponível na aba Códigos." };
     }
     return { label: "CONEXÃO USB FALHOU", status: "ERROR", hint: message || "Não foi possível abrir ou validar o Arduino UNO." };
   }
@@ -499,6 +553,9 @@
     }
 
     connecting = true;
+    handshakeRxBytes = 0;
+    handshakeLastLine = "";
+    patch("communication", { lastRx: "", lastTx: "" }, { source: "robot-connect" });
     const connectionToken = ++connectionGeneration;
     const operationToken = ++operationGeneration;
     rejectSupersededOperationWaiters(operationToken);
@@ -545,7 +602,7 @@
     } catch (error) {
       if (error?.name !== "AbortError") {
         const description = describeConnectionError(error);
-        setConnection(description.label, description.status, description.hint);
+        setConnection(description.label, description.status, description.hint, description.firmwareRecovery);
         if (description.status === "ERROR") reportError(description.hint, error);
       }
       await closePort({ sendEstop: transportOpen, reason: "CONNECT_FAILED", preserveStatus: true });

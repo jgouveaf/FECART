@@ -78,9 +78,9 @@ for (let frame = 0; frame < 3; frame += 1) afterSustainedFive = fingerStabilizer
 let afterSustainedFour;
 for (let frame = 0; frame < 3; frame += 1) afterSustainedFour = fingerStabilizer.update(fourFingerFrame).count;
 const canonicalOneStabilizer = new window.QuantumGestureMath.FingerStateStabilizer();
-const canonicalOne = canonicalOneStabilizer.update({ probabilities: [0.96, 0.91, 0.18, 0.20, 0.19], fingerDetails: [] });
+const canonicalOne = canonicalOneStabilizer.update(window.QuantumGestureMath.classifyFingerCountDetails(hand(1), hand(1)));
 const canonicalThreeStabilizer = new window.QuantumGestureMath.FingerStateStabilizer();
-const canonicalThree = canonicalThreeStabilizer.update({ probabilities: [0.97, 0.90, 0.88, 0.91, 0.20], fingerDetails: [] });
+const canonicalThree = canonicalThreeStabilizer.update(window.QuantumGestureMath.classifyFingerCountDetails(hand(3), hand(3)));
 
 const stabilizer = new window.QuantumFaceQuality.FaceQualityStabilizer();
 const high = { acceptable: true, combined: 0.90 };
@@ -141,11 +141,11 @@ class TestWebQualityAlgorithms(unittest.TestCase):
         self.assertEqual(self.result["afterSustainedFive"], 5)
         self.assertEqual(self.result["afterSustainedFour"], 4)
 
-    def test_folded_thumb_cannot_add_one_to_canonical_gestures(self) -> None:
+    def test_folded_thumb_is_rejected_by_geometry_not_by_long_finger_count(self) -> None:
         self.assertEqual(self.result["canonicalOne"]["count"], 1)
         self.assertEqual(self.result["canonicalThree"]["count"], 3)
-        self.assertTrue(self.result["canonicalOne"]["fingerDetails"][0]["canonicalSuppressed"])
-        self.assertTrue(self.result["canonicalThree"]["fingerDetails"][0]["canonicalSuppressed"])
+        self.assertLess(self.result["canonicalOne"]["probabilities"][0], 0.54)
+        self.assertLess(self.result["canonicalThree"]["probabilities"][0], 0.54)
 
 
 if __name__ == "__main__":

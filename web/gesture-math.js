@@ -6,6 +6,19 @@
   const FINGER_THRESHOLDS = Object.freeze([0.54, 0.52, 0.52, 0.52, 0.52]);
   const UNCERTAIN_MARGIN = 0.055;
 
+  function validLandmarks(points) {
+    return Array.isArray(points) && points.length === 21 && points.every(point =>
+      point && Number.isFinite(point.x) && Number.isFinite(point.y)
+      && (point.z === undefined || Number.isFinite(point.z)));
+  }
+
+  function imageInUniformUnits(points, size) {
+    if (!validLandmarks(points)) return null;
+    // MediaPipe: x/z usam largura; y usa altura. Unificar antes da geometria.
+    const ratio = size?.width > 0 && size?.height > 0 ? size.height / size.width : 1;
+    return points.map(point => ({ x: point.x, y: point.y * ratio, z: point.z ?? 0 }));
+  }
+
   function distance(first, second) {
     const dx = Number(first?.x || 0) - Number(second?.x || 0);
     const dy = Number(first?.y || 0) - Number(second?.y || 0);
@@ -57,18 +70,19 @@
     const dipAngle = jointAngle(points[pip], points[dip], points[tip]);
     const tipMcpDistance = distance(points[tip], points[mcp]) / palmScale;
     const radialAdvance = (distance(points[tip], palmCenter) - distance(points[pip], palmCenter)) / palmScale;
-    const probability = weightedProbability([
+    const reachRatio = distance(points[tip], points[mcp]) / Math.max(distance(points[pip], points[mcp]), EPSILON);
+    const probability = Math.min(thresholdScore(reachRatio, 1.3, 0.7), weightedProbability([
       [thresholdScore(straightness, 0.78, 0.24), 0.36],
       [thresholdScore(pipAngle, 125, 70), 0.22],
       [thresholdScore(dipAngle, 130, 65), 0.18],
       [thresholdScore(tipMcpDistance, 0.56, 0.32), 0.14],
       [thresholdScore(radialAdvance, 0.05, 0.24), 0.10],
-    ]);
+    ]));
     return {
       extended: probability >= 0.52,
       probability,
       certainty: Math.min(1, Math.abs(probability - 0.52) * 2.3),
-      metrics: { straightness, pipAngle, dipAngle, tipMcpDistance, radialAdvance },
+      metrics: { straightness, pipAngle, dipAngle, tipMcpDistance, radialAdvance, reachRatio },
     };
   }
 
@@ -81,19 +95,25 @@
     const palmDistance = distance(points[4], palmCenter) / palmScale;
     const indexDistance = distance(points[4], points[5]) / palmScale;
     const radialAdvance = (distance(points[4], palmCenter) - distance(points[3], palmCenter)) / palmScale;
-    const probability = weightedProbability([
+    // Polegar sobre a palma pode parecer reto. Medir tambem a abertura lateral
+    // relativa a propria mao, sem depender de esquerda/direita ou espelhamento.
+    const palmWidth = Math.max(distance(points[5], points[17]), EPSILON);
+    const lateralSpread = ((points[4].x - points[5].x) * (points[5].x - points[17].x)
+      + (points[4].y - points[5].y) * (points[5].y - points[17].y)
+      + ((points[4].z || 0) - (points[5].z || 0)) * ((points[5].z || 0) - (points[17].z || 0))) / palmWidth / palmScale;
+    const probability = Math.min(thresholdScore(lateralSpread, 0.08, 0.30), weightedProbability([
       [thresholdScore(straightness, 0.76, 0.28), 0.25],
       [thresholdScore(mcpAngle, 125, 70), 0.14],
       [thresholdScore(ipAngle, 130, 65), 0.14],
       [thresholdScore(palmDistance, 0.82, 0.42), 0.19],
       [thresholdScore(indexDistance, 0.58, 0.34), 0.20],
       [thresholdScore(radialAdvance, 0.05, 0.24), 0.08],
-    ]);
+    ]));
     return {
       extended: probability >= 0.54,
       probability,
       certainty: Math.min(1, Math.abs(probability - 0.54) * 2.4),
-      metrics: { straightness, mcpAngle, ipAngle, palmDistance, indexDistance, radialAdvance },
+      metrics: { straightness, mcpAngle, ipAngle, palmDistance, indexDistance, radialAdvance, lateralSpread },
     };
   }
 
@@ -106,7 +126,7 @@
   }
 
   function evaluateHand(points) {
-    if (!points || points.length !== 21) return { count: 0, confidence: 0, fingers: [] };
+    if (!validLandmarks(points)) return { count: 0, confidence: 0, fingers: [] };
     const palmScale = Math.max(distance(points[0], points[9]), distance(points[5], points[17]));
     if (palmScale < EPSILON) return { count: 0, confidence: 0, fingers: [] };
     const palmCenter = average([points[0], points[5], points[9], points[13], points[17]]);
@@ -120,8 +140,8 @@
     return { evaluations, palmScale };
   }
 
-  function classifyFingerCountDetails(imageLandmarks, worldLandmarks) {
-    const image = evaluateHand(imageLandmarks);
+  function classifyFingerCountDetails(imageLandmarks, worldLandmarks, imageSize) {
+    const image = evaluateHand(imageInUniformUnits(imageLandmarks, imageSize));
     const world = worldLandmarks?.length === 21 ? evaluateHand(worldLandmarks) : null;
     const sources = [image, world].filter((item) => item?.evaluations);
     if (!sources.length) return { count: 0, confidence: 0, fingers: [] };
@@ -141,7 +161,11 @@
       : sources[0].evaluations;
     const fingers = evaluations.map((item) => item.extended);
     const certainties = evaluations.map((item) => item.certainty).sort((a, b) => a - b);
-    const confidence = certainties[Math.floor(certainties.length / 2)];
+    // Contagem exata depende de TODOS os dedos. A mediana mascarava o polegar
+    // incerto com a certeza de tres dedos longos, chegando a mostrar 100%.
+    const disagreement = evaluations.some(item => item.worldProbability != null
+      && Math.abs(item.imageProbability - item.worldProbability) > 0.35);
+    const confidence = disagreement ? 0 : certainties[0];
     return {
       count: fingers.filter(Boolean).length,
       confidence: Math.max(0, Math.min(1, confidence)),
@@ -166,7 +190,7 @@
   }
 
   class FingerStateStabilizer {
-    constructor({ alpha = 0.42, openMargin = 0.04, closeMargin = 0.055 } = {}) {
+    constructor({ alpha = 0.70, openMargin = 0.04, closeMargin = 0.055 } = {}) {
       this.alpha = alpha;
       this.openMargin = openMargin;
       this.closeMargin = closeMargin;
@@ -175,6 +199,7 @@
 
     reset() {
       this.probabilities = Array(5).fill(null);
+      this.history = Array.from({ length: 5 }, () => []);
       this.fingers = Array(5).fill(false);
     }
 
@@ -184,19 +209,15 @@
         return { ...(classification || {}), count: 0, confidence: 0, fingers: [] };
       }
       const rawProbabilities = classification.probabilities.map((value) => Math.max(0, Math.min(1, Number(value) || 0)));
-      // O projeto usa a contagem canônica: 1–4 são os dedos longos e o
-      // polegar só completa o gesto 5. Isso impede que um polegar dobrado
-      // sobre a palma transforme 1 em 2 ou 3 em 4 por causa da perspectiva.
-      const extendedLongFingers = rawProbabilities.slice(1)
-        .filter((probability, index) => probability >= FINGER_THRESHOLDS[index + 1]).length;
-      const canonicalThumbSuppressed = extendedLongFingers < 4;
-      if (canonicalThumbSuppressed) {
-        rawProbabilities[0] = Math.min(rawProbabilities[0], FINGER_THRESHOLDS[0] - this.closeMargin - 0.01);
-      }
       const details = rawProbabilities.map((rawValue, index) => {
         const raw = Math.max(0, Math.min(1, Number(rawValue) || 0));
+        // Mediana curta rejeita um pico isolado sem a cauda longa de uma EMA lenta.
+        const samples = this.history[index];
+        if (!samples.length) samples.push(raw, raw, raw);
+        else { samples.push(raw); if (samples.length > 3) samples.shift(); }
+        const filtered = [...samples].sort((a, b) => a - b)[1];
         const previous = this.probabilities[index];
-        const probability = previous === null ? raw : previous * (1 - this.alpha) + raw * this.alpha;
+        const probability = previous === null ? filtered : previous * (1 - this.alpha) + filtered * this.alpha;
         const threshold = FINGER_THRESHOLDS[index];
         if (this.fingers[index]) {
           if (probability <= threshold - this.closeMargin) this.fingers[index] = false;
@@ -214,14 +235,13 @@
           extended: this.fingers[index],
           state: Math.abs(delta) < UNCERTAIN_MARGIN ? "UNCERTAIN" : this.fingers[index] ? "OPEN" : "CLOSED",
           certainty: Math.min(1, Math.abs(delta) * 2.35),
-          canonicalSuppressed: index === 0 && canonicalThumbSuppressed,
         };
       });
       const certainties = details.map((item) => item.certainty).sort((a, b) => a - b);
       return {
         ...classification,
         count: this.fingers.filter(Boolean).length,
-        confidence: certainties[Math.floor(certainties.length / 2)],
+        confidence: Math.min(classification.confidence ?? 1, certainties[0]),
         fingers: [...this.fingers],
         probabilities: [...this.probabilities],
         fingerDetails: details,
@@ -229,8 +249,8 @@
     }
   }
 
-  function classifyFingerCount(imageLandmarks, worldLandmarks) {
-    return classifyFingerCountDetails(imageLandmarks, worldLandmarks).count;
+  function classifyFingerCount(imageLandmarks, worldLandmarks, imageSize) {
+    return classifyFingerCountDetails(imageLandmarks, worldLandmarks, imageSize).count;
   }
 
   window.QuantumGestureMath = Object.freeze({

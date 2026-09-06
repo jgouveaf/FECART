@@ -13,7 +13,7 @@
   const DEFAULTS = Object.freeze({
     gestureMap: Object.freeze({ 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "PARAR", 5: "GIRAR" }),
     minConfidence: 0.65,
-    commandCooldownMs: 650,
+    commandCooldownMs: 300,
     unstableStopMs: 500,
   });
 

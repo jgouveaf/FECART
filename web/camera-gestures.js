@@ -32,14 +32,15 @@
     [9,13],[13,14],[14,15],[15,16], [13,17],[17,18],[18,19],[19,20],[0,17],
   ]);
   let MIN_CONFIDENCE = userConfig?.minConfidence ?? 0.65;
-  const CONFIRM_FRAMES = 4;
+  const CONFIRM_FRAMES = 3;
   const STOP_CONFIRM_FRAMES = 2;
-  const CONFIRM_MS = 180;
-  let COMMAND_COOLDOWN_MS = userConfig?.commandCooldownMs ?? 650;
+  const CONFIRM_MS = 120;
+  const MAX_CONFIRM_GAP_MS = 250;
+  let COMMAND_COOLDOWN_MS = userConfig?.commandCooldownMs ?? 300;
   const COMMAND_HEARTBEAT_MS = 400;
   const LOST_HAND_STOP_MS = 500;
   let UNSTABLE_GESTURE_STOP_MS = userConfig?.unstableStopMs ?? 500;
-  const INFERENCE_INTERVAL_MS = 83;
+  const INFERENCE_INTERVAL_MS = 50;
   const MODEL_IDLE_RELEASE_MS = 60000;
 
   let model = null;
@@ -56,6 +57,7 @@
   let candidateCount = 0;
   let candidateFrames = 0;
   let candidateSince = 0;
+  let candidateLastAt = 0;
   let confirmedCount = 0;
   let confirmedCommand = null;
   let lastDispatchAt = 0;
@@ -90,6 +92,7 @@
     const mode = control?.state.mode.id || 1;
     if (!enabled) deliveryStatus.textContent = "Detector desligado. Ative-o para testar os gestos.";
     else if (mode !== 3) deliveryStatus.textContent = "Detector ativo para teste. Os comandos só chegam ao robô no Modo Gestos.";
+    else if (!confirmedCommand) deliveryStatus.textContent = "Aguardando um gesto confirmado. Nenhum movimento novo foi solicitado.";
     else if (!control?.state.robot.connected) deliveryStatus.textContent = "Gesto validado, mas o Arduino USB está desconectado.";
     else deliveryStatus.textContent = `Modo Gestos ativo · último comando: ${confirmedCommand || "PARAR"}.`;
   }
@@ -102,6 +105,7 @@
     candidateCount = 0;
     candidateFrames = 0;
     candidateSince = 0;
+    candidateLastAt = 0;
   }
 
   function renderGestureMapLabels() {
@@ -117,6 +121,11 @@
       item.classList.toggle("active", stable && Number(item.dataset.fingers) === count);
     });
     confidenceElement.textContent = confidence ? `${Math.round(confidence * 100)}%` : "—";
+    if (count && confidence < MIN_CONFIDENCE) {
+      commandElement.textContent = "LEITURA INCERTA";
+      countElement.textContent = "Não foi possível confirmar todos os dedos; veja o diagnóstico abaixo.";
+      return;
+    }
     if (!count) {
       commandElement.textContent = "NENHUM";
       countElement.textContent = "Nenhum gesto detectado";
@@ -247,7 +256,8 @@
   }
 
   function classifyFingerCount(landmarks, worldLandmarks) {
-    const raw = window.QuantumGestureMath?.classifyFingerCountDetails?.(landmarks, worldLandmarks)
+    const raw = window.QuantumGestureMath?.classifyFingerCountDetails?.(landmarks, worldLandmarks,
+      { width: video.videoWidth, height: video.videoHeight })
       || { count: window.QuantumGestureMath?.classifyFingerCount(landmarks, worldLandmarks) || 0, confidence: 0 };
     return fingerStabilizer?.update(raw) || raw;
   }
@@ -343,15 +353,17 @@
       clearCandidate();
       return false;
     }
-    if (candidateCount !== count) {
+    if (candidateCount !== count || now - candidateLastAt > MAX_CONFIRM_GAP_MS) {
       candidateCount = count;
       candidateFrames = 1;
       candidateSince = now;
     } else {
       candidateFrames += 1;
     }
-    const requiredFrames = count === 4 ? STOP_CONFIRM_FRAMES : CONFIRM_FRAMES;
-    const requiredTime = count === 4 ? 80 : CONFIRM_MS;
+    candidateLastAt = now;
+    const isStop = COMMANDS[count] === "PARAR";
+    const requiredFrames = isStop ? STOP_CONFIRM_FRAMES : CONFIRM_FRAMES;
+    const requiredTime = isStop ? 50 : CONFIRM_MS;
     return candidateFrames >= requiredFrames && now - candidateSince >= requiredTime;
   }
 
@@ -388,7 +400,12 @@
     ingestCalibrationFrame(result, landmarks, worldLandmarks, classification, now);
     if (confidence < MIN_CONFIDENCE) clearCandidate();
     const stable = confidence >= MIN_CONFIDENCE && confirmTemporal(count, now);
-    updateGestureUi(count, confidence, stable);
+    const command = COMMANDS[count];
+    const changed = command !== confirmedCommand;
+    const stopCommand = command === "PARAR";
+    const ready = stable && (!changed || stopCommand || now >= cooldownUntil);
+    updateGestureUi(count, confidence, ready);
+    if (stable && !ready) countElement.textContent = `${count} dedo(s) · aguardando intervalo entre comandos`;
     control?.patch("gestures", { gesture: count || null, confidence, status: "ONLINE" }, { source: "gesture-frame" });
     if (!stable) {
       if (!unstableSince) unstableSince = now;
@@ -400,13 +417,10 @@
     }
     unstableSince = 0;
 
-    const command = COMMANDS[count];
-    const changed = command !== confirmedCommand;
-    const stopCommand = command === "PARAR";
     if (changed && (stopCommand || now >= cooldownUntil)) {
       confirmedCount = count;
       confirmedCommand = command;
-      cooldownUntil = now + COMMAND_COOLDOWN_MS;
+      cooldownUntil = stopCommand ? now : now + COMMAND_COOLDOWN_MS;
       dispatchCommand(command, count, confidence);
       control?.patch("gestures", { command, gesture: count, confidence }, { source: "gesture-confirmed" });
       control?.log("INFO", "GESTOS", `Confirmado: ${command} · ${Math.round(confidence * 100)}%`);
@@ -438,6 +452,9 @@
     const frame = (now) => {
       if (generation !== loopGeneration || !active || !enabled || activeView !== "hand") return;
       animationId = requestAnimationFrame(frame);
+      // Uma camera congelada nao gera resultados vazios: verificar o silencio
+      // antes do retorno por currentTime repetido para nao reter a ordem antiga.
+      if (confirmedCommand && now - lastHandAt >= LOST_HAND_STOP_MS) handleNoHand(now);
       if (!model || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.currentTime === lastVideoTime || now - lastInferenceAt < INFERENCE_INTERVAL_MS) return;
       lastVideoTime = video.currentTime;
       lastInferenceAt = now;
@@ -581,7 +598,8 @@
     MIN_CONFIDENCE = config.minConfidence;
     COMMAND_COOLDOWN_MS = config.commandCooldownMs;
     UNSTABLE_GESTURE_STOP_MS = config.unstableStopMs;
-    clearCandidate();
+    forceStop("CONFIG_CHANGED");
+    fingerStabilizer?.reset();
     renderGestureMapLabels();
     updateGestureUi(0, 0, false);
     control?.log("INFO", "GESTOS", "Configurações aplicadas sem recarregar a página");

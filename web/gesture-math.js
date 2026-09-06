@@ -71,7 +71,18 @@
     const tipMcpDistance = distance(points[tip], points[mcp]) / palmScale;
     const radialAdvance = (distance(points[tip], palmCenter) - distance(points[pip], palmCenter)) / palmScale;
     const reachRatio = distance(points[tip], points[mcp]) / Math.max(distance(points[pip], points[mcp]), EPSILON);
-    const probability = Math.min(thresholdScore(reachRatio, 1.3, 0.7), weightedProbability([
+    // Falanges podem parecer retas em 3D mesmo com o dedo dobrado na base.
+    // Exigir tambem avancar PARA FORA da palma (punho -> base do dedo).
+    // Produto escalar assinado, normalizado: independe de mao, espelho e rotacao.
+    // Nao dividir pelo comprimento projetado da primeira falange: ele pode ser
+    // quase zero num dedo dobrado e produzir um reachRatio artificialmente alto.
+    const base = points[mcp], wrist = points[0], fingertip = points[tip];
+    const longitudinalAdvance = ((fingertip.x - base.x) * (base.x - wrist.x)
+      + (fingertip.y - base.y) * (base.y - wrist.y)
+      + ((fingertip.z || 0) - (base.z || 0)) * ((base.z || 0) - (wrist.z || 0)))
+      / Math.max(distance(base, wrist) * palmScale, EPSILON);
+    const probability = Math.min(thresholdScore(longitudinalAdvance, 0.20, 0.40),
+      thresholdScore(reachRatio, 1.3, 0.7), weightedProbability([
       [thresholdScore(straightness, 0.78, 0.24), 0.36],
       [thresholdScore(pipAngle, 125, 70), 0.22],
       [thresholdScore(dipAngle, 130, 65), 0.18],
@@ -82,7 +93,7 @@
       extended: probability >= 0.52,
       probability,
       certainty: Math.min(1, Math.abs(probability - 0.52) * 2.3),
-      metrics: { straightness, pipAngle, dipAngle, tipMcpDistance, radialAdvance, reachRatio },
+      metrics: { straightness, pipAngle, dipAngle, tipMcpDistance, radialAdvance, reachRatio, longitudinalAdvance },
     };
   }
 

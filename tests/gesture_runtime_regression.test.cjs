@@ -73,6 +73,44 @@ test('divergencia entre imagem e mundo nao pode confirmar a contagem', () => {
   assert.ok(result.confidence < .3, `confidence=${result.confidence}`);
 });
 
+test('dedos retos dobrados na base nao contam como levantados, inclusive com profundidade', () => {
+  const api = math();
+  // Fixture inventada: falanges alinhadas, mas apontando para dentro da palma.
+  // O teste anterior de PIP/DIP e alcance aceitava essa geometria como aberta.
+  for (const count of [0, 1, 2, 3]) {
+    for (const depth of [0, .03]) {
+      const points = hand((1 << (count + 1)) - 2);
+      for (let finger = count; finger < 4; finger++) {
+        const base = 5 + finger * 4;
+        for (let joint = 1; joint <= 3; joint++) {
+          points[base + joint] = p(points[base].x, -.025 * joint, depth * joint);
+        }
+      }
+      for (const angle of [0, .7, 1.5, Math.PI]) {
+        // Rotacao em 3D, espelhamento, escala e translacao preservam a pose.
+        const rotated = points.map(pt => p(.5 - pt.x * 2,
+          .5 + 2 * (pt.y * Math.cos(angle) - pt.z * Math.sin(angle)),
+          2 * (pt.y * Math.sin(angle) + pt.z * Math.cos(angle))));
+        const result = api.classifyFingerCountDetails(rotated, rotated);
+        assert.equal(result.count, count, `count=${count} depth=${depth} angle=${angle}`);
+        assert.ok(result.confidence >= .65, `folded confidence=${result.confidence}`);
+      }
+    }
+  }
+});
+
+test('alcance grande por primeira falange curta nao abre dedo voltado para a palma', () => {
+  const points = hand(2);
+  points[13] = p(.031, 0);
+  points[14] = p(.031, -.001);
+  points[15] = p(.033, -.030);
+  points[16] = p(.036, -.050);
+  const result = math().classifyFingerCountDetails(points, points);
+  assert.equal(result.count, 1);
+  assert.equal(result.fingers[3], false);
+  assert.ok(result.confidence >= .65);
+});
+
 function controller(config = {}) {
   let now = 1000, current, nextFrame;
   const elements = new Map(), events = [];
@@ -172,4 +210,47 @@ test('a cadeia completa troca de cinco para quatro em ate 450ms a 13FPS sintetic
   assert.equal(h.commands()[0]?.command, 'GIRAR');
   const stop = h.commands().find(c => c.command === 'PARAR');
   assert.ok(stop && stop.emittedAt - 1600 <= 450, JSON.stringify(h.commands()));
+});
+
+test('replay mantem rotulos originais e so corrige blocos explicitamente indicados', () => {
+  const { replay } = require('../tools/replay_gesture_samples.cjs');
+  const samples = [1000, 1075, 2000, 2075].map(frameTimeMs => ({
+    frameTimeMs, expectedCount: 1, view: 'BACK', imageLandmarks: hand(6), worldLandmarks: hand(6),
+    detector: { count: 2, confidence: 1 },
+  }));
+  const report = replay(samples, math(), { expectedByBlock: { 2: 2 } });
+  assert.equal(report.blocks.length, 2);
+  assert.equal(report.blocks[0].recorded.correct, 0);
+  assert.equal(report.blocks[1].originalExpected, 1);
+  assert.equal(report.blocks[1].recorded.correct, 2);
+  assert.equal(report.blocks[1].current.correct, 2);
+  assert.ok(samples.every(s => s.expectedCount === 1));
+  assert.throws(() => replay(samples, math(), { expectedByBlock: { 3: 2 } }), /nao encontrado/);
+  assert.throws(() => replay(samples, math(), { expectedByBlock: { 2: 8 } }), /invalido/);
+});
+
+// Opt-in: arquivo privado fornecido pelo operador, nunca incluido no repositorio.
+// O replay avalia blocos de coleta; nao mede a latencia da camera nem dos motores.
+if (process.env.QT_GESTURE_SAMPLES) test('amostras locais percorrem geometria, filtro e controlador real', () => {
+  const { replay, loadSamples } = require('../tools/replay_gesture_samples.cjs');
+  const batches = new Map();
+  replay(loadSamples(process.env.QT_GESTURE_SAMPLES), math(), {
+    expectedByBlock: JSON.parse(process.env.QT_GESTURE_EXPECTED_BY_BLOCK || '{}'),
+    onResult({ sample, filtered, block }) {
+      if (!batches.has(block.block)) batches.set(block.block, {
+        h: controller(), start: sample.frameTimeMs, expected: block.expected,
+      });
+      batches.get(block.block).h.frame(filtered.count, sample.frameTimeMs, filtered.confidence);
+    },
+  });
+  const mapping = { 1: 'FRENTE', 2: 'DIREITA', 3: 'ESQUERDA', 4: 'PARAR', 5: 'GIRAR' };
+  const delays = [];
+  for (const [number, { h, start, expected }] of batches) {
+    const command = mapping[expected];
+    const first = h.commands().find(c => c.command === command);
+    assert.ok(first, `bloco ${number} nunca confirmou ${command}`);
+    assert.ok(h.commands().every(c => c.command === command || c.command === 'PARAR'), `movimento incorreto no bloco ${number}`);
+    delays.push(Math.round(first.emittedAt - start));
+  }
+  console.log('Replay local: blocos=' + batches.size + ', primeira confirmacao por bloco (ms)=' + delays.join(','));
 });

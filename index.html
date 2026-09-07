@@ -32,6 +32,7 @@
     }
   </script>
   <link rel="stylesheet" href="web/styles.css?v=22">
+  <link rel="stylesheet" href="web/person-follow.css?v=1">
 </head>
 <body>
   <noscript><div class="auth-overlay" style="display:flex"><div class="auth-card"><h1>Quantum Tracker</h1><p>Ative o JavaScript para acessar o painel.</p></div></div></noscript>
@@ -230,6 +231,7 @@
             <video id="cameraVideo" playsinline muted aria-label="Prévia da câmera"></video>
             <canvas id="gestureCanvas" aria-hidden="true"></canvas>
             <canvas id="identityCanvas" aria-hidden="true"></canvas>
+            <canvas id="personCanvas" aria-hidden="true"></canvas>
             <div class="camera-placeholder" id="cameraPlaceholder">
               <span>◉</span>
               <strong id="cameraPlaceholderTitle">Câmera desligada</strong>
@@ -295,6 +297,24 @@
           </aside>
         </div>
         <div class="identity-lab camera-face-only" id="faceCameraPanel" role="tabpanel" aria-labelledby="faceCameraTab">
+          <section class="person-follow-panel" aria-labelledby="personFollowTitle">
+            <span class="section-tag">Modo 2 · câmera na frente do carrinho</span>
+            <h3 id="personFollowTitle">Seguir uma pessoa cadastrada</h3>
+            <p>Cadastre o rosto abaixo, clique em <strong>Seguir</strong> no cadastro e prepare o Modo 2. O retângulo verde marca o alvo; os azuis mostram outras pessoas. Primeiro teste a prévia sem o Arduino.</p>
+            <div class="person-follow-actions">
+              <button class="primary-button" id="preparePersonFollow" type="button">Preparar Modo 2 e câmera</button>
+              <button class="secondary-button" id="pausePersonFollow" type="button">Pausar seguimento</button>
+              <button class="secondary-button" id="retryPersonDetection" type="button" hidden>Tentar detector novamente</button>
+            </div>
+            <p id="personFollowStatus" role="status">Ative o Modo 2 e a câmera</p>
+            <dl class="person-follow-metrics">
+              <div><dt>Pessoas na imagem</dt><dd id="personCount">0</dd></div>
+              <div><dt>Alvo escolhido</dt><dd id="personTarget">Nenhum</dd></div>
+              <div><dt>Previsão na imagem</dt><dd id="personPrediction">Sem previsão ativa</dd></div>
+            </dl>
+            <p id="personFollowDelivery">Somente o Modo 2 recebe estas decisões.</p>
+            <p class="privacy-note">Se perder o alvo, a imagem atrasar ou pessoas se confundirem, pede parada. Sem ver o rosto, mantém o ID no corpo por até 3 segundos; depois exige reconhecimento novamente. A previsão dura até 0,5 segundo e nunca autoriza movimento às cegas. No Modo 2 conectado, para com obstáculo a 30 cm e só libera a partir de 40 cm. Isso não é navegação através de paredes.</p>
+          </section>
           <div class="identity-register-card">
             <div class="identity-heading">
               <div><span class="section-tag">Identificação local</span><h3>Cadastrar pessoa</h3></div>
@@ -330,7 +350,7 @@
             </div>
             <label class="identity-field" for="personName"><span>Nome da pessoa</span><input id="personName" maxlength="60" autocomplete="off" placeholder="Ex.: João"></label>
             <button class="primary-button" id="registerPerson" disabled>Validar e cadastrar rosto</button>
-            <p class="privacy-note">O cadastro só acontece ao clicar no botão. A foto de perfil e cinco embeddings alinhados ficam no IndexedDB deste navegador; nada é enviado ao servidor.</p>
+            <p class="privacy-note">Cadastre somente quem autorizou. O botão salva uma foto e cinco amostras faciais no IndexedDB deste navegador, sem enviar ao servidor. O cadastro permanece entre sessões, mas limpar os dados do navegador pode apagá-lo: exporte o backup para guardar ou levar a outro PC.</p>
           </div>
           <div class="identity-list-card">
             <div class="identity-heading"><div><span class="section-tag">Banco local</span><h3>Pessoas cadastradas</h3></div><span class="identity-counter" id="identityCount">0 IDs</span></div>
@@ -493,7 +513,9 @@
   <script src="web/face-identity-math.js?v=2" defer></script>
   <script src="web/gesture-math.js?v=8" defer></script>
   <script src="web/gesture-calibration.js?v=1" defer></script>
-  <script src="web/face-identities.js?v=14" defer></script>
+  <script src="web/person-follow-math.js?v=1" defer></script>
+  <script src="web/person-follow.js?v=1" defer></script>
+  <script src="web/face-identities.js?v=15" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>
 </html>

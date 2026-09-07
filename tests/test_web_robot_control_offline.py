@@ -67,9 +67,11 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn('Number(detail.confidence) < 0.45', self.robot_js)
         self.assertIn("selectedTargetId", self.face_js)
         self.assertIn('item.identity.registered', self.face_js)
-        self.assertIn('lastFollowCommand === "ESQUERDA" ? 0.44 : 0.37', self.face_js)
-        self.assertIn('lastFollowCommand === "DIREITA" ? 0.56 : 0.63', self.face_js)
-        self.assertIn('visible: false, command: "PARAR"', self.face_js)
+        follow_math = (ROOT / "web" / "person-follow-math.js").read_text(encoding="utf-8")
+        self.assertIn('previous === "ESQUERDA" ? 0.46 : 0.40', follow_math)
+        self.assertIn('previous === "DIREITA" ? 0.54 : 0.60', follow_math)
+        self.assertIn('visible: false, command: "PARAR"', follow_math)
+        self.assertNotIn('quantum:person-tracking', self.face_js)
 
     def test_command_heartbeat_is_fail_safe(self) -> None:
         self.assertRegex(self.robot_js, r"INPUT_TIMEOUT_MS\s*=.*\|\|\s*900")

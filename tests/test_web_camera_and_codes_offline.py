@@ -56,7 +56,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/robot-control.js?v=20',
             'web/code-editor-utils.js?v=1',
             'web/face-identity-math.js?v=2',
-            'web/face-identities.js?v=14',
+            'web/face-identities.js?v=15',
             'id="toggleGestures"',
             'id="cameraDeviceSelect"',
             'id="retryFaceDetection"',
@@ -201,7 +201,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("DETECTION_DELAY_MS", self.face_js)
         self.assertIn("scheduleDetection", self.face_js)
         self.assertIn("recognitionMemory", self.face_js)
-        self.assertIn('quantum:person-tracking', self.face_js)
+        self.assertIn('quantum:face-observations', self.face_js)
 
     def test_face_inference_has_backoff_circuit_breaker_and_manual_retry(self) -> None:
         self.assertIn("MAX_CONSECUTIVE_INFERENCE_ERRORS = 3", self.face_js)

@@ -1,0 +1,215 @@
+"use strict";
+// Real site, IndexedDB, video frames, controller and Serial streams; inference and USB are doubles.
+// This test NEVER requests a physical camera or serial port.
+const assert = require("node:assert/strict");
+const { chromium } = require("playwright");
+const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
+(async () => {
+  const browser = await chromium.launch({ headless: true, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
+  const context = await browser.newContext({ permissions: ["camera"] });
+  try {
+    await context.addInitScript(() => {
+      localStorage.setItem("quantumAuth:v1", "ok");
+      window.__test = { x: .5, people: true, face: true, embedding: 1, frames: 0, workers: 0, writes: [], distance: 60, failFace: false, events: [] };
+      addEventListener("quantum:person-tracking", e => window.__test.events.push(e.detail));
+      window.Human = { Human: class {
+        tf = { dispose() {} };
+        match = { similarity(a, b) { return a[0] === b[0] ? .99 : .1; } };
+        async load() {} async warmup() {}
+        async detect(video) {
+          if (window.__test.failFace) throw new Error("injected face failure");
+          const t = window.__test, w = video.videoWidth, h = video.videoHeight;
+          const embedding = Array(1024).fill(t.embedding); embedding[1023] += ++t.frames / 1000;
+          return { face: t.face ? [{ box: [t.x * w - 80, .13 * h, 160, 160],
+            faceScore: .99, real: .99, live: .99, embedding,
+            rotation: { angle: { yaw: 0, pitch: 0, roll: 0 } } }] : [], gesture: [{ gesture: "facing center" }] };
+        }
+      } };
+      const RealWorker = window.Worker;
+      window.Worker = class {
+        constructor(url, options) {
+          if (!String(url).includes("person-detector.worker.js")) return new RealWorker(url, options);
+          window.__test.workers++; this.closed = false;
+        }
+        postMessage(data) {
+          data.bitmap?.close();
+          setTimeout(() => {
+            if (this.closed) return;
+            const t = window.__test;
+            if (data.type === "frame" && t.failWorker) { this.onmessage?.({ data: { type: "error", message: "injected worker error" } }); return; }
+            this.onmessage?.({ data: data.type === "init" ? { type: "ready" } : {
+              type: "result", id: data.id, capturedAt: data.capturedAt,
+              people: t.people ? [{ confidence: .92, box: { x: t.x - .18, y: .1, width: .36, height: .6 } }] : [],
+            } });
+          }, 25);
+        }
+        terminate() { if (!this.closed) window.__test.workers--; this.closed = true; }
+      };
+      const serial = new EventTarget();
+      serial.requestPort = async () => {
+        let receive, timer, mode = 1, command = "PARAR", emergency = true;
+        const send = line => { try { receive.enqueue(new TextEncoder().encode(line + "\n")); } catch {} };
+        const telemetry = () => send(`QT|MODE:${mode}|DIST:${window.__test.distance}|CMD:${command}|STATE:${emergency ? "ESTOP" : "SEGUINDO"}`);
+        return {
+          async open() {
+            this.readable = new ReadableStream({ start(c) { receive = c; } });
+            this.writable = new WritableStream({ write(bytes) {
+              const line = new TextDecoder().decode(bytes).trim(); window.__test.writes.push(line);
+              if (line === "HELLO") send("QT:READY:V7");
+              else if (line === "STATUS") telemetry();
+              else {
+                if (line.startsWith("MODE:")) mode = Number(line.split(":")[1]);
+                if (line === "ESTOP") { emergency = true; command = "PARAR"; }
+                if (line === "RESET_ESTOP") emergency = false;
+                if (line.startsWith("CMD:")) command = emergency ? "PARAR" : line.slice(4);
+                send(`OK:${line}`);
+              }
+            } });
+            timer = setInterval(telemetry, 200);
+          }, async close() { clearInterval(timer); },
+        };
+      };
+      Object.defineProperty(navigator, "serial", { value: serial });
+    });
+    const page = await context.newPage(), errors = [], results = [];
+    page.on("pageerror", e => errors.push(e.message));
+    page.on("dialog", dialog => dialog.accept());
+    const check = async (name, fn) => { await fn(); results.push(name); console.log(`ok - ${name}`); };
+    const snap = () => page.evaluate(() => window.quantumPersonFollower.snapshot);
+    const waitCommand = cmd => page.waitForFunction(cmd => window.quantumPersonFollower.snapshot?.command === cmd, cmd, { timeout: 12000 });
+    const dbRecords = () => page.evaluate(() => new Promise((resolve, reject) => {
+      const r = indexedDB.open("quantum_tracker_biometrics", 1);
+      r.onsuccess = () => { const db = r.result, get = db.transaction("identities").objectStore("identities").getAll(); get.onsuccess = () => { db.close(); resolve(get.result); }; get.onerror = () => reject(get.error); };
+    }));
+    await page.goto(site, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => window.quantumPersonFollower);
+    await check("Mode 1 does not start body model", async () => assert.equal(await page.evaluate(() => window.__test.workers), 0));
+    await page.evaluate(() => window.quantumCameraController.start());
+    await page.locator("#personName").fill("Pessoa de teste");
+    await page.waitForFunction(() => !document.getElementById("registerPerson").disabled);
+    await page.locator("#registerPerson").click();
+    await page.waitForFunction(() => document.querySelectorAll(".follow-person").length === 1);
+    await check("registration commits five samples and a photo", async () => {
+      const records = await dbRecords(); assert.equal(records.length, 1); assert.equal(records[0].embeddings.length, 5);
+      assert.equal(records[0].embeddings[0].length, 1024); assert.ok(records[0].photo.startsWith("data:image/jpeg"));
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.querySelectorAll(".follow-person").length === 1);
+    await check("registration survives page reload with same ID", async () => assert.equal((await dbRecords())[0].id, "QT-001"));
+    await page.locator(".follow-person").click();
+    await page.locator("#preparePersonFollow").click();
+    await waitCommand("FRENTE");
+    await check("chosen face associates with body and follows in preview", async () => {
+      assert.equal((await snap()).id, "QT-001"); assert.equal((await snap()).state, "FOLLOWING");
+      assert.equal(await page.evaluate(() => window.__test.writes.length), 0);
+    });
+    await page.locator("#connectRobot").click();
+    await page.waitForFunction(() => window.quantumRobot.connected);
+    await check("connecting never releases ESTOP automatically", async () => {
+      assert.equal(await page.evaluate(() => window.QuantumControl.state.safety.emergency), true);
+      assert.equal(await page.evaluate(() => window.__test.writes.includes("RESET_ESTOP")), false);
+    });
+    await page.locator("#emergencyStop").click();
+    await page.waitForFunction(() => window.__test.writes.includes("CMD:FRENTE"));
+    await check("Mode 2 decision reaches existing Web Serial controller", async () => assert.ok(await page.evaluate(() => window.__test.writes.includes("MODE:2"))));
+    for (const [x, command] of [[.25, "ESQUERDA"], [.75, "DIREITA"], [.5, "FRENTE"]]) {
+      await page.evaluate(x => { window.__test.x = x; window.__test.writes = []; }, x);
+      await waitCommand(command);
+      await page.waitForFunction(command => window.__test.writes.includes(`CMD:${command}`), command);
+      await check(`${command} is acknowledged over simulated USB`, async () => assert.equal((await snap()).command, command));
+    }
+    // Prediction is intentionally suppressed while telemetry still says the camera is turning.
+    await page.waitForFunction(() => window.QuantumControl.state.robot.command === "FRENTE");
+    await page.evaluate(() => { window.__test.people = false; window.__test.face = false; window.__test.writes = []; });
+    await waitCommand("PARAR");
+    await page.waitForFunction(() => window.__test.writes.includes("CMD:PARAR"));
+    await check("lost person produces estimate but only STOP", async () => {
+      assert.ok(await page.evaluate(() => window.__test.events.some(e => e.prediction && e.command === "PARAR" && !e.visible)));
+      await page.waitForTimeout(700); assert.equal((await snap()).prediction, null);
+    });
+    await page.evaluate(() => { window.__test.people = true; window.__test.face = true; }); await waitCommand("FRENTE");
+    await page.evaluate(() => { window.__test.distance = 25; });
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === "KEEP_DISTANCE");
+    await check("Mode 2 stops at conservative obstacle distance", async () => assert.equal((await snap()).command, "PARAR"));
+    await page.evaluate(() => { window.__test.distance = 60; }); await waitCommand("FRENTE");
+    await page.evaluate(() => { window.__test.failWorker = true; });
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === "ERROR");
+    await check("body worker failure stops and exposes explicit retry", async () => {
+      assert.equal((await snap()).command, "PARAR"); assert.equal(await page.evaluate(() => window.__test.workers), 0);
+      assert.equal(await page.locator("#retryPersonDetection").isVisible(), true);
+    });
+    await page.evaluate(() => { window.__test.failWorker = false; });
+    await page.locator("#retryPersonDetection").click(); await waitCommand("FRENTE");
+    await check("body worker recovers only through retry and new evidence", async () => assert.equal((await snap()).state, "FOLLOWING"));
+    await page.evaluate(() => { window.__test.failFace = true; });
+    await waitCommand("PARAR");
+    await page.waitForFunction(() => !document.getElementById("retryFaceDetection").hidden);
+    await check("face inference circuit breaker clears target evidence", async () => assert.equal((await snap()).command, "PARAR"));
+    await page.evaluate(() => { window.__test.failFace = false; });
+    await page.locator("#retryFaceDetection").click(); await waitCommand("FRENTE");
+    await check("face retry reacquires selected body without changing ID", async () => assert.equal((await snap()).id, "QT-001"));
+    await page.evaluate(() => { window.__test.face = false; });
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === "BODY_TRACKING");
+    await check("body retains target briefly when face turns away", async () => assert.equal((await snap()).command, "FRENTE"));
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.command === "PARAR", null, { timeout: 6000 });
+    await check("body identity expires and cannot run indefinitely", async () => assert.equal((await snap()).command, "PARAR"));
+    await page.evaluate(() => { window.__test.face = true; }); await waitCommand("FRENTE");
+    await page.evaluate(() => {
+      const v = document.getElementById("cameraVideo"), frozen = v.currentTime;
+      Object.defineProperty(v, "currentTime", { configurable: true, get: () => frozen });
+    });
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === "STALE_FRAME");
+    await check("frozen video cannot keep refreshing motion", async () => assert.equal((await snap()).command, "PARAR"));
+    await page.evaluate(() => { delete document.getElementById("cameraVideo").currentTime; }); await waitCommand("FRENTE");
+    await page.locator("#personName").fill("Pessoa de teste");
+    await page.waitForFunction(() => !document.getElementById("registerPerson").disabled);
+    await page.locator("#registerPerson").click();
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === "ENROLLING");
+    await check("enrollment pauses follow before collecting samples", async () => assert.equal((await snap()).command, "PARAR"));
+    await page.waitForTimeout(1800);
+    await page.locator("#pausePersonFollow").click();
+    await check("manual pause stops worker and movement", async () => { assert.equal((await snap()).command, "PARAR"); assert.equal(await page.evaluate(() => window.__test.workers), 0); });
+    const downloadPromise = page.waitForEvent("download"); await page.locator("#exportIdentities").click(); const download = await downloadPromise;
+    const fs = require("node:fs"); const backup = JSON.parse(fs.readFileSync(await download.path(), "utf8"));
+    await check("backup contains committed enrollment", async () => { assert.equal(backup.identities.length, 1); assert.ok(backup.identities[0].embeddings.length >= 5); });
+    await page.getByRole("button", { name: "Excluir", exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".follow-person").length === 0);
+    await check("explicit deletion removes local identity and selected target", async () => { assert.equal((await dbRecords()).length, 0); assert.equal((await snap()).command, "PARAR"); });
+    await page.locator("#identityBackupFile").setInputFiles({ name: "backup.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(backup)) });
+    await page.waitForFunction(() => document.querySelectorAll(".follow-person").length === 1);
+    await check("backup restores enrollment without silently selecting it", async () => assert.equal((await snap()).id, null));
+    const invalidBackup = structuredClone(backup); invalidBackup.identities[0].embeddings.forEach(e => { e[3] = "not a number"; });
+    await page.locator("#identityBackupFile").setInputFiles({ name: "invalid.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(invalidBackup)) });
+    await page.waitForFunction(() => document.getElementById("faceHint").textContent.includes("Falha ao importar"));
+    await check("malformed numeric embeddings are rejected without modifying enrollment", async () => assert.equal((await dbRecords())[0].embeddings[0][3], 1));
+    await page.evaluate(() => { window.__test.embedding = 2; });
+    await page.locator("#personName").fill("Cadastro interrompido");
+    await page.waitForFunction(() => !document.getElementById("registerPerson").disabled);
+    await page.locator("#registerPerson").click();
+    await page.evaluate(async () => { await window.quantumCameraController.stop(); await window.quantumCameraController.start(); });
+    await page.waitForTimeout(1500);
+    await check("camera restart cancels incomplete enrollment instead of resuming it", async () => assert.equal((await dbRecords()).length, 1));
+    await page.locator("#personName").fill("");
+    for (const width of [360, 768, 1440]) {
+      await page.setViewportSize({ width, height: 960 });
+      await check(`Mode 2 layout fits ${width}px viewport`, async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false));
+    }
+    await page.locator(".person-follow-panel").evaluate(e => e.scrollIntoView({ block: "center" }));
+    await page.locator(".person-follow-panel").screenshot({ path: "tests/artifacts/mode-two-panel.png" });
+    await page.evaluate(() => window.quantumRobot.requestMode(1, "test"));
+    await page.waitForFunction(() => window.QuantumControl.state.mode.id === 1 && window.QuantumControl.state.mode.phase === "ACTIVE");
+    await check("return to Mode 1 releases body worker", async () => assert.equal(await page.evaluate(() => window.__test.workers), 0));
+    // Avoid loading the gesture model in this integration test; its own real-model smoke covers it.
+    await page.evaluate(() => { window.quantumGestureController = { selectView: async () => {}, enableGestures: async () => {} }; });
+    await page.evaluate(() => window.quantumRobot.requestMode(3, "test"));
+    await page.waitForFunction(() => window.QuantumControl.state.mode.id === 3 && window.QuantumControl.state.mode.phase === "ACTIVE");
+    await page.evaluate(() => { window.__test.events = []; }); await page.waitForTimeout(700);
+    await check("Mode 3 receives no person-follow events or worker", async () => {
+      assert.equal(await page.evaluate(() => window.__test.workers), 0); assert.equal(await page.evaluate(() => window.__test.events.length), 0);
+    });
+    await page.locator("#disconnectRobot").click();
+    await page.waitForFunction(() => !window.quantumRobot.usbBusy);
+    assert.deepEqual(errors, []);
+    console.log(`${results.length} browser scenarios passed (mock inference/USB, real persistence and controller).`);
+  } finally { await context.close(); await browser.close(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

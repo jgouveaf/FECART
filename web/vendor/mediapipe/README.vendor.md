@@ -1,7 +1,9 @@
 # MediaPipe Tasks Vision — arquivos locais
 
-Esta pasta contém somente os artefatos necessários para executar o detector de
-mãos sem depender de CDN durante o uso do Quantum Tracker.
+Esta pasta contém os artefatos necessários para executar os detectores de
+mãos e de pessoas sem depender de CDN durante o uso do Quantum Tracker.
+O modelo de pessoas foi acrescentado em 2026-09-07; sua procedência, versão e
+hash estão em `models/README.md`. Runtime, WASM e modelo de mãos permanecem iguais.
 
 - Pacote: `@mediapipe/tasks-vision@1.0.1`
 - Origem do pacote: `https://registry.npmjs.org/@mediapipe/tasks-vision/-/tasks-vision-1.0.1.tgz`

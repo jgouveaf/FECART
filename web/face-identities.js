@@ -26,8 +26,6 @@
   const importButton = $("importIdentities");
   const backupFile = $("identityBackupFile");
   const cameraPanel = $("camera-gestos");
-  const trackingStateElement = $("faceTrackingState");
-  const directionElement = $("faceDirection");
   const retryDetectionButton = $("retryFaceDetection");
 
   const checks = {
@@ -99,6 +97,8 @@
   let detectionTimer = 0;
   let currentFaces = [];
   let registering = false;
+  let enrollmentGeneration = 0;
+  let lastFaceVideoTime = -1;
   let lastPreviewAt = 0;
   let lastResult = null;
   let blinkSeenAt = 0;
@@ -107,13 +107,7 @@
   let recognitionMemory = [];
   let activeView = cameraPanel?.dataset.cameraView || "face";
   let detectionGeneration = 0;
-  let lockedTargetId = null;
   let selectedTargetId = null;
-  let targetMisses = 0;
-  let smoothedTargetCenter = null;
-  let lastFollowCommand = "PARAR";
-  let lastTrackingSignature = "";
-  let lastTrackingAt = 0;
   let faceFrames = 0;
   let faceFpsWindowAt = 0;
   let consecutiveInferenceErrors = 0;
@@ -161,28 +155,30 @@
   async function putRecord(record) {
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
-      const request = db.transaction(DB_STORE, "readwrite").objectStore(DB_STORE).put(record);
-      request.onsuccess = () => resolve(record);
-      request.onerror = () => reject(request.error);
+      const transaction = db.transaction(DB_STORE, "readwrite");
+      transaction.objectStore(DB_STORE).put(record);
+      transaction.oncomplete = () => resolve(record);
+      transaction.onabort = transaction.onerror = () => reject(transaction.error || new Error("Cadastro não foi salvo."));
     });
   }
 
   async function deleteRecord(id) {
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
-      const request = db.transaction(DB_STORE, "readwrite").objectStore(DB_STORE).delete(id);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      const transaction = db.transaction(DB_STORE, "readwrite");
+      transaction.objectStore(DB_STORE).delete(id);
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = transaction.onerror = () => reject(transaction.error || new Error("Exclusão não foi concluída."));
     });
   }
 
   function normalizeIdentity(item) {
     if (!item?.id || typeof item.name !== "string" || !item.name.trim()) return null;
     const humanEmbeddings = Array.isArray(item.embeddings)
-      ? item.embeddings.filter((value) => Array.isArray(value) && value.length === EMBEDDING_LENGTH)
+      ? item.embeddings.filter((value) => Array.isArray(value) && value.length === EMBEDDING_LENGTH && value.every(Number.isFinite)).slice(-MAX_SAMPLES_PER_IDENTITY)
       : [];
     const legacyDescriptors = Array.isArray(item.descriptors)
-      ? item.descriptors.filter((value) => Array.isArray(value) && value.length === 128)
+      ? item.descriptors.filter((value) => Array.isArray(value) && value.length === 128 && value.every(Number.isFinite)).slice(-MAX_SAMPLES_PER_IDENTITY)
       : [];
     const engine = humanEmbeddings.length ? HUMAN_ENGINE : legacyDescriptors.length ? "face-api-legacy" : "";
     if (!engine || typeof item.photo !== "string" || !item.photo.startsWith("data:image/")) return null;
@@ -277,7 +273,6 @@
         recognitionMemory = recognitionMemory.filter((item) => item.id !== identity.id);
         if (selectedTargetId === identity.id) {
           selectedTargetId = null;
-          lockedTargetId = null;
           publishPersonTracking([], true);
         }
         renderIdentities();
@@ -292,10 +287,6 @@
       follow.disabled = legacy;
       follow.addEventListener("click", () => {
         selectedTargetId = selectedTargetId === identity.id ? null : identity.id;
-        lockedTargetId = selectedTargetId;
-        targetMisses = 0;
-        smoothedTargetCenter = null;
-        lastFollowCommand = "PARAR";
         renderIdentities();
         publishPersonTracking(currentFaces, true);
       });
@@ -341,7 +332,7 @@
       real: real >= MIN_REAL,
       live: live >= MIN_LIVE,
       blink: performance.now() - blinkSeenAt < 10000,
-      descriptor: embedding.length === EMBEDDING_LENGTH,
+      descriptor: embedding.length === EMBEDDING_LENGTH && embedding.every(Number.isFinite),
       confidence: confidence >= MIN_CONFIDENCE,
     };
     const acceptable = validations.single && validations.size && validations.pose
@@ -389,7 +380,7 @@
 
   function identifyFace(face) {
     const box = boxObject(face);
-    if (!Array.isArray(face.embedding) || face.embedding.length !== EMBEDDING_LENGTH) {
+    if (!Array.isArray(face.embedding) || face.embedding.length !== EMBEDDING_LENGTH || !face.embedding.every(Number.isFinite)) {
       window.quantumFaceDiagnostics = {
         known: identities.length,
         bestSimilarity: 0,
@@ -473,73 +464,20 @@
     }
   }
 
-  function emitPersonTracking(detail, tracking, force = false) {
-    const now = performance.now();
-    const signature = `${tracking}:${detail.visible}:${detail.command}:${detail.id || "-"}`;
-    if (!force && signature === lastTrackingSignature && now - lastTrackingAt < 400) return;
-    lastTrackingSignature = signature;
-    lastTrackingAt = now;
-    if (trackingStateElement) trackingStateElement.textContent = tracking;
-    if (directionElement) directionElement.textContent = detail.command;
-    control?.patch("vision", {
-      active: cameraActive && activeView === "face",
-      status: cameraActive && activeView === "face" ? "ONLINE" : "OFFLINE",
-      targetId: detail.id || null,
-      confidence: detail.confidence || 0,
-      tracking,
-      direction: detail.command,
-    }, { source: "face-tracking" });
-    window.dispatchEvent(new CustomEvent("quantum:person-tracking", {
-      detail: {
-        ...detail,
-        tracking,
-        emittedAt: performance.now(),
-        modeGeneration: window.quantumRobot?.modeGeneration,
-      },
-    }));
-  }
-
-  function publishPersonTracking(faces, force = false) {
-    const candidates = faces.filter((item) => item.identity.registered
-      && item.quality.confidence >= MIN_CONFIDENCE);
-    if (activeView !== "face" || !cameraActive) {
-      targetMisses = 0;
-      emitPersonTracking({ visible: false, command: "PARAR" }, "SEARCHING", true);
-      return;
-    }
-    if (!selectedTargetId) {
-      lockedTargetId = null;
-      emitPersonTracking({ visible: false, command: "PARAR" }, "SELECT_TARGET", force);
-      return;
-    }
-    lockedTargetId = selectedTargetId;
-    const target = candidates.find((item) => item.identity.id === selectedTargetId);
-    if (!target) {
-      targetMisses += 1;
-      lastFollowCommand = "PARAR";
-      smoothedTargetCenter = null;
-      emitPersonTracking({ visible: false, command: "PARAR", id: selectedTargetId }, targetMisses > 3 ? "TARGET_LOST" : "REACQUIRING", force);
-      return;
-    }
-    targetMisses = 0;
-    const rawCenter = (target.face.box[0] + target.face.box[2] / 2) / Math.max(1, video.videoWidth);
-    smoothedTargetCenter = smoothedTargetCenter == null ? rawCenter : smoothedTargetCenter * 0.68 + rawCenter * 0.32;
-    const faceHeightRatio = target.face.box[3] / Math.max(1, video.videoHeight);
-    let command = lastFollowCommand;
-    if (faceHeightRatio >= 0.55) command = "PARAR";
-    else if (smoothedTargetCenter < (lastFollowCommand === "ESQUERDA" ? 0.44 : 0.37)) command = "ESQUERDA";
-    else if (smoothedTargetCenter > (lastFollowCommand === "DIREITA" ? 0.56 : 0.63)) command = "DIREITA";
-    else if (smoothedTargetCenter >= 0.44 && smoothedTargetCenter <= 0.56) command = "FRENTE";
-    lastFollowCommand = command;
-    emitPersonTracking({
-      visible: true,
-      command,
-      center: smoothedTargetCenter,
-      faceHeightRatio,
-      id: target.identity.id,
-      registered: target.identity.registered,
-      confidence: target.quality.confidence,
-    }, lastTrackingSignature.includes(target.identity.id) ? "FOLLOWING" : "TARGET_ACQUIRED", force);
+  // Face identification supplies evidence, never motor commands. Mode 2 owns that decision.
+  function publishPersonTracking(faces, _force = false, failed = false) {
+    const active = cameraActive && activeView === "face";
+    window.dispatchEvent(new CustomEvent("quantum:face-observations", { detail: {
+      selectedId: selectedTargetId,
+      selectedName: identities.find(item => item.id === selectedTargetId)?.name || "",
+      registering, failed,
+      faces: active && !failed ? faces.map(item => ({
+        id: item.identity.id, registered: item.identity.registered,
+        confidence: item.quality.confidence, capturedAt: item.capturedAt,
+        box: { x: item.face.box[0] / video.videoWidth, y: item.face.box[1] / video.videoHeight,
+          width: item.face.box[2] / video.videoWidth, height: item.face.box[3] / video.videoHeight },
+      })) : [],
+    } }));
   }
 
   function setSampleProgress(value) {
@@ -666,6 +604,9 @@
 
   async function detectFaces() {
     if (!cameraActive || detectionBusy || video.readyState < 2) return;
+    if (video.currentTime === lastFaceVideoTime) return;
+    lastFaceVideoTime = video.currentTime;
+    const capturedAt = performance.now();
     const generation = detectionGeneration;
     detectionBusy = true;
     try {
@@ -688,11 +629,13 @@
           identity,
           quality: assessFace(face, result, identity.id),
           detectedAt,
+          capturedAt,
         };
       });
       drawFaces(faces);
       updatePanel(faces);
       publishPersonTracking(faces);
+      control?.patch("vision", { active: true, status: "ONLINE" }, { source: "face-loop" });
       faceFrames += 1;
       if (!faceFpsWindowAt) faceFpsWindowAt = detectedAt;
       const fpsElapsed = detectedAt - faceFpsWindowAt;
@@ -706,6 +649,9 @@
       setStatus(count ? `${count} ROSTO${count === 1 ? "" : "S"} DETECTADO${count === 1 ? "" : "S"}` : "PROCURANDO ROSTO", true);
     } catch (error) {
       if (generation !== detectionGeneration) return;
+      currentFaces = [];
+      registerButton.disabled = true;
+      publishPersonTracking([], true, true);
       consecutiveInferenceErrors += 1;
       nextDetectionDelayMs = Math.min(MAX_INFERENCE_BACKOFF_MS, 500 * (2 ** (consecutiveInferenceErrors - 1)));
       const persistent = consecutiveInferenceErrors >= MAX_CONSECUTIVE_INFERENCE_ERRORS;
@@ -742,6 +688,7 @@
   async function startIdentification() {
     const generation = ++detectionGeneration;
     cameraActive = true;
+    lastFaceVideoTime = -1;
     resetInferenceCircuit();
     canvas.width = video.videoWidth || 960;
     canvas.height = video.videoHeight || 540;
@@ -765,6 +712,7 @@
 
   function stopIdentification() {
     ++detectionGeneration;
+    ++enrollmentGeneration;
     cameraActive = false;
     registering = false;
     clearTimeout(detectionTimer);
@@ -774,9 +722,7 @@
     currentFaces = [];
     temporaryTracks = [];
     qualityStabilizer.reset();
-    targetMisses = 0;
-    smoothedTargetCenter = null;
-    lastFollowCommand = "PARAR";
+    lastFaceVideoTime = -1;
     faceFrames = 0;
     faceFpsWindowAt = 0;
     resetInferenceCircuit();
@@ -791,15 +737,16 @@
     control?.patch("vision", { active: false, status: "OFFLINE", targetId: null, confidence: 0, tracking: "SEARCHING", direction: "PARAR", fps: 0 }, { source: "face-stop" });
   }
 
-  function waitForFreshFace(afterTimestamp, allowedIdentityId = null, timeoutMs = 30000) {
+  function waitForFreshFace(afterTimestamp, allowedIdentityId = null, token, timeoutMs = 10000) {
     return new Promise((resolve, reject) => {
       const start = performance.now();
       const check = () => {
+        if (token !== enrollmentGeneration) return reject(new Error("Cadastro cancelado; tente novamente."));
         if (!cameraActive) return reject(new Error("A câmera foi desligada durante o cadastro."));
         if (activeView !== "face") return reject(new Error("O cadastro foi interrompido porque a aba da câmera mudou."));
         const item = currentFaces.length === 1 ? currentFaces[0] : null;
         const permittedIdentity = !item?.identity.registered || item.identity.id === allowedIdentityId;
-        if (item && item.detectedAt > afterTimestamp && permittedIdentity
+        if (item && item.capturedAt - afterTimestamp >= 180 && performance.now() - item.capturedAt < 800 && permittedIdentity
           && item.quality.acceptable && item.quality.rawAcceptable) return resolve(item);
         if (performance.now() - start >= timeoutMs) return reject(new Error("Não obtive uma nova amostra válida. Olhe de frente e melhore a iluminação."));
         window.setTimeout(check, 80);
@@ -821,17 +768,28 @@
     const existing = identityByName(name);
     let item = currentFaces.length === 1 ? currentFaces[0] : null;
     const identityConflict = item?.identity.registered && item.identity.id !== existing?.id;
+    if (item && performance.now() - item.capturedAt > 800) {
+      faceHint.textContent = "Imagem atrasada ou congelada. Aguarde uma imagem nova antes de cadastrar.";
+      registerButton.disabled = true;
+      return;
+    }
     if (!name || !item || identityConflict || !item.quality.acceptable
       || !item.quality.rawAcceptable || registering) return;
     if (existing && !item.identity.registered
       && !window.confirm(`${existing.name} já está salvo. Deseja acrescentar estas novas amostras ao cadastro existente?`)) return;
     registering = true;
+    const token = ++enrollmentGeneration;
+    publishPersonTracking(currentFaces, true);
     registerButton.disabled = true;
     const embeddings = [];
     const photo = captureFace(item.face);
     try {
       for (let index = 0; index < REQUIRED_SAMPLES; index += 1) {
-        if (index > 0) item = await waitForFreshFace(item.detectedAt, existing?.id || null);
+        if (index > 0) item = await waitForFreshFace(item.capturedAt, existing?.id || null, token);
+        if (token !== enrollmentGeneration) throw new Error("Cadastro cancelado.");
+        if (embeddings.length && human.match.similarity(item.quality.embedding, embeddings[0], MATCH_OPTIONS) < MATCH_THRESHOLD) {
+          throw new Error("O rosto mudou durante a captura. Cadastre uma pessoa por vez.");
+        }
         embeddings.push(Array.from(item.quality.embedding));
         setSampleProgress(index + 1);
         registerButton.textContent = `Capturando ${index + 1}/${REQUIRED_SAMPLES}`;
@@ -854,6 +812,8 @@
         },
       };
       await putRecord(identity);
+      // Persistence is best effort: export is still required for backup or another PC.
+      navigator.storage?.persist?.().catch(() => {});
       if (existing) identities = identities.map((candidate) => candidate.id === existing.id ? identity : candidate);
       else identities.push(identity);
       renderIdentities();
@@ -867,7 +827,8 @@
       faceHint.textContent = `Não foi possível cadastrar: ${error.message}`;
       setSampleProgress(0);
     } finally {
-      registering = false;
+      if (token === enrollmentGeneration) registering = false;
+      publishPersonTracking(currentFaces, true);
       window.setTimeout(() => {
         registerButton.textContent = "Validar e cadastrar rosto";
         if (!personName.value) setSampleProgress(0);
@@ -943,6 +904,8 @@
     activeView = event.detail?.view === "hand" ? "hand" : "face";
     clearTimeout(detectionTimer);
     if (activeView !== "face") {
+      ++enrollmentGeneration;
+      registering = false;
       context.clearRect(0, 0, canvas.width, canvas.height);
       registerButton.disabled = true;
       setStatus(cameraActive ? "PAUSADA · ABA DA MÃO" : "AGUARDANDO CÂMERA");

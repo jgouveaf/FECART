@@ -103,6 +103,19 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       assert.equal((await snap()).id, "QT-001"); assert.equal((await snap()).state, "FOLLOWING");
       assert.equal(await page.evaluate(() => window.__test.writes.length), 0);
     });
+    await check("only body rectangle is visible; hidden face overlay does not disable identification", async () => {
+      const overlays = await page.evaluate(() => {
+        const face = document.getElementById("identityCanvas"), body = document.getElementById("personCanvas");
+        return { faceHidden: face.hidden && getComputedStyle(face).display === "none",
+          bodyVisible: getComputedStyle(body).display !== "none",
+          bodyDrawn: body.getContext("2d").getImageData(0, 0, body.width, body.height).data.some(v => v !== 0),
+          identified: document.getElementById("currentFaceId").textContent };
+      });
+      assert.equal(overlays.faceHidden, true);
+      assert.equal(overlays.bodyVisible, true);
+      assert.equal(overlays.bodyDrawn, true);
+      assert.equal(overlays.identified, "QT-001");
+    });
     await page.locator("#connectRobot").click();
     await page.waitForFunction(() => window.quantumRobot.connected);
     await check("connecting never releases ESTOP automatically", async () => {

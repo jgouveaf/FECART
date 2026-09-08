@@ -38,8 +38,8 @@ const byte IN4 = 4;
 const byte TRIG = 3;
 const byte ECHO = 2;
 
-// Limite aprovado no ensaio de bancada. Nao e distancia final de uso no chao.
-const float DISTANCIA_OBSTACULO_CM = 5.0;
+// Inicia o desvio antes de o chassi alcancar o obstaculo.
+const float DISTANCIA_OBSTACULO_CM = 20.0;
 const unsigned long INTERVALO_SENSOR_MS = 80UL;
 const unsigned long INTERVALO_TELEMETRIA_MS = 250UL;
 const unsigned long TIMEOUT_COMANDO_MS = 1500UL;

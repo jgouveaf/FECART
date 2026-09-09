@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const root = document.documentElement;
-  const shell = document.querySelector('.app-shell');
+  const zoomContent = document.getElementById('zoomContent');
   const bar = document.createElement('div');
   bar.className = 'interface-tools';
   bar.innerHTML = '<button type="button" id="uiZoom" aria-pressed="false">Q · Zoom</button><button type="button" id="uiHelp" aria-pressed="false">P · Explicar</button><button type="button" id="uiTheme">Tema escuro</button><span id="uiHint" role="status">Q amplia · P explica · Esc fecha</span>';
@@ -17,6 +17,7 @@
   const themeButton = document.getElementById('uiTheme');
   let zoom = false, picking = false, frame = 0;
   let point = { x: innerWidth / 2, y: innerHeight / 2 };
+  let zoomOrigin = { x: 0, y: 0 };
   let target = null, previousFocus = null;
   function theme(value) {
     root.dataset.theme = value;
@@ -31,15 +32,20 @@
   function renderZoom() {
     frame = 0;
     if (!zoom) return;
-    shell.style.transformOrigin = `${point.x}px ${point.y + scrollY}px`;
-    shell.style.transform = 'scale(1.75)';
+    zoomContent.style.transformOrigin = `${point.x + scrollX - zoomOrigin.x}px ${point.y + scrollY - zoomOrigin.y}px`;
+    zoomContent.style.transform = 'scale(1.75)';
   }
   function setZoom(value) {
+    if (value && !zoom) {
+      // Measure before transforming. Sidebar and sticky header remain outside.
+      const rect = zoomContent.getBoundingClientRect();
+      zoomOrigin = { x: rect.left + scrollX, y: rect.top + scrollY };
+    }
     zoom = value;
     zoomButton.setAttribute('aria-pressed', String(value));
     root.classList.toggle('ui-zooming', value);
     if (value) renderZoom();
-    else { cancelAnimationFrame(frame); frame = 0; shell.style.removeProperty('transform'); shell.style.removeProperty('transform-origin'); }
+    else { cancelAnimationFrame(frame); frame = 0; zoomContent.style.removeProperty('transform'); zoomContent.style.removeProperty('transform-origin'); }
   }
   zoomButton.onclick = () => setZoom(!zoom);
   document.addEventListener('pointermove', event => {

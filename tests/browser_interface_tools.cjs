@@ -17,12 +17,33 @@ const { chromium } = require('playwright');
     await page.keyboard.press('q');
     assert.equal(await page.locator('#uiZoom').getAttribute('aria-pressed'), 'true');
     await page.waitForTimeout(200);
-    assert.match(await page.locator('.app-shell').evaluate(el => getComputedStyle(el).transform), /1.75/);
+    assert.match(await page.locator('#zoomContent').evaluate(el => getComputedStyle(el).transform), /1.75/);
     await page.mouse.move(700, 350);
     await page.waitForTimeout(200);
-    assert.match(await page.locator('.app-shell').evaluate(el => el.style.transformOrigin), /700px/);
+    const originX = await page.locator('#zoomContent').evaluate(el => parseFloat(el.style.transformOrigin));
+    const contentLeft = await page.locator('main').evaluate(el => el.getBoundingClientRect().left + parseFloat(getComputedStyle(el).paddingLeft));
+    assert.ok(Math.abs(originX - (700 - contentLeft)) < 1, 'Zoom origin follows the pointer within the content');
     await page.keyboard.press('Escape');
-    assert.equal(await page.locator('.app-shell').evaluate(el => el.style.transform), '');
+    assert.equal(await page.locator('#zoomContent').evaluate(el => el.style.transform), '');
+    for (const section of ['#camera-gestos', '#codigos']) {
+      await page.locator(section).scrollIntoViewIfNeeded();
+      await page.waitForTimeout(200);
+      await page.mouse.move(850, 450);
+      const sidebarBefore = await page.locator('#sidebarNavigation').boundingBox();
+      const headerBefore = await page.locator('.topbar').boundingBox();
+      await page.keyboard.press('q');
+      await page.waitForTimeout(250);
+      assert.equal(await page.locator('#uiZoom').getAttribute('aria-pressed'), 'true');
+      assert.deepEqual(await page.locator('#sidebarNavigation').boundingBox(), sidebarBefore, 'Sidebar stays fixed while zooming a scrolled section');
+      assert.deepEqual(await page.locator('.topbar').boundingBox(), headerBefore, 'Sticky header stays fixed');
+      assert.ok(await page.locator('#sidebarNavigation .nav-link').first().evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+      }), 'Sidebar is reachable above the magnified content');
+      await page.keyboard.press('Escape');
+    }
+    assert.match(await page.locator('.firmware-flasher-copy p').textContent(), /20 cm/);
+    assert.doesNotMatch(await page.locator('.firmware-flasher-copy p').textContent(), /aprovado a 5 cm/);
     await page.locator('.hero-card h2').hover();
     await page.keyboard.press('p');
     assert.equal(await page.locator('.interface-help').isVisible(), true);
@@ -69,6 +90,15 @@ const { chromium } = require('playwright');
     }
     await page.setViewportSize({ width: 390, height: 844 });
     assert.ok(await page.locator('.interface-tools').evaluate(el => el.getBoundingClientRect().right <= innerWidth));
+    await page.locator('#camera-gestos').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(200);
+    await page.mouse.move(180, 350);
+    await page.keyboard.press('q');
+    await page.waitForTimeout(250);
+    await page.locator('#menuButton').click();
+    assert.equal(await page.locator('#menuButton').getAttribute('aria-expanded'), 'true', 'Mobile menu opens while zoom is active');
+    await page.waitForFunction(() => Math.abs(document.getElementById('sidebarNavigation').getBoundingClientRect().x) < 1);
+    await page.keyboard.press('Escape');
     assert.deepEqual(errors, []);
     console.log('PASS: themes, persistence, zoom and pointer, Escape, contextual help, click isolation, normal control, typing, mobile layout, no page errors. No physical devices used.');
   } finally { await browser.close(); }

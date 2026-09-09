@@ -33,8 +33,8 @@
   </script>
   <link rel="stylesheet" href="web/styles.css?v=22">
   <link rel="stylesheet" href="web/person-follow.css?v=1">
-  <link rel="stylesheet" href="web/interface-tools.css?v=1">
-  <script src="web/interface-tools.js?v=1" defer></script>
+  <link rel="stylesheet" href="web/interface-tools.css?v=2">
+  <script src="web/interface-tools.js?v=2" defer></script>
 </head>
 <body>
   <noscript><div class="auth-overlay" style="display:flex"><div class="auth-card"><h1>Quantum Tracker</h1><p>Ative o JavaScript para acessar o painel.</p></div></div></noscript>
@@ -74,6 +74,7 @@
         </div>
       </header>
 
+      <div class="zoom-content" id="zoomContent">
       <section id="visao-geral" class="page-section hero-grid">
         <article class="hero-card">
           <div>
@@ -421,7 +422,7 @@
           <div class="firmware-flasher-copy">
             <span class="section-tag">Instalação USB direta</span>
             <h3>Gravar firmware oficial no Arduino UNO</h3>
-            <p>Instala o firmware V7 com o Modo 1 aprovado a 5 cm e partida somente após seu comando. Desligue os motores durante a gravação e feche o Arduino IDE.</p>
+            <p>Instala o firmware V7 com limite de obstáculo frontal de 20 cm no Modo 1 e partida somente após seu comando. A distância segura ainda requer validação física. Desligue os motores durante a gravação e feche o Arduino IDE.</p>
           </div>
           <div class="guide-warning" aria-label="Teste físico das direções">
             <strong>Teste físico por USB — rodas suspensas</strong>
@@ -499,6 +500,7 @@
       </section>
 
       <footer><span>Quantum Tracker · FECART 2026</span><span>João · Gustavo · Renato</span></footer>
+      </div>
     </main>
   </div>
   <script src="web/user-config.js?v=4" defer></script>

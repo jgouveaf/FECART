@@ -1,0 +1,67 @@
+/* Theme and reading tools: kept separate from control and vision modules. */
+:root { --ui-panel: #fff; --ui-soft: #f5f7f9; --ui-ink: #17212b; --ui-muted: #526474; --ui-accent: #1769aa; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b1220; --surface: #142033; --surface-2: #19283d; --surface-3: #22344c;
+  --text: #edf3fa; --muted: #b3c2d3; --line: #3b4e65; --line-strong: #58708c;
+  --cyan: #80ccff; --blue: #80ccff; --green: #7be0b5; --online: #7be0b5;
+  --amber: #ffd18a; --warning: #ffd18a; --red: #ff9dac; --error: #ff9dac;
+  --ui-panel: #142033; --ui-soft: #19283d; --ui-ink: #edf3fa; --ui-muted: #b3c2d3; --ui-accent: #80ccff;
+}
+/* Previously dark surfaces inherited the light theme's almost black text. */
+.quick-guide-grid li, .pinout-grid > *, .code-window, .code-header, .code-window textarea,
+.test-target, .quick-guide-grid span, .canvas-badge, .camera-stage { color: #e7f0fa; }
+.quick-guide-grid li { background: var(--ui-soft); color: var(--ui-ink); }
+.quick-guide-grid span { color: var(--ui-muted); }
+.quick-guide-grid b { background: #1769aa; color: #fff; }
+.sidebar-logout { color: #d9e6f2; }
+.sidebar-logout:hover { background: #254867; color: #fff; }
+.code-window textarea, .code-window pre, .code-window code { color: #e7f0fa; }
+.calibration-fields select { color: var(--ui-ink); background: var(--ui-panel); }
+.firmware-flasher > .firmware-flasher-copy,
+.firmware-flasher > .guide-warning { grid-column: 1 / -1; min-width: 0; }
+:root[data-theme="dark"] :is(.topbar, .hero-card, .progress-card, .panel, .metric-card,
+  .secondary-button, .icon-button, .pill.neutral, .gesture-map div, .identity-status,
+  .identity-counter, .identity-field input, .camera-device-control select, .event-log-panel,
+  .person-follow-metrics div, .simulator-mode, .simulator-command-pad button) {
+  background: var(--ui-panel); color: var(--ui-ink); border-color: var(--line);
+}
+:root[data-theme="dark"] :is(.simulator-command-panel, .robot-control-panel, .camera-toolbar,
+  .gesture-toolbar, .gesture-metrics > *, .robot-mode, .robot-telemetry div, .camera-view-tabs,
+  .gesture-console, .identity-register-card, .identity-list-card, .current-face, .face-metrics div,
+  .face-validation span, .person-card, .pin-strip span, .diagnostic-card, .firmware-workflow article,
+  .telemetry, .system-indicator, .mission-summary, .gesture-result, .face-preview,
+  .finger-diagnostics > *, .gesture-calibration, .person-follow-panel, .firmware-flasher,
+  .event-log-panel > header, .event-log-panel > .section-heading) {
+  background: var(--ui-soft); color: var(--ui-ink); border-color: var(--line);
+}
+:root[data-theme="dark"] :is(.section-tag, .eyebrow, .card-heading strong, .telemetry dd,
+  .robot-telemetry strong, .face-metrics strong, .gesture-metrics strong, .mission-summary strong,
+  .gesture-result strong, .current-face strong, .person-card small, .event-log-row b,
+  #personFollowStatus, .person-follow-panel .section-tag) { color: var(--ui-accent); }
+:root[data-theme="dark"] :is(.diagnostic-card strong, .diagnostic-card code, .diagnostic-card [id],
+  .person-follow-panel h3, .gesture-calibration summary, .finger-diagnostics strong) { color: var(--ui-ink); }
+:root[data-theme="dark"] :is(.gesture-result span, .event-log-row, .event-log-row time,
+  .person-follow-metrics dt, .calibration-fields label, .gesture-calibration > small) { color: var(--ui-muted); }
+:root[data-theme="dark"] :is(.notice, .guide-warning, .safety-box, .firmware-assurance,
+  .system-indicator[data-status], .event-log-row.warning, .event-log-row.error, .event-log-row.safety,
+  .finger-diagnostics [data-state]) { background: var(--ui-soft); color: var(--ui-ink); }
+:root[data-theme="dark"] :is(.robot-mode.active, .gesture-result, .face-preview) { border-color: var(--ui-accent); }
+:root[data-theme="dark"] :is(.simulator-mode.active, .simulator-command-pad button.active,
+  .camera-view-tab.active, .code-tab.active, .test-target.active) { background: #1769aa; color: #fff; }
+:root[data-theme="dark"] .gesture-map div.active { background: #176044; color: #fff; }
+:root[data-theme="dark"] :is(.robot-mode > b, .firmware-workflow b) { background: #264460; color: #d9efff; }
+.interface-tools { position: fixed; bottom: 12px; right: 16px; z-index: 10000; display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100vw - 32px); padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--ui-panel); color: var(--ui-ink); box-shadow: 0 4px 20px #0003; }
+.interface-tools button { padding: 9px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--ui-soft); color: var(--ui-ink); cursor: pointer; }
+.interface-tools button[aria-pressed="true"] { background: #1769aa; color: #fff; }
+.interface-tools span { width: 100%; font-size: 11px; color: var(--ui-muted); }
+.qt-locked .interface-tools { display: none; }
+body { padding-bottom: 90px; overflow-x: clip; }
+.ui-zooming .app-shell { transition: transform-origin 100ms linear, transform 180ms ease-out; will-change: transform; }
+.interface-help { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; padding: 24px; backdrop-filter: blur(7px); background: #08132466; pointer-events: none; }
+.interface-help[hidden] { display: none; }
+.interface-help section { width: min(520px, 100%); max-height: 70vh; overflow: auto; border-radius: 16px; padding: 28px; color: #17212b; background: #fff; box-shadow: 0 20px 70px #0005; pointer-events: auto; }
+.interface-help h2 { font-size: 23px; overflow-wrap: anywhere; }
+.interface-help p { font-size: 16px; line-height: 1.65; }
+.interface-help button { background: #17324d; color: #fff; border: 0; border-radius: 7px; padding: 10px 16px; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .ui-zooming .app-shell { transition: none; } }

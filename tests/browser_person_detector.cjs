@@ -15,7 +15,7 @@ if (!fixture) throw new Error("Set QT_PERSON_IMAGE to a local photo with people 
       const img = new Image(); img.src = "__person_fixture.jpg"; await img.decode();
       const bitmap = await createImageBitmap(img);
       return new Promise((resolve, reject) => {
-        const worker = new Worker("web/person-detector.worker.js?v=1");
+        const worker = new Worker("web/person-detector.worker.js?v=2");
         const timer = setTimeout(() => { worker.terminate(); reject(new Error("Worker timeout")); }, 30000);
         worker.onerror = e => { clearTimeout(timer); worker.terminate(); reject(new Error(e.message)); };
         worker.onmessage = ({ data }) => {
@@ -28,6 +28,10 @@ if (!fixture) throw new Error("Set QT_PERSON_IMAGE to a local photo with people 
     assert.equal(result.type, "result", JSON.stringify(result));
     assert.ok(result.people.length >= 2, JSON.stringify(result));
     assert.ok(result.people.every(p => p.confidence >= .5 && p.box.width > 0 && p.box.height > 0));
-    console.log(JSON.stringify({ realModel: "EfficientDet Lite0 int8 v1", people: result.people }, null, 2));
+    const appearance = require('../web/person-appearance.js');
+    assert.ok(result.people.some(p => appearance.valid(p.appearance)), 'Real pixels provide a clothing descriptor for at least one complete body');
+    assert.ok(result.people.every(p => p.appearance === null || appearance.valid(p.appearance)));
+    console.log(JSON.stringify({ realModel: "EfficientDet Lite0 int8 v1", people: result.people.length,
+      usableClothingSamples: result.people.filter(p => appearance.valid(p.appearance)).length }, null, 2));
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

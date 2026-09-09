@@ -316,7 +316,7 @@
               <div><dt>Previsão na imagem</dt><dd id="personPrediction">Sem previsão ativa</dd></div>
             </dl>
             <p id="personFollowDelivery">Somente o Modo 2 recebe estas decisões.</p>
-            <p class="privacy-note">Se perder o alvo, a imagem atrasar ou pessoas se confundirem, pede parada. Sem ver o rosto, mantém o ID no corpo por até 3 segundos; depois exige reconhecimento novamente. A previsão dura até 0,5 segundo e nunca autoriza movimento às cegas. No Modo 2 conectado, para com obstáculo a 30 cm e só libera a partir de 40 cm. Isso não é navegação através de paredes.</p>
+            <p class="privacy-note">Mostre rosto, tronco e pernas e aguarde “continuidade visual pronta” antes de virar de costas. Acompanha enquanto corpo e roupa permanecem visíveis e compatíveis. Roupas parecidas, mudança de aparência, perda do alvo ou imagem atrasada pedem parada e nova confirmação facial. Sem uma aparência utilizável, mantém o limite de 3 segundos sem rosto. A previsão de até 0,5 segundo nunca autoriza movimento às cegas. No Modo 2 conectado, para com obstáculo a 30 cm e só libera a partir de 40 cm. Ainda requer teste físico com a câmera montada.</p>
           </section>
           <div class="identity-register-card">
             <div class="identity-heading">
@@ -517,8 +517,9 @@
   <script src="web/face-identity-math.js?v=2" defer></script>
   <script src="web/gesture-math.js?v=8" defer></script>
   <script src="web/gesture-calibration.js?v=1" defer></script>
-  <script src="web/person-follow-math.js?v=1" defer></script>
-  <script src="web/person-follow.js?v=1" defer></script>
+  <script src="web/person-appearance.js?v=1" defer></script>
+  <script src="web/person-follow-math.js?v=2" defer></script>
+  <script src="web/person-follow.js?v=2" defer></script>
   <script src="web/face-identities.js?v=15" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>

@@ -1,5 +1,17 @@
 /* Classic worker: MediaPipe's WASM loader uses importScripts. No remote frames. */
 let detector = null;
+importScripts('./person-appearance.js?v=1');
+const appearanceCanvas = new OffscreenCanvas(24, 48);
+const appearanceContext = appearanceCanvas.getContext('2d', { willReadFrequently: true });
+function appearance(bitmap, box) {
+  // Avoid unstable clothing samples from tiny or cropped detections.
+  if (!appearanceContext || box.width * bitmap.width < 40 || box.height * bitmap.height < 80
+    || box.y + box.height > .985 || box.x < .01 || box.x + box.width > .99) return null;
+  const x = (box.x + box.width * .22) * bitmap.width;
+  const y = (box.y + box.height * .20) * bitmap.height;
+  appearanceContext.drawImage(bitmap, x, y, box.width * .56 * bitmap.width, box.height * .65 * bitmap.height, 0, 0, 24, 48);
+  return self.QuantumPersonAppearance.describe(appearanceContext.getImageData(0, 0, 24, 48).data, 24, 48);
+}
 self.onmessage = async ({ data }) => {
   try {
     if (data.type === "init") {
@@ -24,8 +36,9 @@ self.onmessage = async ({ data }) => {
         .map(d => {
           const b = d.boundingBox;
           const x = Math.max(0, b.originX / width), y = Math.max(0, b.originY / height);
+          const box = { x, y, width: Math.min(1 - x, b.width / width), height: Math.min(1 - y, b.height / height) };
           return { confidence: d.categories.find(c => c.categoryName === "person").score,
-            box: { x, y, width: Math.min(1 - x, b.width / width), height: Math.min(1 - y, b.height / height) } };
+            box, appearance: appearance(data.bitmap, box) };
         });
       self.postMessage({ type: "result", id: data.id, capturedAt: data.capturedAt, people });
     }

@@ -7,6 +7,7 @@
   const follower = new window.QuantumPersonFollowMath.PersonFollower();
   const labels = { SELECT_TARGET: "Escolha uma pessoa cadastrada", CONFIRMING: "Confirmando o alvo",
     FOLLOWING: "Pessoa identificada", BODY_TRACKING: "Acompanhando o corpo · ID temporariamente mantido",
+    APPEARANCE_TRACKING: "Alvo mantido pelo corpo e roupa · rosto fora de vista",
     AMBIGUOUS: "Pessoas sobrepostas · confirme o rosto", REIDENTIFY: "Mostre o rosto para confirmar o alvo",
     TARGET_LOST: "Alvo perdido · parado", PREDICTED_STOP: "Posição estimada · robô parado",
     KEEP_DISTANCE: "Distância de parada atingida", SENSOR_WAIT: "Aguardando leitura atual do sensor",
@@ -26,6 +27,8 @@
     const now = performance.now();
     lastOutput = result;
     $("personFollowStatus").textContent = labels[result.state] || result.state;
+    if (result.state === 'FOLLOWING') $("personFollowStatus").textContent += result.appearanceReady
+      ? ' · continuidade visual pronta' : ' · preparando continuidade visual';
     $("personCount").textContent = String(people.length);
     $("personTarget").textContent = follower.id ? `${selectedName || follower.id} · ${follower.id}` : "Nenhum";
     $("personPrediction").textContent = result.prediction
@@ -102,7 +105,7 @@
     stopped("LOADING");
     $("retryPersonDetection").hidden = true;
     try {
-      worker = new Worker(new URL("web/person-detector.worker.js?v=1", document.baseURI));
+      worker = new Worker(new URL("web/person-detector.worker.js?v=2", document.baseURI));
       const startedAt = performance.now();
       pending = { id: "loading", capturedAt: startedAt };
       worker.onerror = error => { if (token === generation) fail(error.message || "Falha no worker local"); };

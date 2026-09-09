@@ -10,7 +10,7 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
   try {
     await context.addInitScript(() => {
       localStorage.setItem("quantumAuth:v1", "ok");
-      window.__test = { x: .5, people: true, face: true, embedding: 1, frames: 0, workers: 0, writes: [], distance: 60, failFace: false, events: [] };
+      window.__test = { x: .5, people: true, face: true, embedding: 1, frames: 0, workers: 0, writes: [], distance: 60, failFace: false, events: [], appearance: false, outfit: 0, rival: false };
       addEventListener("quantum:person-tracking", e => window.__test.events.push(e.detail));
       window.Human = { Human: class {
         tf = { dispose() {} };
@@ -36,10 +36,13 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
           setTimeout(() => {
             if (this.closed) return;
             const t = window.__test;
+            const clothing = Array(40).fill(0); clothing[t.outfit] = 1; clothing[20] = 1;
+            const people = t.people ? [{ confidence: .92, box: { x: t.x - .18, y: .1, width: .36, height: .6 }, appearance: t.appearance ? clothing : null }] : [];
+            if (t.rival) people.push({ confidence: .92, box: { x: .75, y: .1, width: .24, height: .6 }, appearance: clothing });
             if (data.type === "frame" && t.failWorker) { this.onmessage?.({ data: { type: "error", message: "injected worker error" } }); return; }
             this.onmessage?.({ data: data.type === "init" ? { type: "ready" } : {
               type: "result", id: data.id, capturedAt: data.capturedAt,
-              people: t.people ? [{ confidence: .92, box: { x: t.x - .18, y: .1, width: .36, height: .6 } }] : [],
+              people,
             } });
           }, 25);
         }
@@ -167,6 +170,28 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
     await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.command === "PARAR", null, { timeout: 6000 });
     await check("body identity expires and cannot run indefinitely", async () => assert.equal((await snap()).command, "PARAR"));
     await page.evaluate(() => { window.__test.face = true; }); await waitCommand("FRENTE");
+    await page.evaluate(() => { window.__test.appearance = true; });
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.appearanceReady);
+    await page.evaluate(() => { window.__test.face = false; window.__test.writes = []; });
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === 'APPEARANCE_TRACKING');
+    await page.waitForTimeout(4000);
+    await check('body and clothing maintain the selected target beyond the old face timeout', async () => {
+      const result = await snap(); assert.equal(result.state, 'APPEARANCE_TRACKING'); assert.equal(result.command, 'FRENTE'); assert.equal(result.id, 'QT-001');
+      assert.ok(await page.evaluate(() => window.__test.writes.includes('CMD:FRENTE')));
+    });
+    await page.evaluate(() => { window.__test.rival = true; window.__test.writes = []; });
+    await waitCommand('PARAR');
+    await page.waitForFunction(() => window.__test.writes.includes('CMD:PARAR'));
+    await check('similar clothing on another body requests stop over simulated USB', async () => assert.equal((await snap()).command, 'PARAR'));
+    await page.evaluate(() => { window.__test.rival = false; }); await page.waitForTimeout(700);
+    await check('removing the competing body does not silently reacquire by clothing', async () => assert.equal((await snap()).command, 'PARAR'));
+    await page.evaluate(() => { window.__test.face = true; }); await waitCommand('FRENTE');
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.appearanceReady);
+    await page.evaluate(() => { window.__test.face = false; });
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === 'APPEARANCE_TRACKING');
+    await page.evaluate(() => { window.__test.outfit = 8; }); await waitCommand('PARAR');
+    await check('incompatible clothing stops instead of transferring the target ID', async () => assert.equal((await snap()).command, 'PARAR'));
+    await page.evaluate(() => { window.__test.face = true; window.__test.outfit = 0; }); await waitCommand('FRENTE');
     await page.evaluate(() => {
       const v = document.getElementById("cameraVideo"), frozen = v.currentTime;
       Object.defineProperty(v, "currentTime", { configurable: true, get: () => frozen });

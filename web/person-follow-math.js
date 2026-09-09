@@ -1,6 +1,8 @@
 /* Mode 2 only. Normalized image coordinates; predictions never authorize motion. */
 (() => {
   "use strict";
+  const appearance = typeof module !== 'undefined' && module.exports
+    ? require('./person-appearance.js') : window.QuantumPersonAppearance;
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   const center = box => box.x + box.width / 2;
   function validBox(b) {
@@ -34,10 +36,19 @@
       this.command = "PARAR";
       this.holdDistance = false;
       this.holdSize = false;
+      this.appearanceReference = null;
+      this.appearanceSamples = 0;
+      this.appearanceFaceAt = -Infinity;
+      this.reidentifyAfter = -Infinity;
     }
     stop(state, extra = {}) {
       this.command = "PARAR";
       return { visible: false, command: "PARAR", state, id: this.id, prediction: null, ...extra };
+    }
+    invalidate(now, state) {
+      this.reset();
+      if (Number.isFinite(now)) this.reidentifyAfter = now;
+      return this.stop(state);
     }
     missing(now, state = "TARGET_LOST", cameraMoving = false) {
       this.confirmedFrames = 0;
@@ -46,6 +57,10 @@
       const prediction = this.box && age >= 0 && age <= 500 && !cameraMoving
         ? { x: clamp(center(this.box) + this.velocity * age / 1000, 0, 1), ageMs: age, estimated: true }
         : null;
+      // A missing/late frame breaks continuity. Clothing cannot reacquire an ID.
+      this.appearanceReference = null; this.appearanceSamples = 0;
+      if (this.identifiedAt != null && Number.isFinite(now)) this.reidentifyAfter = Math.max(this.reidentifyAfter, now);
+      this.identifiedAt = null;
       if (age > 500) { this.box = null; this.identifiedAt = null; this.velocity = 0; this.smoothed = null; }
       return this.stop(prediction ? "PREDICTED_STOP" : state, { prediction });
     }
@@ -58,29 +73,60 @@
       const bodies = people.filter(p => validBox(p.box) && Number.isFinite(p.confidence) && p.confidence >= 0.55);
       const freshFaces = faces.filter(f => validBox(f.box) && Number.isFinite(f.confidence) && f.confidence >= 0.58 && f.registered
         && Number.isFinite(f.capturedAt) && now - f.capturedAt >= 0 && now - f.capturedAt <= 800
-        && Math.abs(capturedAt - f.capturedAt) <= 500);
+        && Math.abs(capturedAt - f.capturedAt) <= 500 && f.capturedAt > this.reidentifyAfter);
       const targets = freshFaces.filter(f => f.id === this.id);
-      if (targets.length > 1) { this.reset(); return this.stop("AMBIGUOUS"); }
-      let chosen = null;
+      if (targets.length > 1) return this.invalidate(now, "AMBIGUOUS");
+      let chosen = null, appearanceScore = 0, appearanceTracking = false;
       if (targets.length === 1) {
         const matches = bodies.filter(p => containsFace(p.box, targets[0].box));
-        if (matches.length > 1) { this.reset(); return this.stop("AMBIGUOUS"); }
+        if (matches.length > 1) return this.invalidate(now, "AMBIGUOUS");
         chosen = matches[0] || null;
         if (chosen) this.identifiedAt = targets[0].capturedAt;
       } else if (this.box && this.seenAt != null && capturedAt - this.seenAt <= 500
-        && this.identifiedAt != null && capturedAt - this.identifiedAt <= 3000) {
+        && this.identifiedAt != null) {
         const matches = bodies.map(p => ({ p, score: overlap(p.box, this.box) }))
           .filter(p => p.score >= 0.35 && Math.abs(center(p.p.box) - center(this.box)) < 0.18)
           .sort((a, b) => b.score - a.score);
         if (matches.length > 1 && matches[0].score - matches[1].score < 0.18) {
-          this.reset(); return this.stop("AMBIGUOUS");
+          return this.invalidate(now, "AMBIGUOUS");
         }
         chosen = matches[0]?.p || null;
+        if (chosen && this.appearanceSamples >= 3) {
+          appearanceScore = appearance.similarity(this.appearanceReference, chosen.appearance);
+          // Keep the face-verified template fixed; do not learn from guesses.
+          if (appearance.valid(chosen.appearance) && appearanceScore < .88) {
+            return this.invalidate(now, 'REIDENTIFY');
+          }
+          if (appearanceScore >= .88) {
+            // Even geometrically distinct people with similar clothes invalidate
+            // body-only continuation. Color is evidence, not unique identity.
+            if (bodies.some(p => p !== chosen && appearance.similarity(this.appearanceReference, p.appearance) >= .82)) {
+              return this.invalidate(now, 'AMBIGUOUS');
+            }
+            appearanceTracking = true;
+          }
+        }
+        if (!appearanceTracking && capturedAt - this.identifiedAt > 3000) chosen = null;
       }
       if (!chosen) return this.missing(now, bodies.length ? "REIDENTIFY" : "TARGET_LOST", cameraMoving);
       if (freshFaces.some(f => f.id !== this.id && containsFace(chosen.box, f.box))
         || bodies.some(p => p !== chosen && overlap(p.box, chosen.box) > 0.4)) {
-        this.reset(); return this.stop("AMBIGUOUS");
+        return this.invalidate(now, "AMBIGUOUS");
+      }
+      if (targets.length && this.appearanceSamples >= 3 && targets[0].capturedAt <= this.appearanceFaceAt
+        && appearance.valid(chosen.appearance) && appearance.similarity(this.appearanceReference, chosen.appearance) < .88) {
+        return this.invalidate(now, 'REIDENTIFY');
+      }
+      if (targets.length && targets[0].capturedAt > this.appearanceFaceAt
+        && Math.abs(capturedAt - targets[0].capturedAt) <= 250 && appearance.valid(chosen.appearance)) {
+        if (!this.appearanceReference || appearance.similarity(this.appearanceReference, chosen.appearance) < .88) {
+          this.appearanceReference = chosen.appearance.slice();
+          this.appearanceSamples = 0;
+        }
+        if (targets[0].capturedAt > this.appearanceFaceAt) {
+          this.appearanceSamples = Math.min(3, this.appearanceSamples + 1);
+          this.appearanceFaceAt = targets[0].capturedAt;
+        }
       }
       const x = center(chosen.box), dt = this.seenAt == null ? 0 : (capturedAt - this.seenAt) / 1000;
       if (this.box && dt > 0.02 && dt < 0.5 && !cameraMoving) {
@@ -93,7 +139,8 @@
       this.confirmedFrames++;
       if (this.confirmedSince == null) this.confirmedSince = capturedAt;
       const info = { box: this.box, confidence: chosen.confidence, center: this.smoothed,
-        identityAgeMs: capturedAt - this.identifiedAt, capturedAt };
+        identityAgeMs: capturedAt - this.identifiedAt, capturedAt,
+        appearanceReady: this.appearanceSamples >= 3, appearanceScore };
       if (this.confirmedFrames < 2 || capturedAt - this.confirmedSince < 120) return this.stop("CONFIRMING", info);
       if (requireSensor && (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(sensorAgeMs) || sensorAgeMs < 0 || sensorAgeMs > 700)) {
         return this.stop("SENSOR_WAIT", info);
@@ -106,7 +153,7 @@
       if (this.smoothed < (previous === "ESQUERDA" ? 0.46 : 0.40)) this.command = "ESQUERDA";
       else if (this.smoothed > (previous === "DIREITA" ? 0.54 : 0.60)) this.command = "DIREITA";
       else this.command = "FRENTE";
-      return { ...info, visible: true, command: this.command, state: targets.length ? "FOLLOWING" : "BODY_TRACKING",
+      return { ...info, visible: true, command: this.command, state: targets.length ? "FOLLOWING" : appearanceTracking ? "APPEARANCE_TRACKING" : "BODY_TRACKING",
         id: this.id, prediction: null };
     }
   }

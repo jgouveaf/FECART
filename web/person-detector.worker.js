@@ -1,6 +1,6 @@
 /* Classic worker: MediaPipe's WASM loader uses importScripts. No remote frames. */
 let detector = null;
-importScripts('./person-appearance.js?v=1');
+importScripts('./person-appearance.js?v=2');
 const appearanceCanvas = new OffscreenCanvas(24, 48);
 const appearanceContext = appearanceCanvas.getContext('2d', { willReadFrequently: true });
 function appearance(bitmap, box) {

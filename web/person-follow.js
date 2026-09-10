@@ -105,7 +105,7 @@
     stopped("LOADING");
     $("retryPersonDetection").hidden = true;
     try {
-      worker = new Worker(new URL("web/person-detector.worker.js?v=2", document.baseURI));
+      worker = new Worker(new URL("web/person-detector.worker.js?v=3", document.baseURI));
       const startedAt = performance.now();
       pending = { id: "loading", capturedAt: startedAt };
       worker.onerror = error => { if (token === generation) fail(error.message || "Falha no worker local"); };
@@ -122,6 +122,11 @@
           cameraMoving: movingCamera(), requireSensor: Boolean(control.state.robot.connected),
           distance, sensorAgeMs: now - sensorAt });
         publish(result, data.people);
+        if (token !== generation || !enabled()) return;
+        // Resume from completion instead of waiting for the next polling tick.
+        // At most one frame is in flight, and starts remain at least 100 ms apart.
+        clearTimeout(schedule);
+        schedule = setTimeout(() => frame(token), Math.max(0, 100 - (performance.now() - data.capturedAt)));
       };
       worker.postMessage({ type: "init" });
     } catch (error) { fail(error.message); }

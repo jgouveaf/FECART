@@ -31,6 +31,8 @@
       this.lastSampleAt = -Infinity;
       this.confirmedFrames = 0;
       this.confirmedSince = null;
+      this.confirmedFaceSamples = 0;
+      this.confirmedFaceAt = -Infinity;
       this.velocity = 0;
       this.smoothed = null;
       this.command = "PARAR";
@@ -53,6 +55,8 @@
     missing(now, state = "TARGET_LOST", cameraMoving = false) {
       this.confirmedFrames = 0;
       this.confirmedSince = null;
+      this.confirmedFaceSamples = 0;
+      this.confirmedFaceAt = -Infinity;
       const age = this.seenAt == null ? Infinity : now - this.seenAt;
       const prediction = this.box && age >= 0 && age <= 500 && !cameraMoving
         ? { x: clamp(center(this.box) + this.velocity * age / 1000, 0, 1), ageMs: age, estimated: true }
@@ -71,9 +75,10 @@
         || now - capturedAt > 600 || capturedAt <= this.lastSampleAt) return this.missing(now, "STALE_FRAME", true);
       this.lastSampleAt = capturedAt;
       const bodies = people.filter(p => validBox(p.box) && Number.isFinite(p.confidence) && p.confidence >= 0.55);
-      const freshFaces = faces.filter(f => validBox(f.box) && Number.isFinite(f.confidence) && f.confidence >= 0.58 && f.registered
+      const observedFaces = faces.filter(f => validBox(f.box) && Number.isFinite(f.confidence) && f.confidence >= 0.58
         && Number.isFinite(f.capturedAt) && now - f.capturedAt >= 0 && now - f.capturedAt <= 800
         && Math.abs(capturedAt - f.capturedAt) <= 500 && f.capturedAt > this.reidentifyAfter);
+      const freshFaces = observedFaces.filter(f => f.registered);
       const targets = freshFaces.filter(f => f.id === this.id);
       if (targets.length > 1) return this.invalidate(now, "AMBIGUOUS");
       let chosen = null, appearanceScore = 0, appearanceTracking = false;
@@ -81,6 +86,10 @@
         const matches = bodies.filter(p => containsFace(p.box, targets[0].box));
         if (matches.length > 1) return this.invalidate(now, "AMBIGUOUS");
         chosen = matches[0] || null;
+        if (chosen && this.box && this.confirmedFrames > 0 && (capturedAt - this.seenAt > 500
+          || overlap(chosen.box, this.box) < .35 || Math.abs(center(chosen.box) - center(this.box)) >= .18)) {
+          return this.invalidate(now, 'REIDENTIFY');
+        }
         if (chosen) this.identifiedAt = targets[0].capturedAt;
       } else if (this.box && this.seenAt != null && capturedAt - this.seenAt <= 500
         && this.identifiedAt != null) {
@@ -109,13 +118,18 @@
         if (!appearanceTracking && capturedAt - this.identifiedAt > 3000) chosen = null;
       }
       if (!chosen) return this.missing(now, bodies.length ? "REIDENTIFY" : "TARGET_LOST", cameraMoving);
-      if (freshFaces.some(f => f.id !== this.id && containsFace(chosen.box, f.box))
+      if (observedFaces.filter(f => containsFace(chosen.box, f.box)).length > 1
+        || freshFaces.some(f => f.id !== this.id && containsFace(chosen.box, f.box))
         || bodies.some(p => p !== chosen && overlap(p.box, chosen.box) > 0.4)) {
         return this.invalidate(now, "AMBIGUOUS");
       }
       if (targets.length && this.appearanceSamples >= 3 && targets[0].capturedAt <= this.appearanceFaceAt
         && appearance.valid(chosen.appearance) && appearance.similarity(this.appearanceReference, chosen.appearance) < .88) {
         return this.invalidate(now, 'REIDENTIFY');
+      }
+      if (targets.length && targets[0].capturedAt > this.confirmedFaceAt) {
+        this.confirmedFaceSamples = Math.min(2, this.confirmedFaceSamples + 1);
+        this.confirmedFaceAt = targets[0].capturedAt;
       }
       if (targets.length && targets[0].capturedAt > this.appearanceFaceAt
         && Math.abs(capturedAt - targets[0].capturedAt) <= 250 && appearance.valid(chosen.appearance)) {
@@ -141,7 +155,7 @@
       const info = { box: this.box, confidence: chosen.confidence, center: this.smoothed,
         identityAgeMs: capturedAt - this.identifiedAt, capturedAt,
         appearanceReady: this.appearanceSamples >= 3, appearanceScore };
-      if (this.confirmedFrames < 2 || capturedAt - this.confirmedSince < 120) return this.stop("CONFIRMING", info);
+      if (this.confirmedFrames < 2 || this.confirmedFaceSamples < 2 || capturedAt - this.confirmedSince < 120) return this.stop("CONFIRMING", info);
       if (requireSensor && (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(sensorAgeMs) || sensorAgeMs < 0 || sensorAgeMs > 700)) {
         return this.stop("SENSOR_WAIT", info);
       }

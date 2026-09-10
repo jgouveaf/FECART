@@ -18,6 +18,13 @@ test("two fresh observations spanning 120 ms are required", () => {
   const { step } = rig(); assert.equal(step(1000).state, "CONFIRMING");
   assert.equal(step(1100).command, "PARAR"); assert.equal(step(1120).command, "FRENTE");
 });
+test('multiple body frames cannot turn one cached face match into movement permission', () => {
+  const { step } = rig(); step(1000);
+  assert.equal(step(1200, { faces: [face(1000)] }).command, 'PARAR');
+  assert.equal(step(1400, { faces: [face(1000)] }).command, 'PARAR');
+  assert.equal(step(1600, { faces: [] }).command, 'PARAR');
+  assert.equal(step(1800).command, 'FRENTE');
+});
 for (const [x, expected] of [[.05, "ESQUERDA"], [.35, "FRENTE"], [.65, "DIREITA"]]) {
   test(`unmirrored camera x=${x} requests ${expected}`, () => {
     const { step } = rig(), input = t => ({ people: [body(x)], faces: [face(t, x + .09)] });
@@ -59,6 +66,25 @@ test("duplicate same-ID faces are ambiguous", () => { assert.equal(running().ste
 test("conflicting known face in selected body stops", () => { assert.equal(running().step(1400, { faces: [face(1400), face(1400, .5, "QT-002")] }).state, "AMBIGUOUS"); });
 test("overlapping bodies never silently switch identity", () => { assert.equal(running().step(1400, { people: [body(), body(.4)] }).state, "AMBIGUOUS"); });
 test("large discontinuous body jump cannot inherit target", () => { assert.equal(running().step(1400, { faces: [], people: [body(.01)] }).command, "PARAR"); });
+test('a single face match on a distant body cannot immediately transfer an active target', () => {
+  const { step } = running();
+  assert.equal(step(1400, { people: [body(.01)], faces: [face(1400, .1)] }).state, 'REIDENTIFY');
+  assert.equal(step(1500, { people: [body(.01)], faces: [face(1400, .1)] }).command, 'PARAR');
+  assert.equal(step(1600, { people: [body(.01)], faces: [face(1600, .1)] }).state, 'CONFIRMING');
+  assert.equal(step(1800, { people: [body(.01)], faces: [face(1800, .1)] }).command, 'ESQUERDA');
+});
+test('initial facial confirmations must belong to a continuous body trajectory', () => {
+  const { step } = rig(); step(1000);
+  assert.equal(step(1200, { people: [body(.01)], faces: [face(1200, .1)] }).state, 'REIDENTIFY');
+});
+test('a long observation gap requires reacquisition even if the next face matches', () => {
+  const { step } = running(); assert.equal(step(2000).state, 'REIDENTIFY');
+  assert.equal(step(2200).state, 'CONFIRMING'); assert.equal(step(2400).command, 'FRENTE');
+});
+test('two faces inside one detected body are ambiguous even if the second is unknown', () => {
+  const unknown = { ...face(1400, .54, 'TEMP-1'), registered: false };
+  assert.equal(running().step(1400, { faces: [face(1400), unknown] }).state, 'AMBIGUOUS');
+});
 test("changing selected person clears all motion history", () => {
   const { f, step } = running(); f.select("QT-002"); assert.equal(step(1400).command, "PARAR"); assert.equal(f.box, null);
 });

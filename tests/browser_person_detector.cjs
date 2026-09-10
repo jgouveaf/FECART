@@ -15,7 +15,7 @@ if (!fixture) throw new Error("Set QT_PERSON_IMAGE to a local photo with people 
       const img = new Image(); img.src = "__person_fixture.jpg"; await img.decode();
       const bitmap = await createImageBitmap(img);
       return new Promise((resolve, reject) => {
-        const worker = new Worker("web/person-detector.worker.js?v=2");
+        const worker = new Worker("web/person-detector.worker.js?v=3");
         const timer = setTimeout(() => { worker.terminate(); reject(new Error("Worker timeout")); }, 30000);
         worker.onerror = e => { clearTimeout(timer); worker.terminate(); reject(new Error(e.message)); };
         worker.onmessage = ({ data }) => {

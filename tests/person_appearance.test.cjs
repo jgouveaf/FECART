@@ -20,15 +20,31 @@ function rig(descriptor = redBlue) {
 function trained() { const r = rig(); r.step(1000); r.step(1200); assert.equal(r.step(1400).appearanceReady, true); return r; }
 test('descriptor compares clothing with moderate exposure changes', () => {
   const dimmer = appearance.describe(pixels([170, 23, 23], [23, 38, 131]), 24, 48);
-  assert.ok(appearance.valid(redBlue)); assert.ok(appearance.similarity(redBlue, dimmer) > .99);
+  assert.ok(appearance.valid(redBlue)); assert.ok(appearance.similarity(redBlue, dimmer) >= .88);
   assert.ok(appearance.similarity(redBlue, greenBlue) < .88);
 });
 test('matching upper clothes cannot hide a different lower body', () => {
   const redGreen = appearance.describe(pixels([220, 30, 30], [30, 220, 30]), 24, 48);
   assert.ok(appearance.similarity(redBlue, redGreen) < .88);
 });
+for (const [before, after] of [[63, 64], [127, 128], [191, 192]]) {
+  test(`neutral clothing stays compatible across brightness boundary ${before}/${after}`, () => {
+    const a = appearance.describe(pixels([before, before, before]), 24, 48);
+    const b = appearance.describe(pixels([after, after, after]), 24, 48);
+    assert.ok(appearance.similarity(a, b) > .99);
+  });
+}
+test('same hue with very different brightness is not the same clothing evidence', () => {
+  const darkRed = appearance.describe(pixels([60, 8, 8]), 24, 48);
+  assert.ok(appearance.similarity(redBlue, darkRed) < .82);
+});
+test('white and black clothes remain distinct', () => {
+  const white = appearance.describe(pixels([235, 235, 235]), 24, 48);
+  const black = appearance.describe(pixels([20, 20, 20]), 24, 48);
+  assert.ok(appearance.similarity(white, black) < .82);
+});
 test('invalid or transparent samples cannot provide continuity evidence', () => {
-  for (const bad of [null, [], Array(40).fill(NaN), Array(40).fill(0), Array(40).fill(1), Array(40).fill(-1)]) {
+  for (const bad of [null, [], Array(40).fill(.05), Array(56).fill(NaN), Array(56).fill(0), Array(56).fill(1), Array(56).fill(-1)]) {
     assert.equal(appearance.valid(bad), false); assert.equal(appearance.similarity(redBlue, bad), 0);
   }
   assert.equal(appearance.describe(new Uint8ClampedArray(24 * 48 * 4), 24, 48), null);

@@ -676,13 +676,17 @@
     }
   }
 
-  function scheduleDetection() {
+  function scheduleDetection(delayMs = nextDetectionDelayMs) {
     clearTimeout(detectionTimer);
     if (!cameraActive || activeView !== "face" || inferenceSuspended) return;
     detectionTimer = window.setTimeout(async () => {
+      const startedAt = performance.now();
       await detectFaces();
-      scheduleDetection();
-    }, nextDetectionDelayMs);
+      const modeTwo = Number(control?.state.mode.id) === 2 && control?.state.mode.phase === 'ACTIVE';
+      const delay = modeTwo && !registering && consecutiveInferenceErrors === 0
+        ? Math.max(20, DETECTION_DELAY_MS - (performance.now() - startedAt)) : nextDetectionDelayMs;
+      scheduleDetection(delay);
+    }, delayMs);
   }
 
   async function startIdentification() {

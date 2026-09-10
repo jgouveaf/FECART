@@ -20,9 +20,11 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
           if (window.__test.failFace) throw new Error("injected face failure");
           const t = window.__test, w = video.videoWidth, h = video.videoHeight;
           const embedding = Array(1024).fill(t.embedding); embedding[1023] += ++t.frames / 1000;
-          return { face: t.face ? [{ box: [t.x * w - 80, .13 * h, 160, 160],
+          const faces = t.face ? [{ box: [t.x * w - 80, .13 * h, 160, 160],
             faceScore: .99, real: .99, live: .99, embedding,
-            rotation: { angle: { yaw: 0, pitch: 0, roll: 0 } } }] : [], gesture: [{ gesture: "facing center" }] };
+            rotation: { angle: { yaw: 0, pitch: 0, roll: 0 } } }] : [];
+          if (t.extraUnknownFace && faces.length) faces.push({ ...faces[0], box: [t.x * w + 10, .13 * h, 160, 160], embedding: Array(1024).fill(2) });
+          return { face: faces, gesture: [{ gesture: "facing center" }] };
         }
       } };
       const RealWorker = window.Worker;
@@ -36,7 +38,9 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
           setTimeout(() => {
             if (this.closed) return;
             const t = window.__test;
-            const clothing = Array(40).fill(0); clothing[t.outfit] = 1; clothing[20] = 1;
+            const rgba = new Uint8ClampedArray(24 * 48 * 4);
+            for (let i = 0; i < 24 * 48; i++) rgba.set([...(i < 24 * 24 ? (t.outfit ? [30, 220, 30] : [220, 30, 30]) : [30, 50, 170]), 255], i * 4);
+            const clothing = window.QuantumPersonAppearance.describe(rgba, 24, 48);
             const people = t.people ? [{ confidence: .92, box: { x: t.x - .18, y: .1, width: .36, height: .6 }, appearance: t.appearance ? clothing : null }] : [];
             if (t.rival) people.push({ confidence: .92, box: { x: .75, y: .1, width: .24, height: .6 }, appearance: clothing });
             if (data.type === "frame" && t.failWorker) { this.onmessage?.({ data: { type: "error", message: "injected worker error" } }); return; }
@@ -134,6 +138,10 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       await page.waitForFunction(command => window.__test.writes.includes(`CMD:${command}`), command);
       await check(`${command} is acknowledged over simulated USB`, async () => assert.equal((await snap()).command, command));
     }
+    await page.evaluate(() => { window.__test.extraUnknownFace = true; window.__test.writes = []; });
+    await page.waitForFunction(() => window.__test.events.some(e => e.state === 'AMBIGUOUS') && window.__test.writes.includes('CMD:PARAR'));
+    await check('two faces in one body, including an unknown person, request STOP over USB', async () => assert.equal((await snap()).command, 'PARAR'));
+    await page.evaluate(() => { window.__test.extraUnknownFace = false; }); await waitCommand('FRENTE');
     // Prediction is intentionally suppressed while telemetry still says the camera is turning.
     await page.waitForFunction(() => window.QuantumControl.state.robot.command === "FRENTE");
     await page.evaluate(() => { window.__test.people = false; window.__test.face = false; window.__test.writes = []; });
@@ -217,8 +225,18 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
     await page.waitForFunction(() => document.querySelectorAll(".follow-person").length === 1);
     await check("backup restores enrollment without silently selecting it", async () => assert.equal((await snap()).id, null));
     const invalidBackup = structuredClone(backup); invalidBackup.identities[0].embeddings.forEach(e => { e[3] = "not a number"; });
+    // The live face panel also writes this hint. Observe the rejection when it
+    // happens, instead of depending on a polling interval catching transient text.
+    await page.evaluate(() => {
+      window.__test.importRejected = false;
+      const hint = document.getElementById('faceHint');
+      const observer = new MutationObserver(() => {
+        if (hint.textContent.includes('Falha ao importar')) { window.__test.importRejected = true; observer.disconnect(); }
+      });
+      observer.observe(hint, { childList: true, characterData: true, subtree: true });
+    });
     await page.locator("#identityBackupFile").setInputFiles({ name: "invalid.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(invalidBackup)) });
-    await page.waitForFunction(() => document.getElementById("faceHint").textContent.includes("Falha ao importar"));
+    await page.waitForFunction(() => window.__test.importRejected);
     await check("malformed numeric embeddings are rejected without modifying enrollment", async () => assert.equal((await dbRecords())[0].embeddings[0][3], 1));
     await page.evaluate(() => { window.__test.embedding = 2; });
     await page.locator("#personName").fill("Cadastro interrompido");

@@ -89,6 +89,7 @@
   };
 
   let human = null;
+  const faceInference = new window.QuantumFaceInference.FaceInferenceClient();
   const presenceValidator = new window.QuantumFacePresence.FacePresenceValidator({
     similarity: (first, second) => human?.match.similarity(first, second, MATCH_OPTIONS) || 0,
     threshold: MATCH_THRESHOLD,
@@ -103,6 +104,7 @@
   let detectionTimer = 0;
   let currentFaces = [];
   let registering = false;
+  let enrollmentRequestedUntil = 0;
   let enrollmentGeneration = 0;
   let lastFaceVideoTime = -1;
   let lastPreviewAt = 0;
@@ -288,13 +290,14 @@
       const follow = document.createElement("button");
       follow.type = "button";
       follow.className = "follow-person";
-      follow.textContent = selectedTargetId === identity.id ? "Alvo ativo" : "Seguir";
+      follow.textContent = selectedTargetId === identity.id ? "Parar de seguir" : "Seguir";
       follow.setAttribute("aria-pressed", String(selectedTargetId === identity.id));
       follow.disabled = legacy;
       follow.addEventListener("click", () => {
         selectedTargetId = selectedTargetId === identity.id ? null : identity.id;
         renderIdentities();
         publishPersonTracking(currentFaces, true);
+        if (selectedTargetId) window.quantumPersonFollower?.prepare();
       });
       actions.append(follow, remove);
       card.classList.toggle("target-active", selectedTargetId === identity.id);
@@ -317,7 +320,7 @@
     return (result?.gesture || []).map((item) => String(item.gesture || "").toLowerCase());
   }
 
-  function assessFace(face, result, trackingKey, capturedAt) {
+  function assessFace(face, result, trackingKey, capturedAt, trackingOnly = false) {
     const gestures = gesturesFrom(result);
     if (gestures.some((gesture) => gesture.includes("blink"))) blinkSeenAt = performance.now();
     const confidence = Number(face.faceScore || face.boxScore || face.score || 0);
@@ -345,7 +348,7 @@
       yaw: face.rotation?.angle?.yaw,
       eligible: validations.single && validations.size && validations.descriptor && validations.confidence,
     });
-    const acceptable = validations.single && validations.size && validations.pose
+    const acceptable = !trackingOnly && validations.single && validations.size && validations.pose
       && presence.accepted && validations.descriptor && validations.confidence;
     const combined = (confidence + Math.min(1, size / 300) + real + live) / 4;
     let reason = "Rosto válido para cadastro.";
@@ -356,7 +359,7 @@
     else if (!validations.descriptor) reason = "Aguarde uma leitura facial nítida antes de cadastrar.";
     else if (!presence.accepted) reason = presence.message;
     return qualityStabilizer.update(trackingKey, {
-      confidence, size, real, live, embedding, validations, acceptable, combined, reason, presence,
+      confidence, size, real, live, embedding, validations, acceptable, combined, reason, presence, trackingOnly,
     });
   }
 
@@ -509,10 +512,11 @@
     const quality = item.quality;
     if (presenceButton) presenceButton.disabled = registering || quality.presence.accepted || !quality.validations.size
       || !quality.validations.confidence || !quality.validations.descriptor;
-    if (presenceStatus) presenceStatus.textContent = quality.presence.message;
+    if (presenceStatus) presenceStatus.textContent = quality.trackingOnly
+      ? 'Identificação ativa. Para cadastrar, digite o nome ou confirme por movimento.' : quality.presence.message;
     faceConfidence.textContent = `${Math.round(quality.confidence * 100)}%`;
-    faceQuality.textContent = quality.label;
-    faceQuality.className = quality.acceptable ? "good" : "bad";
+    faceQuality.textContent = quality.trackingOnly ? 'IDENTIFICAÇÃO' : quality.label;
+    faceQuality.className = quality.trackingOnly || quality.acceptable ? "good" : "bad";
     faceSimilarity.textContent = item.identity.similarity ? `${Math.round(item.identity.similarity * 100)}%` : "—";
     setCheck(checks.single, quality.validations.single);
     setCheck(checks.size, quality.validations.size);
@@ -525,7 +529,8 @@
     currentFaceId.textContent = registering ? "CAPTURANDO" : item.identity.id;
     if (!registering) {
       faceHint.textContent = item.identity.registered
-        ? `${item.identity.name} reconhecido(a) com ${Math.round((item.identity.similarity || 0) * 100)}% de similaridade.`
+        ? `${item.identity.name} reconhecido(a). ${selectedTargetId === item.identity.id
+          ? 'Alvo do seguimento. Veja o estado do Modo 2 acima.' : 'Clique em Seguir no cadastro para iniciar o Modo 2.'}`
         : quality.acceptable
           ? `Rosto pronto. Digite o nome e capture ${REQUIRED_SAMPLES} amostras.`
           : quality.reason;
@@ -565,7 +570,7 @@
   }
 
   async function loadModels() {
-    if (modelsReady) return;
+    if (modelsReady && faceInference.ready) return;
     if (modelsPromise) return modelsPromise;
     if (window.location?.protocol === "file:") {
       throw new Error("O FaceID exige o site HTTPS. Abra https://jgouveaf.github.io/FECART/.");
@@ -576,8 +581,7 @@
     modelsPromise = (async () => {
       const HumanLibrary = await loadHumanLibrary();
       const candidate = new HumanLibrary.Human(humanConfig);
-      await candidate.load();
-      await candidate.warmup();
+      await faceInference.load(humanConfig);
       human = candidate;
       modelsReady = true;
       control?.log("INFO", "VISÃO", "Human FaceID pronto");
@@ -620,7 +624,10 @@
     try {
       disposeResult(lastResult);
       lastResult = null;
-      const result = await human.detect(video);
+      const processing = window.QuantumFaceProcessing.plan({ width: video.videoWidth, height: video.videoHeight,
+        modeTwo: Number(control?.state.mode.id) === 2 && control?.state.mode.phase === 'ACTIVE',
+        enrolling: registering || Boolean(personName.value.trim()) || performance.now() < enrollmentRequestedUntil });
+      const result = await faceInference.detect(video, processing.config);
       if (generation !== detectionGeneration || !cameraActive || activeView !== "face") {
         disposeResult(result);
         return;
@@ -630,13 +637,16 @@
       nextDetectionDelayMs = DETECTION_DELAY_MS;
       if (retryDetectionButton) retryDetectionButton.hidden = true;
       const detectedAt = performance.now();
+      window.quantumFacePerformance = { processingMs: Math.round(detectedAt - capturedAt),
+        backend: result.backend || 'local', profile: processing.tracking ? 'tracking' : 'enrollment' };
       if (result.face.length !== 1) presenceValidator.reset();
-      const faces = result.face.map((face) => {
+      const faces = result.face.map((rawFace) => {
+        const face = window.QuantumFaceProcessing.restore(rawFace, processing.scaleX, processing.scaleY);
         const identity = identifyFace(face);
         return {
           face,
           identity,
-          quality: assessFace(face, result, identity.id, capturedAt),
+          quality: assessFace(face, result, identity.id, capturedAt, processing.tracking),
           detectedAt,
           capturedAt,
         };
@@ -735,12 +745,14 @@
     ++enrollmentGeneration;
     cameraActive = false;
     registering = false;
+    enrollmentRequestedUntil = 0;
     clearTimeout(detectionTimer);
     disposeResult(lastResult);
     lastResult = null;
     context.clearRect(0, 0, canvas.width, canvas.height);
     currentFaces = [];
     temporaryTracks = [];
+    window.quantumFacePerformance = null;
     qualityStabilizer.reset();
     presenceValidator.reset();
     if (presenceButton) presenceButton.disabled = true;
@@ -781,6 +793,7 @@
   personName.addEventListener("input", () => updatePanel(currentFaces));
   presenceButton?.addEventListener('click', () => {
     if (registering || currentFaces.length !== 1) return;
+    enrollmentRequestedUntil = performance.now() + 30000;
     if (presenceValidator.beginGuided(performance.now())) {
       presenceStatus.textContent = '1/3 · Olhe de frente para começar.';
     }
@@ -922,6 +935,7 @@
   });
 
   window.addEventListener("quantum:camera-started", startIdentification);
+  window.addEventListener('pagehide', () => faceInference.close());
   window.addEventListener("quantum:camera-stopped", stopIdentification);
   window.addEventListener("quantum:camera-error", (event) => {
     stopIdentification();

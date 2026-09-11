@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const { PersonFollower, overlap } = require('../web/person-follow-math.js');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../web/person-follow.js'), 'utf8');
-function rig(latency = 120) {
+function rig(latency = 120, selected = true) {
   let now = 1000, id = 0, inFlight = 0, maxInFlight = 0;
   const tasks = new Map(), listeners = {}, starts = [], elements = new Map();
   const setTimeout = (callback, delay = 0) => { tasks.set(++id, { callback, at: now + delay }); return id; };
@@ -37,6 +37,7 @@ function rig(latency = 120) {
     },
   };
   vm.createContext(context); vm.runInContext(source, context);
+  if (selected) listeners['quantum:face-observations']({ detail: { selectedId: 'QT-001', faces: [] } });
   listeners['quantum:camera-started']();
   async function advance(until) {
     for (;;) {
@@ -55,6 +56,10 @@ test('slow body inference resumes at completion without waiting for polling', as
   const r = rig(120); await r.advance(1700);
   assert.deepEqual(r.starts, [1000, 1120, 1240, 1360, 1480, 1600]);
   assert.equal(r.max(), 1, 'Never queue a second image during inference');
+});
+
+test('camera without a selected target does not spend CPU on body inference', async () => {
+  const r = rig(120, false); await r.advance(2000); assert.deepEqual(r.starts, []);
 });
 test('fast body inference retains a 100 ms minimum start interval', async () => {
   const r = rig(25); await r.advance(1350);

@@ -226,7 +226,7 @@
           <section class="person-follow-panel" aria-labelledby="personFollowTitle">
             <span class="section-tag">Modo 2 · câmera na frente do carrinho</span>
             <h3 id="personFollowTitle">Seguir uma pessoa cadastrada</h3>
-            <p>Cadastre o rosto abaixo, clique em <strong>Seguir</strong> no cadastro e prepare o Modo 2. O retângulo verde marca o alvo; os azuis mostram outras pessoas. Primeiro teste a prévia sem o Arduino.</p>
+            <p>Clique em <strong>Seguir</strong> no cadastro para escolher a pessoa e iniciar o Modo 2 com a câmera. O retângulo verde marca o alvo; os azuis mostram outras pessoas.</p>
             <div class="person-follow-actions">
               <button class="primary-button" id="preparePersonFollow" type="button">Preparar Modo 2 e câmera</button>
               <button class="secondary-button" id="pausePersonFollow" type="button">Pausar seguimento</button>
@@ -244,6 +244,7 @@
               <dl class="person-follow-metrics">
                 <div><dt>Tempo da imagem até a decisão</dt><dd id="personFrameAge">—</dd></div>
                 <div><dt>Intervalo entre imagens analisadas</dt><dd id="personFrameInterval">—</dd></div>
+                <div><dt>Tempo da leitura facial</dt><dd id="personFaceProcessing">—</dd></div>
                 <div><dt>Motivo da última parada</dt><dd id="personLastStop">Nenhuma parada registrada</dd></div>
               </dl>
               <button class="secondary-button" id="downloadPersonDiagnostics" type="button">Baixar diagnóstico</button>
@@ -542,6 +543,8 @@
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
   <script src="web/robot-control.js?v=20" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
+  <script src="web/face-processing.js?v=1" defer></script>
+  <script src="web/face-inference-client.js?v=1" defer></script>
   <script src="web/face-presence.js?v=1" defer></script>
   <script src="web/face-mesh-overlay.js?v=1" defer></script>
   <script src="web/face-identity-math.js?v=2" defer></script>
@@ -549,8 +552,8 @@
   <script src="web/gesture-calibration.js?v=1" defer></script>
   <script src="web/person-appearance.js?v=2" defer></script>
   <script src="web/person-follow-math.js?v=4" defer></script>
-  <script src="web/person-follow.js?v=4" defer></script>
-  <script src="web/face-identities.js?v=17" defer></script>
+  <script src="web/person-follow.js?v=5" defer></script>
+  <script src="web/face-identities.js?v=18" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>
 </html>

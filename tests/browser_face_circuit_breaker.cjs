@@ -34,7 +34,7 @@ const siteUrl = process.env.QT_SITE_URL || "http://127.0.0.1:8765/";
     await page.locator("#startCamera").click();
     await page.waitForFunction(() => window.QuantumControl.state.vision.status === "ONLINE" && Boolean(window.Human?.Human), null, { timeout: 90000 });
     await page.evaluate(() => {
-      const prototype = window.Human.Human.prototype;
+      const prototype = window.QuantumFaceInference.FaceInferenceClient.prototype;
       window.__qtOriginalHumanDetect = prototype.detect;
       window.__qtForcedFaceFailures = 0;
       prototype.detect = async function forcedFaceFailure() {
@@ -47,7 +47,7 @@ const siteUrl = process.env.QT_SITE_URL || "http://127.0.0.1:8765/";
     await page.waitForTimeout(1200);
     const callsWhileSuspended = await page.evaluate(() => window.__qtForcedFaceFailures);
     await page.evaluate(() => {
-      window.Human.Human.prototype.detect = window.__qtOriginalHumanDetect;
+      window.QuantumFaceInference.FaceInferenceClient.prototype.detect = window.__qtOriginalHumanDetect;
     });
     await page.locator("#retryFaceDetection").click();
     await page.waitForFunction(() => window.QuantumControl.state.vision.status === "ONLINE" && document.getElementById("retryFaceDetection").hidden, null, { timeout: 30000 });

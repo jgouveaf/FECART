@@ -7,6 +7,7 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
   const context = await browser.newContext({ permissions: ["camera"] });
+  await require('./face_inference_double.cjs')(context);
   try {
     await context.addInitScript(() => {
       localStorage.setItem("quantumAuth:v1", "ok");
@@ -16,14 +17,15 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
         tf = { dispose() {} };
         match = { similarity(a, b) { return a[0] === b[0] ? .99 : .1; } };
         async load() {} async warmup() {}
-        async detect(video) {
+        async detect(video, config = {}) {
           if (window.__test.failFace) throw new Error("injected face failure");
-          const t = window.__test, w = video.videoWidth, h = video.videoHeight;
+          const t = window.__test, w = config.filter?.width || video.videoWidth, h = config.filter?.height || video.videoHeight;
+          const size = 160 * w / video.videoWidth;
           const embedding = Array(1024).fill(t.embedding); embedding[1023] += ++t.frames / 1000;
-          const faces = t.face ? [{ box: [t.x * w - 80, .13 * h, 160, 160],
+          const faces = t.face ? [{ box: [t.x * w - size / 2, .13 * h, size, size],
             faceScore: .99, real: .99, live: .99, embedding,
             rotation: { angle: { yaw: 0, pitch: 0, roll: 0 } } }] : [];
-          if (t.extraUnknownFace && faces.length) faces.push({ ...faces[0], box: [t.x * w + 10, .13 * h, 160, 160], embedding: Array(1024).fill(2) });
+          if (t.extraUnknownFace && faces.length) faces.push({ ...faces[0], box: [t.x * w + size / 16, .13 * h, size, size], embedding: Array(1024).fill(2) });
           return { face: faces, gesture: [{ gesture: "facing center" }] };
         }
       } };
@@ -105,8 +107,10 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
     await page.waitForFunction(() => document.querySelectorAll(".follow-person").length === 1);
     await check("registration survives page reload with same ID", async () => assert.equal((await dbRecords())[0].id, "QT-001"));
     await page.locator(".follow-person").click();
-    await page.locator("#preparePersonFollow").click();
     await waitCommand("FRENTE");
+    await check('Seguir alone starts Mode 2, camera and target association', async () => {
+      assert.equal(await page.evaluate(() => window.QuantumControl.state.mode.id), 2);
+    });
     await check("chosen face associates with body and follows in preview", async () => {
       assert.equal((await snap()).id, "QT-001"); assert.equal((await snap()).state, "FOLLOWING");
       assert.equal(await page.evaluate(() => window.__test.writes.length), 0);
@@ -131,6 +135,17 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
     await check("connecting never releases ESTOP automatically", async () => {
       assert.equal(await page.evaluate(() => window.QuantumControl.state.safety.emergency), true);
       assert.equal(await page.evaluate(() => window.__test.writes.includes("RESET_ESTOP")), false);
+    });
+    await page.evaluate(() => window.quantumRobot.requestMode(1, 'test'));
+    await page.waitForFunction(() => window.QuantumControl.state.mode.id === 1 && window.QuantumControl.state.mode.phase === 'ACTIVE');
+    await page.locator('.follow-person').click(); // Deselect the previous target.
+    await page.evaluate(() => { window.__test.writes = []; });
+    await page.locator('.follow-person').click();
+    await page.waitForFunction(() => window.QuantumControl.state.mode.id === 2 && window.QuantumControl.state.mode.phase === 'ACTIVE');
+    await check('Seguir with Arduino ONLINE activates Mode 2 without releasing an existing ESTOP', async () => {
+      const state = await page.evaluate(() => ({ emergency: window.QuantumControl.state.safety.emergency, writes: window.__test.writes }));
+      assert.equal(state.emergency, true); assert.ok(state.writes.includes('MODE:2'));
+      assert.ok(!state.writes.includes('RESET_ESTOP'));
     });
     await page.locator("#emergencyStop").click();
     await page.waitForFunction(() => window.__test.writes.includes("CMD:FRENTE"));

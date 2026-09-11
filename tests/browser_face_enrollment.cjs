@@ -7,6 +7,7 @@ const site = process.env.QT_SITE_URL || 'http://127.0.0.1:9877/';
 (async () => {
   const browser = await chromium.launch({ headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
   const context = await browser.newContext({ permissions: ['camera'] });
+  await require('./face_inference_double.cjs')(context);
   const errors = [];
   try {
     await context.addInitScript(() => {

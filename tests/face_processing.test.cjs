@@ -9,11 +9,11 @@ test('tracking caps input while keeping registration models out of the follow lo
   assert.equal(p.config.face.detector.return, false);
   assert.equal(p.config.face.detector.minSize * p.scaleX, 70);
 });
-test('enrollment and other modes restore full resolution and presence checks after following', () => {
+test('enrollment restores full resolution without re-enabling presence classifiers', () => {
   for (const flags of [{ modeTwo: true, enrolling: true }, { modeTwo: false, enrolling: false }]) {
     const p = plan({ width: 1280, height: 720, ...flags });
     assert.equal(p.config.filter.width, 1280); assert.equal(p.config.filter.height, 720);
-    for (const key of ['iris', 'antispoof', 'liveness']) assert.equal(p.config.face[key].enabled, true);
+    for (const key of ['iris', 'antispoof', 'liveness']) assert.equal(p.config.face[key].enabled, false);
   }
 });
 test('small and portrait cameras keep their aspect ratio and are never upscaled', () => {

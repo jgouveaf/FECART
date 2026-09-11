@@ -27,16 +27,11 @@
   const backupFile = $("identityBackupFile");
   const cameraPanel = $("camera-gestos");
   const retryDetectionButton = $("retryFaceDetection");
-  const presenceButton = $("confirmFacePresence");
-  const presenceStatus = $("facePresenceStatus");
 
   const checks = {
     single: $("checkSingle"),
     size: $("checkSize"),
     pose: $("checkPose"),
-    real: $("checkReal"),
-    live: $("checkLive"),
-    blink: $("checkBlink"),
   };
 
   const DB_NAME = "quantum_tracker_biometrics";
@@ -50,8 +45,6 @@
   const MATCH_THRESHOLD = window.QuantumFaceIdentityMath.MIN_SIMILARITY;
   const MIN_CONFIDENCE = 0.58;
   const MIN_FACE_SIZE = 140;
-  const MIN_REAL = 0.50;
-  const MIN_LIVE = 0.50;
   const DETECTION_DELAY_MS = 70;
   const MAX_CONSECUTIVE_INFERENCE_ERRORS = 3;
   const MAX_INFERENCE_BACKOFF_MS = 4000;
@@ -76,11 +69,11 @@
       enabled: true,
       detector: { rotation: true, return: true, mask: false, maxDetected: 3, minConfidence: 0.45, minSize: 70, skipFrames: 2, skipTime: 120 },
       mesh: { enabled: true, keepInvalid: false },
-      iris: { enabled: true, skipFrames: 2 },
+      iris: { enabled: false },
       description: { enabled: true, minConfidence: 0.55, skipFrames: 2 },
       emotion: { enabled: false },
-      antispoof: { enabled: true, skipFrames: 4 },
-      liveness: { enabled: true, skipFrames: 4 },
+      antispoof: { enabled: false },
+      liveness: { enabled: false },
     },
     body: { enabled: false },
     hand: { enabled: false },
@@ -90,10 +83,6 @@
 
   let human = null;
   const faceInference = new window.QuantumFaceInference.FaceInferenceClient();
-  const presenceValidator = new window.QuantumFacePresence.FacePresenceValidator({
-    similarity: (first, second) => human?.match.similarity(first, second, MATCH_OPTIONS) || 0,
-    threshold: MATCH_THRESHOLD,
-  });
   let humanLibraryPromise = null;
   let modelsPromise = null;
   let database = null;
@@ -104,12 +93,10 @@
   let detectionTimer = 0;
   let currentFaces = [];
   let registering = false;
-  let enrollmentRequestedUntil = 0;
   let enrollmentGeneration = 0;
   let lastFaceVideoTime = -1;
   let lastPreviewAt = 0;
   let lastResult = null;
-  let blinkSeenAt = 0;
   let nextTemporaryId = 1;
   let temporaryTracks = [];
   let recognitionMemory = [];
@@ -322,7 +309,6 @@
 
   function assessFace(face, result, trackingKey, capturedAt, trackingOnly = false) {
     const gestures = gesturesFrom(result);
-    if (gestures.some((gesture) => gesture.includes("blink"))) blinkSeenAt = performance.now();
     const confidence = Number(face.faceScore || face.boxScore || face.score || 0);
     const size = Math.min(Number(face.box?.[2] || 0), Number(face.box?.[3] || 0));
     const angle = face.rotation?.angle || {};
@@ -331,35 +317,28 @@
     const roll = Number(angle.roll || 0);
     const poseByAngle = Math.abs(yaw) <= 0.38 && Math.abs(pitch) <= 0.34 && Math.abs(roll) <= 0.42;
     const pose = gestures.includes("facing center") || poseByAngle;
-    const real = Number(face.real || 0);
-    const live = Number(face.live || 0);
     const embedding = Array.isArray(face.embedding) ? face.embedding : [];
     const validations = {
       single: result.face.length === 1,
       size: size >= MIN_FACE_SIZE,
       pose,
-      real: real >= MIN_REAL,
-      live: live >= MIN_LIVE,
-      blink: performance.now() - blinkSeenAt < 10000,
+      fresh: Number.isFinite(capturedAt) && capturedAt <= performance.now() && performance.now() - capturedAt <= 800,
       descriptor: embedding.length === EMBEDDING_LENGTH && embedding.every(Number.isFinite),
       confidence: confidence >= MIN_CONFIDENCE,
     };
-    const presence = presenceValidator.update({ capturedAt, box: face.box, embedding, real, live,
-      yaw: face.rotation?.angle?.yaw,
-      eligible: validations.single && validations.size && validations.descriptor && validations.confidence,
-    });
     const acceptable = !trackingOnly && validations.single && validations.size && validations.pose
-      && presence.accepted && validations.descriptor && validations.confidence;
-    const combined = (confidence + Math.min(1, size / 300) + real + live) / 4;
+      && validations.fresh && validations.descriptor && validations.confidence;
+    const combined = (confidence + Math.min(1, size / 300)) / 2;
     let reason = "Rosto válido para cadastro.";
     if (!validations.single) reason = "Deixe apenas uma pessoa na imagem.";
     else if (!validations.size) reason = "Aproxime o rosto da câmera.";
     else if (!validations.pose) reason = "Olhe de frente para a câmera.";
     else if (!validations.confidence) reason = "Melhore a iluminação e mantenha o rosto visível.";
     else if (!validations.descriptor) reason = "Aguarde uma leitura facial nítida antes de cadastrar.";
-    else if (!presence.accepted) reason = presence.message;
+    else if (!validations.fresh) reason = "Imagem atrasada. Aguarde uma leitura nova da câmera.";
+    else if (trackingOnly) reason = "Identificação ativa. Para cadastrar, digite o nome abaixo.";
     return qualityStabilizer.update(trackingKey, {
-      confidence, size, real, live, embedding, validations, acceptable, combined, reason, presence, trackingOnly,
+      confidence, size, embedding, validations, acceptable, combined, reason, trackingOnly,
     });
   }
 
@@ -500,8 +479,6 @@
     if (!registering) registerButton.textContent = existing ? `Atualizar rosto de ${existing.name}` : "Validar e cadastrar rosto";
     setCheck(checks.single, faces.length === 1);
     if (!item) {
-      if (presenceButton) presenceButton.disabled = true;
-      if (presenceStatus) presenceStatus.textContent = 'Mantenha um único rosto nítido na imagem.';
       resetMetrics();
       setCheck(checks.single, faces.length === 1);
       currentFaceId.textContent = faces.length ? `${faces.length} ROSTOS` : "NENHUM";
@@ -510,10 +487,6 @@
       return;
     }
     const quality = item.quality;
-    if (presenceButton) presenceButton.disabled = registering || quality.presence.accepted || !quality.validations.size
-      || !quality.validations.confidence || !quality.validations.descriptor;
-    if (presenceStatus) presenceStatus.textContent = quality.trackingOnly
-      ? 'Identificação ativa. Para cadastrar, digite o nome ou confirme por movimento.' : quality.presence.message;
     faceConfidence.textContent = `${Math.round(quality.confidence * 100)}%`;
     faceQuality.textContent = quality.trackingOnly ? 'IDENTIFICAÇÃO' : quality.label;
     faceQuality.className = quality.trackingOnly || quality.acceptable ? "good" : "bad";
@@ -521,11 +494,6 @@
     setCheck(checks.single, quality.validations.single);
     setCheck(checks.size, quality.validations.size);
     setCheck(checks.pose, quality.validations.pose);
-    // Model scores remain visible as auxiliary observations, not a false
-    // rejection when the same person's guided presence was already confirmed.
-    setCheck(checks.real, quality.validations.real, true);
-    setCheck(checks.live, quality.validations.live, true);
-    setCheck(checks.blink, quality.validations.blink, !quality.validations.blink);
     currentFaceId.textContent = registering ? "CAPTURANDO" : item.identity.id;
     if (!registering) {
       faceHint.textContent = item.identity.registered
@@ -609,7 +577,6 @@
     if (!cameraActive || detectionBusy) return;
     if (video.readyState < 2 || video.currentTime === lastFaceVideoTime) {
       if (currentFaces.length && performance.now() - currentFaces[0].capturedAt > 800) {
-        presenceValidator.reset();
         qualityStabilizer.reset();
         drawFaces([]);
         updatePanel([]);
@@ -626,7 +593,7 @@
       lastResult = null;
       const processing = window.QuantumFaceProcessing.plan({ width: video.videoWidth, height: video.videoHeight,
         modeTwo: Number(control?.state.mode.id) === 2 && control?.state.mode.phase === 'ACTIVE',
-        enrolling: registering || Boolean(personName.value.trim()) || performance.now() < enrollmentRequestedUntil });
+        enrolling: registering || Boolean(personName.value.trim()) });
       const result = await faceInference.detect(video, processing.config);
       if (generation !== detectionGeneration || !cameraActive || activeView !== "face") {
         disposeResult(result);
@@ -639,7 +606,7 @@
       const detectedAt = performance.now();
       window.quantumFacePerformance = { processingMs: Math.round(detectedAt - capturedAt),
         backend: result.backend || 'local', profile: processing.tracking ? 'tracking' : 'enrollment' };
-      if (result.face.length !== 1) presenceValidator.reset();
+      if (result.face.length !== 1) qualityStabilizer.reset();
       const faces = result.face.map((rawFace) => {
         const face = window.QuantumFaceProcessing.restore(rawFace, processing.scaleX, processing.scaleY);
         const identity = identifyFace(face);
@@ -669,7 +636,6 @@
     } catch (error) {
       if (generation !== detectionGeneration) return;
       currentFaces = [];
-      presenceValidator.reset();
       qualityStabilizer.reset();
       drawFaces([]);
       updatePanel([]);
@@ -716,7 +682,6 @@
     const generation = ++detectionGeneration;
     cameraActive = true;
     lastFaceVideoTime = -1;
-    presenceValidator.reset();
     qualityStabilizer.reset();
     updatePanel([]);
     resetInferenceCircuit();
@@ -745,7 +710,6 @@
     ++enrollmentGeneration;
     cameraActive = false;
     registering = false;
-    enrollmentRequestedUntil = 0;
     clearTimeout(detectionTimer);
     disposeResult(lastResult);
     lastResult = null;
@@ -754,9 +718,6 @@
     temporaryTracks = [];
     window.quantumFacePerformance = null;
     qualityStabilizer.reset();
-    presenceValidator.reset();
-    if (presenceButton) presenceButton.disabled = true;
-    if (presenceStatus) presenceStatus.textContent = 'Ative a câmera para confirmar a presença.';
     lastFaceVideoTime = -1;
     faceFrames = 0;
     faceFpsWindowAt = 0;
@@ -791,13 +752,6 @@
   }
 
   personName.addEventListener("input", () => updatePanel(currentFaces));
-  presenceButton?.addEventListener('click', () => {
-    if (registering || currentFaces.length !== 1) return;
-    enrollmentRequestedUntil = performance.now() + 30000;
-    if (presenceValidator.beginGuided(performance.now())) {
-      presenceStatus.textContent = '1/3 · Olhe de frente para começar.';
-    }
-  });
   retryDetectionButton?.addEventListener("click", async () => {
     if (!cameraActive || activeView !== "face") return;
     retryDetectionButton.disabled = true;
@@ -835,7 +789,7 @@
         embeddings.push(Array.from(item.quality.embedding));
         setSampleProgress(index + 1);
         registerButton.textContent = `Capturando ${index + 1}/${REQUIRED_SAMPLES}`;
-        faceHint.textContent = index + 1 < REQUIRED_SAMPLES ? "Continue olhando para a câmera e mova levemente a cabeça." : "Salvando cadastro local…";
+        faceHint.textContent = index + 1 < REQUIRED_SAMPLES ? "Continue olhando de frente para a câmera." : "Salvando cadastro local…";
       }
       const identity = {
         id: existing?.id || nextPermanentId(),
@@ -849,9 +803,7 @@
         enrollment: {
           samples: mergeEmbeddings(existing?.embeddings, embeddings).length,
           confidence: item.quality.confidence,
-          real: item.quality.real,
-          live: item.quality.live,
-          presenceMethod: item.quality.presence.method,
+          presenceMethod: 'NOT_REQUIRED',
         },
       };
       await putRecord(identity);
@@ -948,7 +900,6 @@
     activeView = event.detail?.view === "hand" ? "hand" : "face";
     clearTimeout(detectionTimer);
     if (activeView !== "face") {
-      presenceValidator.reset();
       qualityStabilizer.reset();
       ++enrollmentGeneration;
       registering = false;

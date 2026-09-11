@@ -32,7 +32,7 @@
     }
   </script>
   <link rel="stylesheet" href="web/styles.css?v=22">
-  <link rel="stylesheet" href="web/person-follow.css?v=3">
+  <link rel="stylesheet" href="web/person-follow.css?v=4">
   <link rel="stylesheet" href="web/interface-tools.css?v=2">
   <link rel="stylesheet" href="web/operation-layout.css?v=1">
   <script src="web/interface-tools.js?v=2" defer></script>
@@ -281,15 +281,8 @@
               <span id="checkSingle">Um rosto</span>
               <span id="checkSize">Distância</span>
               <span id="checkPose">De frente</span>
-              <span id="checkReal">Sinal de presença</span>
-              <span id="checkLive">Sinal de vivacidade</span>
-              <span id="checkBlink">Piscar</span>
             </div>
-            <div class="face-presence-panel">
-              <p id="facePresenceStatus" role="status">Ative a câmera para confirmar a presença.</p>
-              <button class="secondary-button compact" id="confirmFacePresence" type="button" disabled>Confirmar por movimento</button>
-              <small>Se a avaliação automática não concluir, siga os movimentos indicados. A confirmação vale para este rosto durante o cadastro.</small>
-            </div>
+            <p class="privacy-note">Digite o nome, olhe de frente e clique em cadastrar. Não é necessário piscar nem fazer movimentos de confirmação.</p>
             <label class="identity-field" for="personName"><span>Nome da pessoa</span><input id="personName" maxlength="60" autocomplete="off" placeholder="Ex.: João"></label>
             <button class="primary-button" id="registerPerson" disabled>Validar e cadastrar rosto</button>
             <p class="privacy-note">Cadastre somente quem autorizou. O botão salva uma foto e cinco amostras faciais no IndexedDB deste navegador, sem enviar ao servidor. O cadastro permanece entre sessões, mas limpar os dados do navegador pode apagá-lo: exporte o backup para guardar ou levar a outro PC.</p>
@@ -543,9 +536,8 @@
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
   <script src="web/robot-control.js?v=20" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
-  <script src="web/face-processing.js?v=1" defer></script>
+  <script src="web/face-processing.js?v=2" defer></script>
   <script src="web/face-inference-client.js?v=1" defer></script>
-  <script src="web/face-presence.js?v=1" defer></script>
   <script src="web/face-mesh-overlay.js?v=1" defer></script>
   <script src="web/face-identity-math.js?v=2" defer></script>
   <script src="web/gesture-math.js?v=8" defer></script>
@@ -553,7 +545,7 @@
   <script src="web/person-appearance.js?v=2" defer></script>
   <script src="web/person-follow-math.js?v=4" defer></script>
   <script src="web/person-follow.js?v=5" defer></script>
-  <script src="web/face-identities.js?v=18" defer></script>
+  <script src="web/face-identities.js?v=19" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>
 </html>

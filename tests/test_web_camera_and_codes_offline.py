@@ -57,7 +57,6 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/code-editor-utils.js?v=1',
             'web/face-identity-math.js?v=2',
             'web/face-identities.js?v=',
-            'web/face-presence.js?v=',
             'web/face-mesh-overlay.js?v=',
             'id="toggleGestures"',
             'id="cameraDeviceSelect"',
@@ -191,13 +190,15 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn('id="faceSimilarity"', self.html)
         self.assertIn('id="sampleProgress"', self.html)
 
-    def test_face_registration_validates_pose_size_presence_and_liveness(self) -> None:
-        for setting in ("MIN_CONFIDENCE", "MIN_FACE_SIZE", "MIN_REAL", "MIN_LIVE"):
+    def test_face_registration_validates_readability_without_presence_challenge(self) -> None:
+        for setting in ("MIN_CONFIDENCE", "MIN_FACE_SIZE"):
             self.assertIn(setting, self.face_js)
         for feature in ("rotation: true", "equalization: true", "antispoof", "liveness", "facing center"):
             self.assertIn(feature, self.face_js)
-        for element_id in ("checkSingle", "checkSize", "checkPose", "checkReal", "checkLive", "checkBlink"):
+        for element_id in ("checkSingle", "checkSize", "checkPose"):
             self.assertIn(f'id="{element_id}"', self.html)
+        for element_id in ("checkReal", "checkLive", "checkBlink", "confirmFacePresence"):
+            self.assertNotIn(f'id="{element_id}"', self.html)
 
     def test_face_registration_releases_model_tensors_and_keeps_detection_running(self) -> None:
         self.assertIn("human.tf.dispose", self.face_js)

@@ -8,7 +8,7 @@
     return { tracking, scaleX: width / inputWidth, scaleY: height / inputHeight,
       config: { filter: { width: inputWidth, height: inputHeight, return: false },
         face: { detector: { return: false, minSize: 70 * scale },
-          iris: { enabled: !tracking }, antispoof: { enabled: !tracking }, liveness: { enabled: !tracking } } } };
+          iris: { enabled: false }, antispoof: { enabled: false }, liveness: { enabled: false } } } };
   }
   function restore(face, scaleX, scaleY) {
     if (scaleX === 1 && scaleY === 1) return face;

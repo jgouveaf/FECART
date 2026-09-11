@@ -1,6 +1,6 @@
 'use strict';
 // Human's bundled warmup image, real local models and application renderer.
-// Only tests landmark drawing. A still image does not validate live presence.
+// Verifies landmark drawing and direct enrollment, without an anti-photo challenge.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -50,7 +50,34 @@ assert.ok(fixture, 'Human 3.3.6 bundled face warmup fixture is available');
     assert.ok(result.pixels > 1000); assert.equal(result.visible, true); assert.deepEqual(errors, []);
     fs.mkdirSync(path.join(__dirname, 'artifacts'), { recursive: true });
     await page.locator('.camera-stage').screenshot({ path: path.join(__dirname, 'artifacts/face-mesh-real.png') });
+    await page.locator('#personName').fill('Fixture cadastro direto');
+    await page.waitForFunction(() => !document.getElementById('registerPerson').disabled, null, { timeout: 60000 });
+    await page.evaluate(() => {
+      const progress = document.getElementById('sampleProgress');
+      window.__capturedSamples = 0;
+      new MutationObserver(() => {
+        window.__capturedSamples = Math.max(window.__capturedSamples, parseInt(progress.textContent, 10) || 0);
+      }).observe(progress, { childList: true });
+    });
+    await page.locator('#registerPerson').click();
+    await page.waitForFunction(() => document.querySelectorAll('.person-card').length === 1, null, { timeout: 60000 });
+    const saved = await page.evaluate(() => new Promise((resolve, reject) => {
+      const request = indexedDB.open('quantum_tracker_biometrics', 1);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result, read = db.transaction('identities').objectStore('identities').getAll();
+        read.onsuccess = () => { db.close(); resolve(read.result[0]); }; read.onerror = () => reject(read.error);
+      };
+    }));
+    assert.equal(saved.name, 'Fixture cadastro direto');
+    assert.equal(await page.evaluate(() => window.__capturedSamples), 5);
+    // An unchanged fixture may produce identical descriptors; existing storage
+    // deduplicates them after all five acquisition steps have completed.
+    assert.ok(saved.embeddings.length >= 1 && saved.embeddings.length <= 5);
+    assert.ok(saved.embeddings.every(e => e.length === 1024 && e.every(Number.isFinite)));
+    assert.equal(saved.enrollment.presenceMethod, 'NOT_REQUIRED');
+    assert.deepEqual(errors, []);
     await page.evaluate(() => window.quantumCameraController.stop());
-    console.log('PASS - real Human facial mesh', JSON.stringify(result));
+    console.log('PASS - real Human facial mesh and five-sample direct enrollment', JSON.stringify(result));
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

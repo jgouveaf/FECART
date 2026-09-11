@@ -12,9 +12,10 @@ const fixture = /V0=`([^`]+)`/.exec(fs.readFileSync(path.join(__dirname, '../web
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
-    const external = [], errors = [];
+    const external = [], errors = [], unusedModels = [];
     page.on('pageerror', e => errors.push(e.message));
     page.on('request', r => { if (/\.wasm|models\//.test(r.url()) && new URL(r.url()).origin !== new URL(site).origin) external.push(r.url()); });
+    page.on('request', r => { if (/models\/(iris|antispoof|liveness)\./.test(r.url())) unusedModels.push(r.url()); });
     await page.route('**/__profile.jpg', r => r.fulfill({ contentType: 'image/jpeg', body: Buffer.from(fixture, 'base64') }));
     await page.goto(site, { waitUntil: 'domcontentloaded' });
     await page.addScriptTag({ url: new URL('web/vendor/human/human.js?v=3.3.6', site).href });
@@ -35,13 +36,13 @@ const fixture = /V0=`([^`]+)`/.exec(fs.readFileSync(path.join(__dirname, '../web
         const match = r => human.match.similarity(old.face[0].embedding, r.face[0].embedding, { order: 2, multiplier: 25, min: .2, max: .8 });
         return { backend: followed.backend, firstSimilarity: match(first), trackingSimilarity: match(followed),
           restoredSimilarity: match(again), points: followed.face[0].mesh.length, embedding: followed.face[0].embedding.length,
-          restoredPresence: Number.isFinite(again.face[0].real) && Number.isFinite(again.face[0].live),
+          enrollmentConfidence: again.face[0].faceScore,
           faceBox: QuantumFaceProcessing.restore(followed.face[0], tracking.scaleX, tracking.scaleY).box, referenceBox: old.face[0].box };
       } finally { client.close(); }
     }, config);
     assert.equal(result.backend, 'wasm'); assert.equal(result.embedding, 1024); assert.ok(result.points >= 468);
     assert.ok(result.firstSimilarity >= .8 && result.trackingSimilarity >= .8 && result.restoredSimilarity >= .8, JSON.stringify(result));
-    assert.equal(result.restoredPresence, true);
+    assert.ok(result.enrollmentConfidence >= .58); assert.deepEqual(unusedModels, []);
     assert.ok(result.faceBox.every((v, i) => Math.abs(v - result.referenceBox[i]) < 40), 'Projection remains aligned at camera resolution');
     assert.deepEqual(external, []); assert.deepEqual(errors, []);
     console.log('PASS - real descriptor compatibility and enrollment restoration', JSON.stringify(result));

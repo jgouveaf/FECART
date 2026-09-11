@@ -1,0 +1,143 @@
+/* Layout only: keep control, camera, firmware and safety logic independent. */
+.sidebar { overflow-y: auto; }
+.nav-group-label {
+  margin: 18px 12px 6px;
+  color: #b8c9d8;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.nav-group-label:first-child { margin-top: 0; }
+.sidebar nav { margin-bottom: 24px; }
+.menu-button { color: var(--ui-ink); background: var(--ui-panel); }
+.page-section { scroll-margin-top: 106px; }
+.operation-intro { display: block; margin: 20px 0; }
+.operation-intro .hero-card {
+  min-height: 0;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 28px;
+}
+.operation-intro .hero-card > div:first-child { max-width: 660px; }
+.operation-intro h2 { font-size: 23px; margin-bottom: 7px; }
+.operation-intro p { margin-bottom: 0; font-size: 13px; line-height: 1.5; }
+.operation-intro .hero-actions { flex-shrink: 0; flex-direction: column; }
+.operation-intro .hero-actions a { width: 100%; padding: 10px 14px; font-size: 12px; }
+.operation-intro .orb { display: none; }
+.panel { padding: 24px; }
+.section-heading { margin-bottom: 20px; }
+.section-heading p { font-size: 13px; line-height: 1.5; }
+.camera-panel > .section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.camera-panel > .section-heading > a { flex-shrink: 0; }
+.robot-control-panel { margin-top: 0; padding: 18px; }
+.robot-connection-row { flex-wrap: wrap; gap: 14px; }
+.robot-connection-row > div:first-child { flex: 1 1 290px; }
+.robot-connection-row > div:first-child small { max-width: 510px; line-height: 1.5; }
+.robot-actions { gap: 8px; }
+.robot-actions button { min-height: 40px; }
+.control-step-label {
+  margin: 20px 0 10px;
+  color: var(--ui-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.robot-mode { align-items: flex-start; min-height: 84px; }
+.robot-mode > b { margin-top: 2px; }
+.robot-mode small { line-height: 1.5; }
+.robot-telemetry { margin-top: 16px; }
+.mission-summary { margin-top: 10px; padding: 10px; gap: 8px; }
+.mission-summary > div { padding: 4px 8px; }
+.system-status-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 14px 0 24px; }
+.system-indicator { min-height: 70px; padding: 10px; gap: 3px 6px; }
+.system-indicator > small { font-size: 9px; letter-spacing: .02em; }
+.system-indicator strong { font-size: 11px; }
+.camera-workspace-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-top: 20px;
+  margin-bottom: 18px;
+  border-top: 1px solid var(--line);
+}
+.camera-workspace-heading h3 { font-size: 18px; margin-bottom: 5px; }
+.camera-workspace-heading p { margin-bottom: 0; color: var(--ui-muted); font-size: 12px; line-height: 1.5; }
+.camera-workspace-heading .camera-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 1 1 480px;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.camera-workspace-heading .camera-device-control { flex: 1 1 240px; min-width: 0; max-width: 380px; }
+.camera-workspace-heading select { width: 100%; min-width: 0; }
+.camera-stage { align-self: start; }
+.project-details { margin-top: 20px; border-top: 1px solid var(--line); }
+.project-details > summary {
+  padding: 16px 0;
+  color: var(--ui-accent);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.project-details .progress-card { padding: 20px; margin-bottom: 16px; }
+.project-details .progress-track { margin-top: 16px; }
+.project-details .mini-stats { margin-top: 16px; }
+.project-details .metric-grid { margin-bottom: 12px; }
+.firmware-workflow { margin-top: 0; }
+.firmware-flasher { margin-bottom: 24px; }
+.motor-test-panel { margin: 0 0 28px; padding: 18px; }
+.motor-test-panel > strong { font-size: 15px; }
+.motor-test-panel p { line-height: 1.6; }
+.motor-test-panel .robot-actions { justify-content: flex-start; }
+.editor-heading { padding-top: 24px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.editor-heading .code-actions { justify-content: flex-start; }
+.config-panel.page-section { margin: 24px 0; padding: 24px; }
+.config-panel.page-section > .section-heading { border: 0; padding: 0; }
+
+@media (max-width: 1180px) {
+  .operation-intro .hero-card { align-items: flex-start; gap: 18px; }
+  .robot-connection-row { flex-direction: column; align-items: stretch; }
+  .robot-connection-row > div:first-child { flex-basis: auto; }
+  .robot-connection-row .robot-actions { justify-content: flex-start; }
+  .system-status-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 920px) {
+  .robot-mode-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .page-section { scroll-margin-top: 108px; }
+}
+@media (max-width: 620px) {
+  .panel, .config-panel.page-section { padding: 16px; }
+  .operation-intro .hero-card { padding: 18px; flex-direction: column; gap: 14px; }
+  .operation-intro h2 { font-size: 21px; }
+  .operation-intro .hero-actions { flex-direction: row; flex-wrap: wrap; width: 100%; }
+  .operation-intro .hero-actions a { width: auto; flex: 1 1 auto; }
+  .camera-panel > .section-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .section-heading h2 { font-size: 22px; }
+  .robot-control-panel { padding: 12px; }
+  .robot-connection-row .robot-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .robot-connection-row .robot-actions button { width: 100%; padding: 10px; font-size: 12px; }
+  #emergencyStop { grid-column: 1 / -1; min-height: 46px; }
+  .robot-mode-grid { grid-template-columns: 1fr; }
+  .robot-mode { min-height: 0; padding: 12px; }
+  .robot-telemetry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .system-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .system-indicator { min-width: 0; }
+  .camera-workspace-heading .camera-toolbar { justify-content: flex-start; }
+  .camera-workspace-heading .camera-device-control { flex-basis: 100%; max-width: none; }
+  .camera-view-tabs { width: 100%; }
+  .camera-view-tab { flex: 1; padding: 10px 6px; line-height: 1.4; }
+  .project-details .card-heading { flex-direction: column; }
+  .editor-heading .code-actions { width: 100%; gap: 8px; }
+  .editor-heading .code-actions > :not(input) { flex: 1 1 40%; font-size: 12px; }
+  .code-tabs { flex-wrap: wrap; }
+  .code-tab { flex: 1 1 130px; text-align: center; white-space: normal; }
+}

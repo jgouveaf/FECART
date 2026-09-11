@@ -78,7 +78,7 @@ const { chromium } = require('playwright');
       const contrast = await page.evaluate(() => {
         const rgb = value => value.match(/[\d.]+/g).map(Number);
         const luminance = channels => channels.slice(0, 3).map(n => { n /= 255; return n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4; }).reduce((sum, n, i) => sum + n * [.2126, .7152, .0722][i], 0);
-        return ['.firmware-flasher h3', '.person-follow-panel h3', '.quick-guide-grid span', '.diagnostic-card strong', '.interface-tools button'].map(selector => {
+        return ['.firmware-flasher h3', '.person-follow-panel h3', '.quick-guide-grid span', '.diagnostic-card strong', '.interface-tools button', '.menu-button'].map(selector => {
           const el = document.querySelector(selector);
           let parent = el, background;
           while (parent) { background = rgb(getComputedStyle(parent).backgroundColor); if (background[3] !== 0) break; parent = parent.parentElement; }

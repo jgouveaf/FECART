@@ -16,7 +16,7 @@ const cases = [
   ['no target selected', (f, s) => { f.select(null); }],
   ['expired body frame', (f, s) => { s.now = s.capturedAt + 601 + random() * 5000; }],
   ['duplicate body frame', (f, s) => { s.capturedAt = 1200; }],
-  ['missing person', (f, s) => { s.people = []; }],
+  ['missing person', (f, s) => { s.people = []; s.faces = []; }],
   ['duplicate selected faces', (f, s) => { s.faces.push({ ...s.faces[0] }); }],
   ['different registered face in the tracked body', (f, s) => { s.faces[0].id = 'QT-002'; }],
   ['invalid distance', (f, s, n) => { s.distance = [null, NaN, 0, -random() * 100, Infinity][n % 5]; }],

@@ -21,6 +21,28 @@
     return x >= body.x && x <= body.x + body.width && y >= body.y
       && y <= body.y + body.height * 0.65 && face.width < body.width * 1.1;
   }
+  function headOnlyDetection(body, face) {
+    // EfficientDet can classify a cropped head as "person". Human's expanded
+    // face box may be larger than that detection; it is not a second person.
+    return body.height <= face.height * 1.5 && overlap(body, face) >= .4;
+  }
+
+  function visiblePeople(people, faces, now) {
+    if (!Number.isFinite(now)) return 0;
+    const bodies = people.filter(p => validBox(p.box) && Number.isFinite(p.confidence) && p.confidence >= .5);
+    const matched = new Set();
+    let count = bodies.length;
+    for (const face of faces) {
+      if (!validBox(face.box) || !Number.isFinite(face.confidence) || face.confidence < .58
+        || !Number.isFinite(face.capturedAt) || !Number.isFinite(now)
+        || now < face.capturedAt || now - face.capturedAt > 800) continue;
+      const index = bodies.findIndex((body, i) => !matched.has(i)
+        && (containsFace(body.box, face.box) || headOnlyDetection(body.box, face.box)));
+      if (index < 0) count++;
+      else matched.add(index);
+    }
+    return count;
+  }
 
   class PersonFollower {
     constructor() { this.select(null); }
@@ -38,8 +60,12 @@
       this.velocity = 0;
       this.smoothed = null;
       this.command = "PARAR";
+      this.steering = 'FRENTE';
+      this.turnCycleAt = null;
       this.holdDistance = false;
       this.holdSize = false;
+      this.holdFaceSize = false;
+      this.faceTrack = null;
       this.appearanceReference = null;
       this.appearanceSamples = 0;
       this.appearanceFaceAt = -Infinity;
@@ -47,6 +73,8 @@
     }
     stop(state, extra = {}) {
       this.command = "PARAR";
+      this.steering = 'FRENTE';
+      this.turnCycleAt = null;
       return { visible: false, command: "PARAR", state, id: this.id, prediction: null, ...extra };
     }
     invalidate(now, state) {
@@ -55,6 +83,7 @@
       return this.stop(state);
     }
     missing(now, state = "TARGET_LOST", cameraMoving = false) {
+      this.faceTrack = null;
       this.confirmedFrames = 0;
       this.confirmedSince = null;
       this.confirmedFaceSamples = 0;
@@ -83,6 +112,34 @@
       const freshFaces = observedFaces.filter(f => f.registered);
       const targets = freshFaces.filter(f => f.id === this.id);
       if (targets.length > 1) return this.invalidate(now, "AMBIGUOUS");
+      // Keep direct facial evidence separate from body history. A face box must
+      // never become a body track that can continue after the face disappears.
+      const directFace = targets.length === 1 && observedFaces.length === 1 ? targets[0] : null;
+      if (directFace && now - directFace.capturedAt <= MAX_FRAME_AGE_MS) {
+        const previous = this.faceTrack;
+        if (!previous || directFace.capturedAt < previous.at || directFace.capturedAt - previous.at > MAX_FRAME_AGE_MS
+          || overlap(previous.box, directFace.box) < .35
+          || Math.abs(center(previous.box) - center(directFace.box)) >= .18) {
+          this.faceTrack = { box: { ...directFace.box }, at: directFace.capturedAt,
+            since: directFace.capturedAt, samples: 1, center: center(directFace.box) };
+        } else if (directFace.capturedAt > previous.at) {
+          this.faceTrack = { box: { ...directFace.box }, at: directFace.capturedAt,
+            since: previous.since, samples: Math.min(2, previous.samples + 1),
+            center: .55 * previous.center + .45 * center(directFace.box) };
+        }
+      } else this.faceTrack = null;
+      // No complete body is required. A single detection covering only this
+      // head is compatible; conflicting/uncertain full bodies retain stop rules.
+      const faceOnlyScene = people.length === 0 || (people.length === 1 && observedBodies.length === 1
+        && directFace && headOnlyDetection(observedBodies[0].box, directFace.box));
+      if (faceOnlyScene && this.faceTrack) {
+        const track = this.faceTrack;
+        const info = { box: null, faceBox: track.box, trackingSource: 'face',
+          confidence: directFace.confidence, center: track.center, capturedAt: track.at,
+          identityAgeMs: now - track.at, appearanceReady: false };
+        if (track.samples < 2 || track.at - track.since < 120) return this.stop('CONFIRMING', info);
+        return this.decideMotion(info, track.box.height, { requireSensor, distance, sensorAgeMs }, 'FACE_TRACKING');
+      }
       // Confidence hysteresis only for an already verified continuous track.
       // Weak boxes cannot acquire a target, renew the strong observation time,
       // bridge a loss or continue for more than 500 ms without a strong box.
@@ -170,22 +227,40 @@
         identityAgeMs: capturedAt - this.identifiedAt, capturedAt,
         appearanceReady: this.appearanceSamples >= 3, appearanceScore };
       if (this.confirmedFrames < 2 || this.confirmedFaceSamples < 2 || capturedAt - this.confirmedSince < 120) return this.stop("CONFIRMING", info);
+      return this.decideMotion(info, chosen.box.height, { requireSensor, distance, sensorAgeMs },
+        targets.length ? 'FOLLOWING' : appearanceTracking ? 'APPEARANCE_TRACKING' : 'BODY_TRACKING');
+    }
+    decideMotion(info, height, { requireSensor, distance, sensorAgeMs }, state) {
       if (requireSensor && (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(sensorAgeMs) || sensorAgeMs < 0 || sensorAgeMs > 700)) {
         return this.stop("SENSOR_WAIT", info);
       }
       if (requireSensor) this.holdDistance = this.holdDistance ? distance < 40 : distance <= 30;
       else this.holdDistance = false;
-      this.holdSize = this.holdSize ? chosen.box.height > 0.65 : chosen.box.height >= 0.75;
-      if (this.holdDistance || this.holdSize) return this.stop("KEEP_DISTANCE", { ...info, visible: true });
-      const previous = this.command;
-      if (this.smoothed < (previous === "ESQUERDA" ? 0.46 : 0.40)) this.command = "ESQUERDA";
-      else if (this.smoothed > (previous === "DIREITA" ? 0.54 : 0.60)) this.command = "DIREITA";
-      else this.command = "FRENTE";
-      return { ...info, visible: true, command: this.command, state: targets.length ? "FOLLOWING" : appearanceTracking ? "APPEARANCE_TRACKING" : "BODY_TRACKING",
+      const faceOnly = state === 'FACE_TRACKING';
+      if (faceOnly) this.holdFaceSize = this.holdFaceSize ? height > .34 : height >= .40;
+      else this.holdSize = this.holdSize ? height > .65 : height >= .75;
+      if (this.holdDistance || (faceOnly ? this.holdFaceSize : this.holdSize)) return this.stop("KEEP_DISTANCE", { ...info, visible: true });
+      const previous = this.steering;
+      if (info.center < (previous === "ESQUERDA" ? 0.46 : 0.40)) this.steering = "ESQUERDA";
+      else if (info.center > (previous === "DIREITA" ? 0.54 : 0.60)) this.steering = "DIREITA";
+      else this.steering = "FRENTE";
+      if (this.steering === 'FRENTE') {
+        this.command = 'FRENTE'; this.turnCycleAt = null;
+      } else {
+        if (previous !== this.steering || this.turnCycleAt == null) this.turnCycleAt = info.capturedAt;
+        const offset = Math.abs(info.center - .5);
+        // Existing firmware curves forward with one wheel stopped. Short
+        // corrections separated by forward motion reduce prolonged turning.
+        // Only current observations schedule movement; there is no blind timer.
+        const turnMs = clamp(120 + (offset - .1) * 800, 120, 320);
+        const phase = Math.max(0, info.capturedAt - this.turnCycleAt) % 800;
+        this.command = offset >= .35 || phase < turnMs ? this.steering : 'FRENTE';
+      }
+      return { ...info, steering: this.steering, visible: true, command: this.command, state,
         id: this.id, prediction: null };
     }
   }
-  const api = Object.freeze({ PersonFollower, validBox, overlap, containsFace });
+  const api = Object.freeze({ PersonFollower, validBox, overlap, containsFace, visiblePeople });
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.QuantumPersonFollowMath = api;
 })();

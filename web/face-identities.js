@@ -231,12 +231,7 @@
   }
 
   function mergeEmbeddings(existing = [], incoming = []) {
-    const unique = new Map();
-    for (const embedding of [...existing, ...incoming]) {
-      if (!Array.isArray(embedding) || embedding.length !== EMBEDDING_LENGTH) continue;
-      unique.set(embedding.join(","), embedding);
-    }
-    return [...unique.values()].slice(-MAX_SAMPLES_PER_IDENTITY);
+    return window.QuantumFaceIdentityMath.mergeSamples(existing, incoming, MAX_SAMPLES_PER_IDENTITY);
   }
 
   function renderIdentities() {
@@ -255,7 +250,9 @@
       name.textContent = identity.name;
       const id = document.createElement("small");
       const legacy = identity.engine === "face-api-legacy";
+      const incomplete = !legacy && identity.embeddings.length < window.QuantumFaceIdentityMath.MIN_REFERENCE_SAMPLES;
       id.textContent = legacy ? `${identity.id} · LEGADO — RECADASTRE` : `${identity.id} · ${identity.embeddings.length} amostras`;
+      if (incomplete) id.textContent += ' · complete o cadastro';
       id.classList.toggle("legacy", legacy);
       text.append(name, id);
       const remove = document.createElement("button");
@@ -277,10 +274,19 @@
       const follow = document.createElement("button");
       follow.type = "button";
       follow.className = "follow-person";
-      follow.textContent = selectedTargetId === identity.id ? "Parar de seguir" : "Seguir";
+      follow.textContent = incomplete ? 'Completar cadastro' : selectedTargetId === identity.id ? "Parar de seguir" : "Seguir";
       follow.setAttribute("aria-pressed", String(selectedTargetId === identity.id));
       follow.disabled = legacy;
       follow.addEventListener("click", () => {
+        if (incomplete) {
+          selectedTargetId = null;
+          personName.value = identity.name;
+          renderIdentities();
+          publishPersonTracking([], true);
+          window.quantumPersonFollower?.prepare();
+          personName.focus();
+          return;
+        }
         selectedTargetId = selectedTargetId === identity.id ? null : identity.id;
         renderIdentities();
         publishPersonTracking(currentFaces, true);

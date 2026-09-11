@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { PersonFollower, overlap } = require('../web/person-follow-math.js');
+const personMath = require('../web/person-follow-math.js');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../web/person-follow.js'), 'utf8');
 function rig(latency = 120, selected = true) {
   let now = 1000, id = 0, inFlight = 0, maxInFlight = 0;
@@ -25,7 +25,7 @@ function rig(latency = 120, selected = true) {
     CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
     createImageBitmap: async () => ({ close() {} }),
     document: { baseURI: 'http://localhost/', hidden: false, getElementById: element, addEventListener() {} },
-    window: { QuantumControl: control, QuantumPersonFollowMath: { PersonFollower, overlap },
+    window: { QuantumControl: control, QuantumPersonFollowMath: personMath,
       addEventListener(type, callback) { listeners[type] = callback; }, dispatchEvent() {} },
     Worker: class {
       postMessage(data) {

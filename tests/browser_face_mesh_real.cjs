@@ -71,9 +71,7 @@ assert.ok(fixture, 'Human 3.3.6 bundled face warmup fixture is available');
     }));
     assert.equal(saved.name, 'Fixture cadastro direto');
     assert.equal(await page.evaluate(() => window.__capturedSamples), 5);
-    // An unchanged fixture may produce identical descriptors; existing storage
-    // deduplicates them after all five acquisition steps have completed.
-    assert.ok(saved.embeddings.length >= 1 && saved.embeddings.length <= 5);
+    assert.equal(saved.embeddings.length, 5, 'Repeated fresh captures must not become an unusable one-sample identity');
     assert.ok(saved.embeddings.every(e => e.length === 1024 && e.every(Number.isFinite)));
     assert.equal(saved.enrollment.presenceMethod, 'NOT_REQUIRED');
     assert.deepEqual(errors, []);

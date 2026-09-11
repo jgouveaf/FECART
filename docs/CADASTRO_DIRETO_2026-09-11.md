@@ -1,5 +1,7 @@
 # Cadastro facial sem desafio de presença
 
+Atualização posterior: a deduplicação de amostras iguais mencionada neste registro foi corrigida em [Modo 2: rosto e curvas](MODO_2_ROSTO_E_CURVAS_2026-09-11.md). Ela podia tornar um cadastro concluído insuficiente para o reconhecedor. As cinco capturas agora são preservadas.
+
 ## Problema e decisão
 
 O cadastro ficava aguardando presença/vivacidade; os avisos de presença, vivacidade e piscar permaneciam amarelos. No código anterior, presença automática ou confirmação por movimento bloqueava a aceitação. Piscar era um indicador auxiliar. No perfil de identificação, os classificadores desligados também mantinham os avisos sem confirmação.

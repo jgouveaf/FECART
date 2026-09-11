@@ -100,6 +100,31 @@ const site = process.env.QT_SITE_URL || 'http://127.0.0.1:9877/';
       assert.equal(await page.evaluate(() => window.__face.usb), 0); assert.deepEqual(errors, []);
     });
     await page.evaluate(() => window.quantumCameraController.stop());
+    const old = (await record())[0];
+    await page.evaluate(old => new Promise((resolve, reject) => {
+      const request = indexedDB.open('quantum_tracker_biometrics', 1);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result, tx = db.transaction('identities', 'readwrite');
+        tx.objectStore('identities').put({ ...old, embeddings: old.embeddings.slice(0, 1) });
+        tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = () => reject(tx.error);
+      };
+    }), old);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Completar cadastro', exact: true }).click(); await enabled();
+    await check('an old one-sample identity offers completion without selecting a movement target', async () => {
+      assert.equal(await page.locator('#personName').inputValue(), old.name);
+      assert.equal(await page.evaluate(() => window.quantumPersonFollower.snapshot.id), null);
+    });
+    page.once('dialog', dialog => dialog.accept());
+    await page.locator('#registerPerson').click();
+    await page.waitForFunction(() => !Array.from(document.querySelectorAll('.follow-person')).some(b => b.textContent === 'Completar cadastro'));
+    await check('completing an old identity preserves its ID and restores usable samples', async () => {
+      const saved = (await record()).find(r => r.id === old.id);
+      assert.ok(saved.embeddings.length >= 5); assert.equal(saved.name, old.name);
+      assert.equal(await page.evaluate(() => window.__face.usb), 0);
+    });
+    await page.evaluate(() => window.quantumCameraController.stop());
     console.log(`PASS - ${checks} enrollment and mesh browser checks`);
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

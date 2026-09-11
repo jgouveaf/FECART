@@ -226,17 +226,18 @@
           <section class="person-follow-panel" aria-labelledby="personFollowTitle">
             <span class="section-tag">Modo 2 · câmera na frente do carrinho</span>
             <h3 id="personFollowTitle">Seguir uma pessoa cadastrada</h3>
-            <p>Clique em <strong>Seguir</strong> no cadastro para escolher a pessoa e iniciar o Modo 2 com a câmera. O retângulo verde marca o alvo; os azuis mostram outras pessoas.</p>
+            <p>Clique em <strong>Seguir</strong> no cadastro para escolher o alvo. No centro, o robô avança; fora do centro, intercala curvas curtas com avanço. O rosto pode orientar sozinho, e o corpo ajuda quando a pessoa vira.</p>
             <div class="person-follow-actions">
+              <a class="secondary-button" href="#registeredPeople">Escolher pessoa cadastrada</a>
               <button class="primary-button" id="preparePersonFollow" type="button">Preparar Modo 2 e câmera</button>
               <button class="secondary-button" id="pausePersonFollow" type="button">Pausar seguimento</button>
               <button class="secondary-button" id="retryPersonDetection" type="button" hidden>Tentar detector novamente</button>
             </div>
             <p id="personFollowStatus" role="status">Ative o Modo 2 e a câmera</p>
             <dl class="person-follow-metrics">
-              <div><dt>Pessoas na imagem</dt><dd id="personCount">0</dd></div>
-              <div><dt>Alvo escolhido</dt><dd id="personTarget">Nenhum</dd></div>
-              <div><dt>Previsão na imagem</dt><dd id="personPrediction">Sem previsão ativa</dd></div>
+              <div><dt>Pessoas na imagem</dt><dd id="personCount">—</dd></div>
+              <div><dt>Alvo escolhido</dt><dd id="personTarget">Nenhum · clique em Seguir no cadastro</dd></div>
+              <div><dt>Posição do alvo</dt><dd id="personPrediction">Aguardando alvo</dd></div>
             </dl>
             <p id="personFollowDelivery">Somente o Modo 2 recebe estas decisões.</p>
             <details class="person-follow-diagnostics">
@@ -539,13 +540,13 @@
   <script src="web/face-processing.js?v=2" defer></script>
   <script src="web/face-inference-client.js?v=1" defer></script>
   <script src="web/face-mesh-overlay.js?v=1" defer></script>
-  <script src="web/face-identity-math.js?v=2" defer></script>
+  <script src="web/face-identity-math.js?v=3" defer></script>
   <script src="web/gesture-math.js?v=8" defer></script>
   <script src="web/gesture-calibration.js?v=1" defer></script>
   <script src="web/person-appearance.js?v=2" defer></script>
-  <script src="web/person-follow-math.js?v=4" defer></script>
-  <script src="web/person-follow.js?v=5" defer></script>
-  <script src="web/face-identities.js?v=19" defer></script>
+  <script src="web/person-follow-math.js?v=5" defer></script>
+  <script src="web/person-follow.js?v=6" defer></script>
+  <script src="web/face-identities.js?v=20" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>
 </html>

@@ -6,6 +6,23 @@
   const TOP_SAMPLE_COUNT = 3;
   const MIN_REFERENCE_SAMPLES = 3;
 
+  function mergeSamples(existing = [], incoming = [], limit = 15) {
+    const valid = sample => Array.isArray(sample) && sample.length === 1024 && sample.every(Number.isFinite);
+    const previous = existing.filter(valid), next = incoming.filter(valid);
+    const merged = previous.slice(), available = new Map();
+    for (const sample of previous) {
+      const key = sample.join(','); available.set(key, (available.get(key) || 0) + 1);
+    }
+    // Preserve repeated samples within a completed capture. On backup import,
+    // match existing occurrences so importing the same set stays idempotent.
+    for (const sample of next) {
+      const key = sample.join(','), count = available.get(key) || 0;
+      if (count) available.set(key, count - 1);
+      else merged.push(sample);
+    }
+    return merged.slice(-limit);
+  }
+
   function validScores(scores) {
     return (Array.isArray(scores) ? scores : [])
       .map(Number)
@@ -60,6 +77,7 @@
     AMBIGUITY_MARGIN,
     TOP_SAMPLE_COUNT,
     MIN_REFERENCE_SAMPLES,
+    mergeSamples,
     aggregateSimilarity,
     chooseIdentity,
   });

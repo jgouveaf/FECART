@@ -55,7 +55,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/simulator-controller.js?v=2',
             'web/robot-control.js?v=20',
             'web/code-editor-utils.js?v=1',
-            'web/face-identity-math.js?v=2',
+            'web/face-identity-math.js?v=3',
             'web/face-identities.js?v=',
             'web/face-mesh-overlay.js?v=',
             'id="toggleGestures"',

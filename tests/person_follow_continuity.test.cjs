@@ -83,7 +83,7 @@ function poll(follower, now) {
   const context = { performance: { now: () => now }, enabled: () => true, worker: {}, ready: true,
     enrolling: false, pending: { capturedAt: 1800 }, lastFrameAt: 1400,
     follower, movingCamera: () => false, publish: r => output.push(r), fail: assert.fail,
-    setInterval: callback => callback() };
+    updateCount() {}, setInterval: callback => callback() };
   vm.runInNewContext(watchdog, context);
   return output;
 }

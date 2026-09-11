@@ -99,6 +99,12 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
     await page.waitForFunction(() => !document.getElementById("registerPerson").disabled);
     await page.locator("#registerPerson").click();
     await page.waitForFunction(() => document.querySelectorAll(".follow-person").length === 1);
+    await check('visible face is counted before a target is selected, without starting the body worker', async () => {
+      await page.waitForFunction(() => document.getElementById('personCount').textContent === '1');
+      assert.equal(await page.evaluate(() => window.__test.workers), 0);
+      assert.equal((await snap()).id, null);
+      assert.ok((await page.locator('#personTarget').textContent()).includes('Seguir'));
+    });
     await check("registration commits five samples and a photo", async () => {
       const records = await dbRecords(); assert.equal(records.length, 1); assert.equal(records[0].embeddings.length, 5);
       assert.equal(records[0].embeddings[0].length, 1024); assert.ok(records[0].photo.startsWith("data:image/jpeg"));
@@ -129,6 +135,7 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       assert.equal(overlays.bodyVisible, true);
       assert.equal(overlays.bodyDrawn, true);
       assert.equal(overlays.identified, "QT-001");
+      assert.equal(await page.locator('#personCount').textContent(), '1', 'Face and associated body count as one person');
     });
     await page.locator("#connectRobot").click();
     await page.waitForFunction(() => window.quantumRobot.connected);
@@ -198,6 +205,33 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       await page.waitForFunction(command => window.__test.writes.includes(`CMD:${command}`), command);
       await check(`${command} is acknowledged over simulated USB`, async () => assert.equal((await snap()).command, command));
     }
+    await page.evaluate(() => { window.__test.people = false; window.__test.writes = []; });
+    await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === 'FACE_TRACKING');
+    await page.waitForFunction(() => window.__test.writes.includes('CMD:FRENTE'));
+    await check('recognized target drives forward over USB with no body detected and remains counted', async () => {
+      assert.equal((await snap()).trackingSource, 'face');
+      assert.equal((await snap()).box, null);
+      assert.equal(await page.locator('#personCount').textContent(), '1');
+      await page.locator('.person-follow-panel').screenshot({ path: 'tests/artifacts/mode-two-face-follow.png' });
+    });
+    await page.evaluate(() => { window.__test.x = .25; }); await waitCommand('ESQUERDA');
+    await page.evaluate(() => { window.__test.writes = []; window.__test.events = []; });
+    await page.waitForTimeout(1700);
+    await check('off-center face produces forward arcs separated by straight movement over USB', async () => {
+      const writes = await page.evaluate(() => window.__test.writes.filter(s => s.startsWith('CMD:')));
+      assert.ok(writes.includes('CMD:ESQUERDA')); assert.ok(writes.includes('CMD:FRENTE'));
+      assert.ok(writes.every(s => s === 'CMD:ESQUERDA' || s === 'CMD:FRENTE'), JSON.stringify(writes));
+    });
+    await page.evaluate(() => { window.__test.distance = 25; window.__test.writes = []; });
+    await page.waitForFunction(() => window.__test.writes.includes('CMD:PARAR'));
+    await check('an obstacle overrides the direct face curve', async () => assert.equal((await snap()).state, 'KEEP_DISTANCE'));
+    await page.evaluate(() => { window.__test.distance = 60; window.__test.x = .5; }); await waitCommand('FRENTE');
+    await page.evaluate(() => { window.__test.face = false; window.__test.writes = []; });
+    await page.waitForFunction(() => window.__test.writes.includes('CMD:PARAR'));
+    await check('losing the face without a body stops and clears the count', async () => {
+      assert.equal((await snap()).visible, false); assert.equal(await page.locator('#personCount').textContent(), '0');
+    });
+    await page.evaluate(() => { window.__test.face = true; window.__test.people = true; }); await waitCommand('FRENTE');
     await page.evaluate(() => { window.__test.extraUnknownFace = true; window.__test.writes = []; });
     await page.waitForFunction(() => window.__test.events.some(e => e.state === 'AMBIGUOUS') && window.__test.writes.includes('CMD:PARAR'));
     await check('two faces in one body, including an unknown person, request STOP over USB', async () => assert.equal((await snap()).command, 'PARAR'));
@@ -266,6 +300,7 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
     });
     await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === "STALE_FRAME");
     await check("frozen video cannot keep refreshing motion", async () => assert.equal((await snap()).command, "PARAR"));
+    await page.waitForFunction(() => document.getElementById('personCount').textContent === '0');
     await page.evaluate(() => { delete document.getElementById("cameraVideo").currentTime; }); await waitCommand("FRENTE");
     await page.locator("#personName").fill("Pessoa de teste");
     await page.waitForFunction(() => !document.getElementById("registerPerson").disabled);

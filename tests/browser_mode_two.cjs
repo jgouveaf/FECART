@@ -41,14 +41,15 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
             const rgba = new Uint8ClampedArray(24 * 48 * 4);
             for (let i = 0; i < 24 * 48; i++) rgba.set([...(i < 24 * 24 ? (t.outfit ? [30, 220, 30] : [220, 30, 30]) : [30, 50, 170]), 255], i * 4);
             const clothing = window.QuantumPersonAppearance.describe(rgba, 24, 48);
-            const people = t.people ? [{ confidence: .92, box: { x: t.x - .18, y: .1, width: .36, height: .6 }, appearance: t.appearance ? clothing : null }] : [];
+            const confidence = t.confidenceOscillation && data.capturedAt % 500 < 300 ? .53 : .92;
+            const people = t.people ? [{ confidence, box: { x: t.x - .18, y: .1, width: .36, height: .6 }, appearance: t.appearance ? clothing : null }] : [];
             if (t.rival) people.push({ confidence: .92, box: { x: .75, y: .1, width: .24, height: .6 }, appearance: clothing });
             if (data.type === "frame" && t.failWorker) { this.onmessage?.({ data: { type: "error", message: "injected worker error" } }); return; }
             this.onmessage?.({ data: data.type === "init" ? { type: "ready" } : {
               type: "result", id: data.id, capturedAt: data.capturedAt,
               people,
             } });
-          }, 25);
+          }, window.__test.bodyLatency || 25);
         }
         terminate() { if (!this.closed) window.__test.workers--; this.closed = true; }
       };
@@ -132,6 +133,48 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
     await page.locator("#emergencyStop").click();
     await page.waitForFunction(() => window.__test.writes.includes("CMD:FRENTE"));
     await check("Mode 2 decision reaches existing Web Serial controller", async () => assert.ok(await page.evaluate(() => window.__test.writes.includes("MODE:2"))));
+    await check('confidence oscillation preserves movement over simulated USB', async () => {
+      await waitCommand('FRENTE');
+      await page.evaluate(() => { window.__test.events = []; window.__test.writes = []; window.__test.confidenceOscillation = true; });
+      await page.waitForTimeout(2200);
+      const observed = await page.evaluate(() => ({ events: window.__test.events, writes: window.__test.writes }));
+      assert.ok(observed.events.length >= 5);
+      assert.ok(observed.events.every(event => event.command === 'FRENTE'), JSON.stringify(observed.events));
+      assert.ok(observed.writes.includes('CMD:FRENTE'));
+      assert.ok(!observed.writes.includes('CMD:PARAR'));
+      await page.evaluate(() => { window.__test.confidenceOscillation = false; });
+    });
+    await check('slow pending inference stops expired movement without restarting identification', async () => {
+      await page.evaluate(() => { window.__test.bodyLatency = 350; window.__test.events = []; });
+      await page.waitForTimeout(2400);
+      const observed = await page.evaluate(() => window.__test.events);
+      assert.ok(observed.some(event => event.state === 'STALE_FRAME'));
+      assert.ok(observed.some(event => event.command === 'FRENTE'));
+      assert.ok(observed.filter(event => event.state === 'STALE_FRAME').every(event => event.command === 'PARAR' && !event.visible));
+      assert.ok(!observed.some(event => ['CONFIRMING', 'REIDENTIFY', 'TARGET_LOST'].includes(event.state)), JSON.stringify(observed));
+      await page.evaluate(() => { window.__test.bodyLatency = 25; });
+      await waitCommand('FRENTE');
+    });
+    await check('diagnostic export is bounded and contains no biometric records', async () => {
+      await page.locator('.person-follow-diagnostics > summary').click();
+      assert.match(await page.locator('#personLastStop').textContent(), /Imagem atrasada/);
+      const pendingDownload = page.waitForEvent('download');
+      await page.locator('#downloadPersonDiagnostics').click();
+      const download = await pendingDownload;
+      const report = JSON.parse(require('node:fs').readFileSync(await download.path(), 'utf8'));
+      assert.equal(report.version, 1);
+      assert.ok(report.transitions.length > 0 && report.transitions.length <= 60);
+      assert.ok(report.frameAgeMs >= 0);
+      assert.equal(report.lastStop.reason, 'STALE_FRAME');
+      assert.doesNotMatch(JSON.stringify(report), /Pessoa de teste|embedding|photo|data:image|QT-001/);
+      const count = await page.evaluate(() => {
+        const copy = window.quantumPersonFollower.diagnostics; copy.transitions.length = 0;
+        return window.quantumPersonFollower.diagnostics.transitions.length;
+      });
+      assert.ok(count > 0, 'Consumers cannot mutate internal diagnostic history');
+      await page.locator('.person-follow-diagnostics').screenshot({ path: 'tests/artifacts/mode-two-diagnostics.png' });
+      await page.locator('.person-follow-diagnostics > summary').click();
+    });
     for (const [x, command] of [[.25, "ESQUERDA"], [.75, "DIREITA"], [.5, "FRENTE"]]) {
       await page.evaluate(x => { window.__test.x = x; window.__test.writes = []; }, x);
       await waitCommand(command);

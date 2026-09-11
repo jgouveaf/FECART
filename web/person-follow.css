@@ -13,4 +13,6 @@
 .person-follow-metrics dt { color: #526577; font-size: 12px; }
 .person-follow-metrics dd { margin: 6px 0 0; font-weight: 700; overflow-wrap: anywhere; }
 #personFollowDelivery { font-size: 12px; }
+.person-follow-diagnostics { margin: 16px 0; border-top: 1px solid var(--line); }
+.person-follow-diagnostics > summary { padding: 14px 0; cursor: pointer; font-weight: 650; }
 @media (max-width: 640px) { .person-follow-metrics { grid-template-columns: 1fr; } .person-follow-panel { padding: 14px; } }

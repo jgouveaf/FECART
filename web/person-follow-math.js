@@ -4,6 +4,7 @@
   const appearance = typeof module !== 'undefined' && module.exports
     ? require('./person-appearance.js') : window.QuantumPersonAppearance;
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const MAX_FRAME_AGE_MS = 600;
   const center = box => box.x + box.width / 2;
   function validBox(b) {
     return b && [b.x, b.y, b.width, b.height].every(Number.isFinite)
@@ -27,6 +28,7 @@
     reset() {
       this.box = null;
       this.seenAt = null;
+      this.strongBodyAt = null;
       this.identifiedAt = null;
       this.lastSampleAt = -Infinity;
       this.confirmedFrames = 0;
@@ -66,32 +68,42 @@
       if (this.identifiedAt != null && Number.isFinite(now)) this.reidentifyAfter = Math.max(this.reidentifyAfter, now);
       this.identifiedAt = null;
       if (age > 500) { this.box = null; this.identifiedAt = null; this.velocity = 0; this.smoothed = null; }
-      return this.stop(prediction ? "PREDICTED_STOP" : state, { prediction });
+      return this.stop(prediction ? "PREDICTED_STOP" : state, { prediction, reason: state });
     }
     update({ people = [], faces = [], now, capturedAt, cameraMoving = false,
       requireSensor = false, distance = null, sensorAgeMs = Infinity }) {
       if (!this.id) return this.stop("SELECT_TARGET");
       if (!Number.isFinite(now) || !Number.isFinite(capturedAt) || capturedAt > now
-        || now - capturedAt > 600 || capturedAt <= this.lastSampleAt) return this.missing(now, "STALE_FRAME", true);
+        || now - capturedAt > MAX_FRAME_AGE_MS || capturedAt <= this.lastSampleAt) return this.missing(now, "STALE_FRAME", true);
       this.lastSampleAt = capturedAt;
-      const bodies = people.filter(p => validBox(p.box) && Number.isFinite(p.confidence) && p.confidence >= 0.55);
+      const observedBodies = people.filter(p => validBox(p.box) && Number.isFinite(p.confidence) && p.confidence >= 0.50);
       const observedFaces = faces.filter(f => validBox(f.box) && Number.isFinite(f.confidence) && f.confidence >= 0.58
         && Number.isFinite(f.capturedAt) && now - f.capturedAt >= 0 && now - f.capturedAt <= 800
         && Math.abs(capturedAt - f.capturedAt) <= 500 && f.capturedAt > this.reidentifyAfter);
       const freshFaces = observedFaces.filter(f => f.registered);
       const targets = freshFaces.filter(f => f.id === this.id);
       if (targets.length > 1) return this.invalidate(now, "AMBIGUOUS");
+      // Confidence hysteresis only for an already verified continuous track.
+      // Weak boxes cannot acquire a target, renew the strong observation time,
+      // bridge a loss or continue for more than 500 ms without a strong box.
+      const bodies = observedBodies.filter(p => p.confidence >= .55 || (this.box
+        && this.confirmedFrames >= 2 && this.confirmedFaceSamples >= 2
+        && this.strongBodyAt != null && capturedAt - this.strongBodyAt >= 0
+        && capturedAt - this.strongBodyAt <= 500
+        && overlap(p.box, this.box) >= .60 && Math.abs(center(p.box) - center(this.box)) < .06
+        && ((targets.length === 1 && containsFace(p.box, targets[0].box))
+          || (this.appearanceSamples >= 3 && appearance.similarity(this.appearanceReference, p.appearance) >= .88))));
       let chosen = null, appearanceScore = 0, appearanceTracking = false;
       if (targets.length === 1) {
         const matches = bodies.filter(p => containsFace(p.box, targets[0].box));
-        if (matches.length > 1) return this.invalidate(now, "AMBIGUOUS");
+        if (observedBodies.filter(p => containsFace(p.box, targets[0].box)).length > 1) return this.invalidate(now, "AMBIGUOUS");
         chosen = matches[0] || null;
-        if (chosen && this.box && this.confirmedFrames > 0 && (capturedAt - this.seenAt > 500
+        if (chosen && this.box && this.confirmedFrames > 0 && (capturedAt - this.seenAt > MAX_FRAME_AGE_MS
           || overlap(chosen.box, this.box) < .35 || Math.abs(center(chosen.box) - center(this.box)) >= .18)) {
           return this.invalidate(now, 'REIDENTIFY');
         }
         if (chosen) this.identifiedAt = targets[0].capturedAt;
-      } else if (this.box && this.seenAt != null && capturedAt - this.seenAt <= 500
+      } else if (this.box && this.seenAt != null && capturedAt - this.seenAt <= MAX_FRAME_AGE_MS
         && this.identifiedAt != null) {
         const matches = bodies.map(p => ({ p, score: overlap(p.box, this.box) }))
           .filter(p => p.score >= 0.35 && Math.abs(center(p.p.box) - center(this.box)) < 0.18)
@@ -109,7 +121,7 @@
           if (appearanceScore >= .88) {
             // Even geometrically distinct people with similar clothes invalidate
             // body-only continuation. Color is evidence, not unique identity.
-            if (bodies.some(p => p !== chosen && appearance.similarity(this.appearanceReference, p.appearance) >= .82)) {
+            if (observedBodies.some(p => p !== chosen && appearance.similarity(this.appearanceReference, p.appearance) >= .82)) {
               return this.invalidate(now, 'AMBIGUOUS');
             }
             appearanceTracking = true;
@@ -117,10 +129,11 @@
         }
         if (!appearanceTracking && capturedAt - this.identifiedAt > 3000) chosen = null;
       }
-      if (!chosen) return this.missing(now, bodies.length ? "REIDENTIFY" : "TARGET_LOST", cameraMoving);
+      if (!chosen) return this.missing(now, observedBodies.length && !bodies.length ? "LOW_BODY_CONFIDENCE"
+        : bodies.length ? "REIDENTIFY" : "TARGET_LOST", cameraMoving);
       if (observedFaces.filter(f => containsFace(chosen.box, f.box)).length > 1
         || freshFaces.some(f => f.id !== this.id && containsFace(chosen.box, f.box))
-        || bodies.some(p => p !== chosen && overlap(p.box, chosen.box) > 0.4)) {
+        || observedBodies.some(p => p !== chosen && overlap(p.box, chosen.box) > 0.4)) {
         return this.invalidate(now, "AMBIGUOUS");
       }
       if (targets.length && this.appearanceSamples >= 3 && targets[0].capturedAt <= this.appearanceFaceAt
@@ -131,7 +144,7 @@
         this.confirmedFaceSamples = Math.min(2, this.confirmedFaceSamples + 1);
         this.confirmedFaceAt = targets[0].capturedAt;
       }
-      if (targets.length && targets[0].capturedAt > this.appearanceFaceAt
+      if (chosen.confidence >= .55 && targets.length && targets[0].capturedAt > this.appearanceFaceAt
         && Math.abs(capturedAt - targets[0].capturedAt) <= 250 && appearance.valid(chosen.appearance)) {
         if (!this.appearanceReference || appearance.similarity(this.appearanceReference, chosen.appearance) < .88) {
           this.appearanceReference = chosen.appearance.slice();
@@ -150,6 +163,7 @@
       this.smoothed = this.smoothed == null ? x : 0.55 * this.smoothed + 0.45 * x;
       this.box = { ...chosen.box };
       this.seenAt = capturedAt;
+      if (chosen.confidence >= .55) this.strongBodyAt = capturedAt;
       this.confirmedFrames++;
       if (this.confirmedSince == null) this.confirmedSince = capturedAt;
       const info = { box: this.box, confidence: chosen.confidence, center: this.smoothed,

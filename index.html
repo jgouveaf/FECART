@@ -32,7 +32,7 @@
     }
   </script>
   <link rel="stylesheet" href="web/styles.css?v=22">
-  <link rel="stylesheet" href="web/person-follow.css?v=1">
+  <link rel="stylesheet" href="web/person-follow.css?v=2">
   <link rel="stylesheet" href="web/interface-tools.css?v=2">
   <link rel="stylesheet" href="web/operation-layout.css?v=1">
   <script src="web/interface-tools.js?v=2" defer></script>
@@ -239,6 +239,16 @@
               <div><dt>Previsão na imagem</dt><dd id="personPrediction">Sem previsão ativa</dd></div>
             </dl>
             <p id="personFollowDelivery">Somente o Modo 2 recebe estas decisões.</p>
+            <details class="person-follow-diagnostics">
+              <summary>Diagnóstico do seguimento</summary>
+              <dl class="person-follow-metrics">
+                <div><dt>Tempo da imagem até a decisão</dt><dd id="personFrameAge">—</dd></div>
+                <div><dt>Intervalo entre imagens analisadas</dt><dd id="personFrameInterval">—</dd></div>
+                <div><dt>Motivo da última parada</dt><dd id="personLastStop">Nenhuma parada registrada</dd></div>
+              </dl>
+              <button class="secondary-button" id="downloadPersonDiagnostics" type="button">Baixar diagnóstico</button>
+              <p class="privacy-note">Guarda os últimos 60 estados desta sessão, sem imagens, nomes ou cadastros faciais.</p>
+            </details>
             <p class="privacy-note">Mostre rosto, tronco e pernas e aguarde “continuidade visual pronta” antes de virar de costas. Acompanha enquanto corpo e roupa permanecem visíveis e compatíveis. Roupas parecidas, mudança de aparência, perda do alvo ou imagem atrasada pedem parada e nova confirmação facial. Sem uma aparência utilizável, mantém o limite de 3 segundos sem rosto. A previsão de até 0,5 segundo nunca autoriza movimento às cegas. No Modo 2 conectado, para com obstáculo a 30 cm e só libera a partir de 40 cm. Ainda requer teste físico com a câmera montada.</p>
           </section>
           <div class="identity-register-card">
@@ -531,8 +541,8 @@
   <script src="web/gesture-math.js?v=8" defer></script>
   <script src="web/gesture-calibration.js?v=1" defer></script>
   <script src="web/person-appearance.js?v=2" defer></script>
-  <script src="web/person-follow-math.js?v=3" defer></script>
-  <script src="web/person-follow.js?v=3" defer></script>
+  <script src="web/person-follow-math.js?v=4" defer></script>
+  <script src="web/person-follow.js?v=4" defer></script>
   <script src="web/face-identities.js?v=16" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>

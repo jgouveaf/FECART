@@ -12,12 +12,14 @@
     TARGET_LOST: "Alvo perdido · parado", PREDICTED_STOP: "Posição estimada · robô parado",
     KEEP_DISTANCE: "Distância de parada atingida", SENSOR_WAIT: "Aguardando leitura atual do sensor",
     STALE_FRAME: "Imagem atrasada ou congelada · parado", LOADING: "Carregando detector de pessoas",
+    LOW_BODY_CONFIDENCE: "Detecção do corpo incerta · parado",
     OFFLINE: "Ative o Modo 2 e a câmera", ERROR: "Detector indisponível · parado", PAUSED: "Seguimento pausado",
     ENROLLING: "Cadastro em andamento · seguimento pausado" };
   let worker = null, generation = 0, ready = false, pending = null, schedule = 0;
   let lastVideoTime = -1, lastFrameAt = 0, cameraActive = false, activeView = "face";
   let faces = [], selectedName = "", paused = false, enrolling = false;
   let distance = null, sensorAt = 0, lastOutput = null, lastEmitAt = 0, sequence = 0;
+  const diagnostics = { frameAgeMs: null, frameIntervalMs: null, lastStop: null, transitions: [] };
   const modeTwo = () => Number(control?.state.mode.id) === 2 && control?.state.mode.phase === "ACTIVE";
   const enabled = () => modeTwo() && cameraActive && activeView === "face" && !paused && !document.hidden;
   const movingCamera = () => ["DIREITA", "ESQUERDA", "GIRAR"].includes(control?.state.robot.command)
@@ -25,6 +27,18 @@
 
   function publish(result, people = []) {
     const now = performance.now();
+    const changed = !lastOutput || lastOutput.state !== result.state || lastOutput.command !== result.command;
+    const reason = result.reason || result.state;
+    if (changed) {
+      diagnostics.transitions.push({ atMs: Math.round(now), state: result.state, reason,
+        command: result.command, frameAgeMs: lastFrameAt ? Math.round(now - lastFrameAt) : null,
+        bodyConfidence: Number.isFinite(result.confidence) ? result.confidence : null,
+        sensorCm: distance, sensorAgeMs: sensorAt ? Math.round(now - sensorAt) : null });
+      if (diagnostics.transitions.length > 60) diagnostics.transitions.shift();
+    }
+    if (result.command === 'PARAR' && !['SELECT_TARGET', 'CONFIRMING', 'LOADING', 'OFFLINE', 'PAUSED', 'ENROLLING'].includes(result.state)) {
+      diagnostics.lastStop = { reason, label: labels[reason] || reason, atMs: Math.round(now) };
+    }
     lastOutput = result;
     $("personFollowStatus").textContent = labels[result.state] || result.state;
     if (result.state === 'FOLLOWING') $("personFollowStatus").textContent += result.appearanceReady
@@ -36,6 +50,9 @@
       : "Sem previsão ativa";
     $("faceTrackingState").textContent = labels[result.state] || result.state;
     $("faceDirection").textContent = result.command;
+    if ($('personFrameAge')) $('personFrameAge').textContent = diagnostics.frameAgeMs == null ? '—' : `${diagnostics.frameAgeMs} ms`;
+    if ($('personFrameInterval')) $('personFrameInterval').textContent = diagnostics.frameIntervalMs == null ? '—' : `${diagnostics.frameIntervalMs} ms`;
+    if ($('personLastStop')) $('personLastStop').textContent = diagnostics.lastStop?.label || 'Nenhuma parada registrada';
     $("personFollowDelivery").textContent = !modeTwo() ? "Somente o Modo 2 recebe estas decisões."
       : !control.state.robot.connected ? "Prévia local: Arduino desconectado. Nenhum movimento físico."
         : control.state.safety.emergency ? "Arduino conectado, mas bloqueado pela parada de emergência."
@@ -117,6 +134,8 @@
         pending = null;
         const now = performance.now();
         if (enrolling) { stopped("ENROLLING"); return; }
+        diagnostics.frameAgeMs = Math.round(now - data.capturedAt);
+        diagnostics.frameIntervalMs = lastFrameAt ? Math.round(data.capturedAt - lastFrameAt) : null;
         lastFrameAt = data.capturedAt;
         const result = follower.update({ people: data.people, faces, now, capturedAt: data.capturedAt,
           cameraMoving: movingCamera(), requireSensor: Boolean(control.state.robot.connected),
@@ -136,7 +155,10 @@
     const now = performance.now();
     if (pending && now - pending.capturedAt > (ready ? 5000 : 30000)) { fail("Tempo de processamento esgotado"); return; }
     if (ready && (!lastFrameAt || now - lastFrameAt > 600)) {
-      publish(follower.missing(now, "STALE_FRAME", movingCamera()));
+      // Stop the expired command, but let the next observed frame decide if the
+      // track is continuous. A timer firing before an in-flight result must not
+      // erase face evidence. update() still rejects stale frames and long gaps.
+      publish(follower.stop("STALE_FRAME"));
     }
   }, 100);
 
@@ -174,6 +196,16 @@
   });
   $("pausePersonFollow").addEventListener("click", () => { paused = true; stop("PAUSED"); });
   $("retryPersonDetection").addEventListener("click", () => { stop(); paused = false; start(); });
-  window.quantumPersonFollower = Object.freeze({ get snapshot() { return lastOutput; } });
+  function diagnosticSnapshot() {
+    return JSON.parse(JSON.stringify({ version: 1, ...diagnostics }));
+  }
+  $('downloadPersonDiagnostics')?.addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(diagnosticSnapshot(), null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = 'quantum-modo2-diagnostico.json'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  window.quantumPersonFollower = Object.freeze({ get snapshot() { return lastOutput; },
+    get diagnostics() { return diagnosticSnapshot(); } });
   stopped("OFFLINE");
 })();

@@ -111,15 +111,17 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       assert.equal((await snap()).id, "QT-001"); assert.equal((await snap()).state, "FOLLOWING");
       assert.equal(await page.evaluate(() => window.__test.writes.length), 0);
     });
-    await check("only body rectangle is visible; hidden face overlay does not disable identification", async () => {
+    await check("face mesh layer and body tracking remain available without drawing a face box", async () => {
       const overlays = await page.evaluate(() => {
         const face = document.getElementById("identityCanvas"), body = document.getElementById("personCanvas");
-        return { faceHidden: face.hidden && getComputedStyle(face).display === "none",
+        return { faceVisible: !face.hidden && getComputedStyle(face).display !== "none",
+          faceDrawn: face.getContext("2d").getImageData(0, 0, face.width, face.height).data.some(v => v !== 0),
           bodyVisible: getComputedStyle(body).display !== "none",
           bodyDrawn: body.getContext("2d").getImageData(0, 0, body.width, body.height).data.some(v => v !== 0),
           identified: document.getElementById("currentFaceId").textContent };
       });
-      assert.equal(overlays.faceHidden, true);
+      assert.equal(overlays.faceVisible, true);
+      assert.equal(overlays.faceDrawn, false, 'No invented mesh or bounding box when model has no landmarks');
       assert.equal(overlays.bodyVisible, true);
       assert.equal(overlays.bodyDrawn, true);
       assert.equal(overlays.identified, "QT-001");

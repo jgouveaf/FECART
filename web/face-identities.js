@@ -27,6 +27,8 @@
   const backupFile = $("identityBackupFile");
   const cameraPanel = $("camera-gestos");
   const retryDetectionButton = $("retryFaceDetection");
+  const presenceButton = $("confirmFacePresence");
+  const presenceStatus = $("facePresenceStatus");
 
   const checks = {
     single: $("checkSingle"),
@@ -87,6 +89,10 @@
   };
 
   let human = null;
+  const presenceValidator = new window.QuantumFacePresence.FacePresenceValidator({
+    similarity: (first, second) => human?.match.similarity(first, second, MATCH_OPTIONS) || 0,
+    threshold: MATCH_THRESHOLD,
+  });
   let humanLibraryPromise = null;
   let modelsPromise = null;
   let database = null;
@@ -311,7 +317,7 @@
     return (result?.gesture || []).map((item) => String(item.gesture || "").toLowerCase());
   }
 
-  function assessFace(face, result, trackingKey) {
+  function assessFace(face, result, trackingKey, capturedAt) {
     const gestures = gesturesFrom(result);
     if (gestures.some((gesture) => gesture.includes("blink"))) blinkSeenAt = performance.now();
     const confidence = Number(face.faceScore || face.boxScore || face.score || 0);
@@ -335,17 +341,22 @@
       descriptor: embedding.length === EMBEDDING_LENGTH && embedding.every(Number.isFinite),
       confidence: confidence >= MIN_CONFIDENCE,
     };
+    const presence = presenceValidator.update({ capturedAt, box: face.box, embedding, real, live,
+      yaw: face.rotation?.angle?.yaw,
+      eligible: validations.single && validations.size && validations.descriptor && validations.confidence,
+    });
     const acceptable = validations.single && validations.size && validations.pose
-      && validations.real && validations.live && validations.descriptor && validations.confidence;
+      && presence.accepted && validations.descriptor && validations.confidence;
     const combined = (confidence + Math.min(1, size / 300) + real + live) / 4;
     let reason = "Rosto válido para cadastro.";
     if (!validations.single) reason = "Deixe apenas uma pessoa na imagem.";
     else if (!validations.size) reason = "Aproxime o rosto da câmera.";
     else if (!validations.pose) reason = "Olhe de frente para a câmera.";
     else if (!validations.confidence) reason = "Melhore a iluminação e mantenha o rosto visível.";
-    else if (!validations.real || !validations.live) reason = "A validação de presença não foi aprovada. Pisque e mova levemente a cabeça.";
+    else if (!validations.descriptor) reason = "Aguarde uma leitura facial nítida antes de cadastrar.";
+    else if (!presence.accepted) reason = presence.message;
     return qualityStabilizer.update(trackingKey, {
-      confidence, size, real, live, embedding, validations, acceptable, combined, reason,
+      confidence, size, real, live, embedding, validations, acceptable, combined, reason, presence,
     });
   }
 
@@ -442,26 +453,7 @@
   }
 
   function drawFaces(faces) {
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.lineWidth = Math.max(3, canvas.width / 300);
-    context.font = `700 ${Math.max(15, canvas.width / 55)}px ui-monospace, Consolas, monospace`;
-    context.textBaseline = "middle";
-    for (const item of faces) {
-      const [x, y, width, height] = item.face.box;
-      const mirroredX = canvas.width - x - width;
-      const color = item.identity.registered ? "#31e6a1" : item.quality.acceptable ? "#21d4fd" : "#ffb454";
-      const label = item.identity.registered
-        ? `${item.identity.id} · ${item.identity.name}`
-        : `${item.identity.id} · ${item.quality.acceptable ? "PRONTO" : "AJUSTE O ROSTO"}`;
-      context.strokeStyle = color;
-      context.fillStyle = color;
-      context.strokeRect(mirroredX, y, width, height);
-      const labelWidth = Math.min(canvas.width - mirroredX, context.measureText(label).width + 18);
-      const labelY = Math.max(0, y - 30);
-      context.fillRect(mirroredX, labelY, labelWidth, 28);
-      context.fillStyle = "#031019";
-      context.fillText(label, mirroredX + 8, labelY + 14, Math.max(20, labelWidth - 14));
-    }
+    window.QuantumFaceMesh.draw(context, faces.map(item => item.face), human?.faceTriangulation, canvas.width, canvas.height);
   }
 
   // Face identification supplies evidence, never motor commands. Mode 2 owns that decision.
@@ -505,6 +497,8 @@
     if (!registering) registerButton.textContent = existing ? `Atualizar rosto de ${existing.name}` : "Validar e cadastrar rosto";
     setCheck(checks.single, faces.length === 1);
     if (!item) {
+      if (presenceButton) presenceButton.disabled = true;
+      if (presenceStatus) presenceStatus.textContent = 'Mantenha um único rosto nítido na imagem.';
       resetMetrics();
       setCheck(checks.single, faces.length === 1);
       currentFaceId.textContent = faces.length ? `${faces.length} ROSTOS` : "NENHUM";
@@ -513,6 +507,9 @@
       return;
     }
     const quality = item.quality;
+    if (presenceButton) presenceButton.disabled = registering || quality.presence.accepted || !quality.validations.size
+      || !quality.validations.confidence || !quality.validations.descriptor;
+    if (presenceStatus) presenceStatus.textContent = quality.presence.message;
     faceConfidence.textContent = `${Math.round(quality.confidence * 100)}%`;
     faceQuality.textContent = quality.label;
     faceQuality.className = quality.acceptable ? "good" : "bad";
@@ -520,8 +517,10 @@
     setCheck(checks.single, quality.validations.single);
     setCheck(checks.size, quality.validations.size);
     setCheck(checks.pose, quality.validations.pose);
-    setCheck(checks.real, quality.validations.real);
-    setCheck(checks.live, quality.validations.live);
+    // Model scores remain visible as auxiliary observations, not a false
+    // rejection when the same person's guided presence was already confirmed.
+    setCheck(checks.real, quality.validations.real, true);
+    setCheck(checks.live, quality.validations.live, true);
     setCheck(checks.blink, quality.validations.blink, !quality.validations.blink);
     currentFaceId.textContent = registering ? "CAPTURANDO" : item.identity.id;
     if (!registering) {
@@ -603,8 +602,17 @@
   }
 
   async function detectFaces() {
-    if (!cameraActive || detectionBusy || video.readyState < 2) return;
-    if (video.currentTime === lastFaceVideoTime) return;
+    if (!cameraActive || detectionBusy) return;
+    if (video.readyState < 2 || video.currentTime === lastFaceVideoTime) {
+      if (currentFaces.length && performance.now() - currentFaces[0].capturedAt > 800) {
+        presenceValidator.reset();
+        qualityStabilizer.reset();
+        drawFaces([]);
+        updatePanel([]);
+        publishPersonTracking([]);
+      }
+      return;
+    }
     lastFaceVideoTime = video.currentTime;
     const capturedAt = performance.now();
     const generation = detectionGeneration;
@@ -622,12 +630,13 @@
       nextDetectionDelayMs = DETECTION_DELAY_MS;
       if (retryDetectionButton) retryDetectionButton.hidden = true;
       const detectedAt = performance.now();
+      if (result.face.length !== 1) presenceValidator.reset();
       const faces = result.face.map((face) => {
         const identity = identifyFace(face);
         return {
           face,
           identity,
-          quality: assessFace(face, result, identity.id),
+          quality: assessFace(face, result, identity.id, capturedAt),
           detectedAt,
           capturedAt,
         };
@@ -650,6 +659,10 @@
     } catch (error) {
       if (generation !== detectionGeneration) return;
       currentFaces = [];
+      presenceValidator.reset();
+      qualityStabilizer.reset();
+      drawFaces([]);
+      updatePanel([]);
       registerButton.disabled = true;
       publishPersonTracking([], true, true);
       consecutiveInferenceErrors += 1;
@@ -693,6 +706,9 @@
     const generation = ++detectionGeneration;
     cameraActive = true;
     lastFaceVideoTime = -1;
+    presenceValidator.reset();
+    qualityStabilizer.reset();
+    updatePanel([]);
     resetInferenceCircuit();
     canvas.width = video.videoWidth || 960;
     canvas.height = video.videoHeight || 540;
@@ -726,6 +742,9 @@
     currentFaces = [];
     temporaryTracks = [];
     qualityStabilizer.reset();
+    presenceValidator.reset();
+    if (presenceButton) presenceButton.disabled = true;
+    if (presenceStatus) presenceStatus.textContent = 'Ative a câmera para confirmar a presença.';
     lastFaceVideoTime = -1;
     faceFrames = 0;
     faceFpsWindowAt = 0;
@@ -760,6 +779,12 @@
   }
 
   personName.addEventListener("input", () => updatePanel(currentFaces));
+  presenceButton?.addEventListener('click', () => {
+    if (registering || currentFaces.length !== 1) return;
+    if (presenceValidator.beginGuided(performance.now())) {
+      presenceStatus.textContent = '1/3 · Olhe de frente para começar.';
+    }
+  });
   retryDetectionButton?.addEventListener("click", async () => {
     if (!cameraActive || activeView !== "face") return;
     retryDetectionButton.disabled = true;
@@ -813,6 +838,7 @@
           confidence: item.quality.confidence,
           real: item.quality.real,
           live: item.quality.live,
+          presenceMethod: item.quality.presence.method,
         },
       };
       await putRecord(identity);
@@ -908,8 +934,12 @@
     activeView = event.detail?.view === "hand" ? "hand" : "face";
     clearTimeout(detectionTimer);
     if (activeView !== "face") {
+      presenceValidator.reset();
+      qualityStabilizer.reset();
       ++enrollmentGeneration;
       registering = false;
+      updatePanel([]);
+      lastFaceVideoTime = -1;
       context.clearRect(0, 0, canvas.width, canvas.height);
       registerButton.disabled = true;
       setStatus(cameraActive ? "PAUSADA · ABA DA MÃO" : "AGUARDANDO CÂMERA");

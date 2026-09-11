@@ -56,7 +56,9 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/robot-control.js?v=20',
             'web/code-editor-utils.js?v=1',
             'web/face-identity-math.js?v=2',
-            'web/face-identities.js?v=15',
+            'web/face-identities.js?v=',
+            'web/face-presence.js?v=',
+            'web/face-mesh-overlay.js?v=',
             'id="toggleGestures"',
             'id="cameraDeviceSelect"',
             'id="retryFaceDetection"',
@@ -71,7 +73,8 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("Aguardar 100%", self.html)
         self.assertIn("O firmware oficial pode ser instalado diretamente pelo site.", self.html)
         self.assertIn('id="flashOfficialFirmware"', self.html)
-        self.assertIn("Modo 1 aprovado a 5 cm", self.html)
+        self.assertIn("A referência isolada foi aprovada com as rodas suspensas.", self.html)
+        self.assertIn("A V7 integrada ainda precisa desse teste.", self.html)
         for obsolete in ('id="autonomo-isolado"', 'id="identidades"', 'id="etapas"', 'id="sistema"'):
             self.assertNotIn(obsolete, self.html)
 

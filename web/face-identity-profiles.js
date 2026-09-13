@@ -3,8 +3,8 @@
   const HUMAN='human-faceres-3.3.6', ONNX='scrfd-sface-2021dec-v1';
   const DEFAULT_ENGINE = ONNX;
   const profiles={
-    [HUMAN]:{engine:HUMAN,length:1024,field:'embeddings',threshold:.80,ambiguityMargin:.05},
-    [ONNX]:{engine:ONNX,length:128,field:'sfaceEmbeddings',threshold:.50,ambiguityMargin:.10},
+    [HUMAN]:{engine:HUMAN,length:1024,field:'embeddings',threshold:.80,ambiguityMargin:.05,continuationThreshold:.77,referenceThreshold:.90},
+    [ONNX]:{engine:ONNX,length:128,field:'sfaceEmbeddings',threshold:.50,ambiguityMargin:.10,continuationThreshold:.45,referenceThreshold:.80},
   };
   function profile(engine) { return profiles[engine] || profiles[DEFAULT_ENGINE]; }
   function valid(vector,engine) {

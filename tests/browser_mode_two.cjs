@@ -15,13 +15,25 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       addEventListener("quantum:person-tracking", e => window.__test.events.push(e.detail));
       window.Human = { Human: class {
         tf = { dispose() {} };
-        match = { similarity(a, b) { return a[0] === b[0] ? .99 : .1; } };
+        match = { similarity(a, b) {
+          if (a[0] !== b[0]) return .1;
+          // Captured gallery samples use marker 1. Both current descriptors
+          // remain mutually compatible as their gallery score oscillates.
+          if (a[1022] === 1 || b[1022] === 1) {
+            if (a[1022] === 2 || b[1022] === 2) return .78;
+            if (a[1022] === 3 || b[1022] === 3) return .85;
+          }
+          return .99;
+        } };
         async load() {} async warmup() {}
         async detect(video, config = {}) {
           if (window.__test.failFace) throw new Error("injected face failure");
           const t = window.__test, w = config.filter?.width || video.videoWidth, h = config.filter?.height || video.videoHeight;
           const size = (t.faceSize || 160) * w / video.videoWidth;
           const embedding = Array(1024).fill(t.embedding); embedding[1023] += ++t.frames / 1000;
+          if (t.scoreOscillation) embedding[1022] = t.frames % 4 === 0 ? 3 : 2;
+          if (t.strongIdentity) embedding[1022] = 3;
+          if (t.weakIdentity) embedding[1022] = 2;
           const faces = t.face ? [{ box: [t.x * w - size / 2, .13 * h, size, size],
             faceScore: .99, real: .99, live: .99, embedding,
             rotation: { angle: { yaw: 0, pitch: 0, roll: 0 } } }] : [];
@@ -226,6 +238,8 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       assert.ok(report.transitions.length > 0 && report.transitions.length <= 60);
       assert.ok(report.frameAgeMs >= 0);
       assert.equal(report.lastStop.reason, 'STALE_FRAME');
+      assert.ok(report.recognition && report.recognition.faceCount === 1);
+      assert.equal(typeof report.recognition.similarity, 'number');
       assert.doesNotMatch(JSON.stringify(report), /Pessoa de teste|embedding|photo|data:image|QT-001/);
       const count = await page.evaluate(() => {
         const copy = window.quantumPersonFollower.diagnostics; copy.transitions.length = 0;
@@ -249,6 +263,32 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       assert.equal((await snap()).box, null);
       assert.equal(await page.locator('#personCount').textContent(), '1');
       await page.locator('.person-follow-panel').screenshot({ path: 'tests/artifacts/mode-two-face-follow.png' });
+    });
+    await check('brief score oscillation preserves a confirmed face and forward USB requests', async () => {
+      await page.evaluate(() => { window.__test.strongIdentity = true; });
+      await page.waitForTimeout(500);
+      await page.evaluate(() => { window.__test.strongIdentity = false; window.__test.scoreOscillation = true; window.__test.writes = []; window.__test.events = []; });
+      await page.waitForFunction(() => window.quantumFaceDiagnostics?.decision === 'CONTINUITY_MATCH');
+      await page.waitForTimeout(2100);
+      const observed = await page.evaluate(() => ({ writes: window.__test.writes, events: window.__test.events,
+        id: document.getElementById('currentFaceId').textContent }));
+      assert.equal(observed.id, 'QT-001');
+      assert.ok(observed.writes.filter(line => line === 'CMD:FRENTE').length >= 3);
+      assert.ok(!observed.writes.includes('CMD:PARAR'), JSON.stringify(observed.events));
+      await page.evaluate(() => { window.__test.scoreOscillation = false; });
+    });
+    await check('weak identity cannot keep the robot moving indefinitely', async () => {
+      await page.waitForTimeout(400);
+      await page.evaluate(() => { window.__test.weakIdentity = true; window.__test.writes = []; });
+      await page.waitForFunction(() => window.__test.writes.includes('CMD:PARAR'));
+      assert.notEqual(await page.locator('#currentFaceId').textContent(), 'QT-001');
+      assert.match(await page.locator('#faceTrackingState').textContent(), /Confirmando a identidade/);
+      assert.match(await page.locator('#faceHint').textContent(), /identidade não conferiu/);
+      await page.evaluate(() => { window.__test.writes = []; });
+      await page.waitForTimeout(600);
+      assert.ok(!(await page.evaluate(() => window.__test.writes)).includes('CMD:FRENTE'));
+      await page.evaluate(() => { window.__test.weakIdentity = false; });
+      await waitCommand('FRENTE');
     });
     await page.evaluate(() => { window.__test.x = .25; }); await waitCommand('ESQUERDA');
     await page.evaluate(() => { window.__test.writes = []; window.__test.events = []; });

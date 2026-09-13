@@ -48,7 +48,8 @@
       diagnostics.transitions.push({ atMs: Math.round(now), state: result.state, reason,
         command: result.command, frameAgeMs: lastFrameAt ? Math.round(now - lastFrameAt) : null,
         bodyConfidence: Number.isFinite(result.confidence) ? result.confidence : null,
-        sensorCm: distance, sensorAgeMs: sensorAt ? Math.round(now - sensorAt) : null });
+        sensorCm: distance, sensorAgeMs: sensorAt ? Math.round(now - sensorAt) : null,
+        recognition: window.quantumFaceRecognition || null });
       if (diagnostics.transitions.length > 60) diagnostics.transitions.shift();
     }
     if (result.command === 'PARAR' && !['SELECT_TARGET', 'CONFIRMING', 'LOADING', 'OFFLINE', 'PAUSED', 'ENROLLING'].includes(result.state)) {
@@ -58,8 +59,12 @@
     const freshTargetFace = faces.some(f => f.id === follower.id && f.registered
       && now - f.capturedAt >= 0 && now - f.capturedAt <= 800);
     const framingNeeded = freshTargetFace && ['REIDENTIFY', 'TARGET_LOST'].includes(reason);
+    const identityPending = !freshTargetFace && faces.length === 1 && !faces[0].registered
+      && now - faces[0].capturedAt >= 0 && now - faces[0].capturedAt <= 800
+      && ['REIDENTIFY', 'TARGET_LOST'].includes(reason);
     const statusLabel = result.state === 'KEEP_DISTANCE' ? labels[reason] || labels[result.state] : labels[result.state];
-    $("personFollowStatus").textContent = framingNeeded
+    $("personFollowStatus").textContent = identityPending
+      ? 'Rosto visível; aguardando confirmação da identidade.' : framingNeeded
       ? 'Rosto identificado; mantenha o alvo visível e separado de outras pessoas.' : statusLabel || result.state;
     if (reason === 'SENSOR_DISTANCE' && Number.isFinite(result.distance)) {
       $("personFollowStatus").textContent += ` · leitura: ${Math.round(result.distance)} cm`;
@@ -73,7 +78,7 @@
       : Number.isFinite(result.center)
         ? `${result.center < .4 ? 'À esquerda' : result.center > .6 ? 'À direita' : 'No centro'} · ${Math.round(result.center * 100)}% da largura`
         : 'Aguardando alvo';
-    $("faceTrackingState").textContent = statusLabel || result.state;
+    $("faceTrackingState").textContent = identityPending ? 'Confirmando a identidade do rosto visível' : statusLabel || result.state;
     $("faceDirection").textContent = result.command;
     if ($('personFrameAge')) $('personFrameAge').textContent = diagnostics.frameAgeMs == null ? '—' : `${diagnostics.frameAgeMs} ms`;
     if ($('personFrameInterval')) $('personFrameInterval').textContent = diagnostics.frameIntervalMs == null ? '—' : `${diagnostics.frameIntervalMs} ms`;
@@ -245,7 +250,8 @@
   $("pausePersonFollow").addEventListener("click", () => { paused = true; stop("PAUSED"); });
   $("retryPersonDetection").addEventListener("click", () => { stop(); paused = false; start(); });
   function diagnosticSnapshot() {
-    return JSON.parse(JSON.stringify({ version: 1, ...diagnostics, face: window.quantumFacePerformance || null }));
+    return JSON.parse(JSON.stringify({ version: 1, ...diagnostics, face: window.quantumFacePerformance || null,
+      recognition: window.quantumFaceRecognition || null }));
   }
   $('downloadPersonDiagnostics')?.addEventListener('click', () => {
     const blob = new Blob([JSON.stringify(diagnosticSnapshot(), null, 2)], { type: 'application/json' });

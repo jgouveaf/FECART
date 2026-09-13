@@ -101,7 +101,8 @@
   let lastResult = null;
   let nextTemporaryId = 1;
   let temporaryTracks = [];
-  let recognitionMemory = [];
+  const identityTracker = new window.QuantumFaceIdentityMath.FaceIdentityTracker();
+  let recognitionReference = null;
   let activeView = cameraPanel?.dataset.cameraView || "face";
   let detectionGeneration = 0;
   let selectedTargetId = null;
@@ -284,7 +285,7 @@
         if (!window.confirm(`Excluir ${identity.name} (${identity.id}) deste navegador?`)) return;
         await deleteRecord(identity.id);
         identities = identities.filter((item) => item.id !== identity.id);
-        recognitionMemory = recognitionMemory.filter((item) => item.id !== identity.id);
+        resetRecognition();
         if (selectedTargetId === identity.id) {
           selectedTargetId = null;
           publishPersonTracking([], true);
@@ -311,6 +312,7 @@
           return;
         }
         selectedTargetId = selectedTargetId === identity.id ? null : identity.id;
+        resetRecognition();
         personName.value = '';
         renderIdentities();
         currentFaces = [];
@@ -415,10 +417,17 @@
     return best.track.id;
   }
 
-  function identifyFace(face) {
+  function resetRecognition() {
+    identityTracker.reset();
+    recognitionReference = null;
+    window.quantumFaceRecognition = null;
+  }
+
+  function identifyFace(face, capturedAt, tracking) {
     const box = boxObject(face);
     const engineProfile = profiles.profile(activeEngine);
     if (!profiles.valid(face.embedding, activeEngine)) {
+      resetRecognition();
       window.quantumFaceDiagnostics = {
         known: identities.length,
         bestSimilarity: 0,
@@ -434,7 +443,13 @@
       identity,
       scores: profiles.samples(identity, activeEngine).map((reference) => similarity(face.embedding, reference)),
     }));
-    const decision = window.QuantumFaceIdentityMath.chooseIdentity(compared, engineProfile);
+    const decision = tracking ? identityTracker.update({ candidates: compared, profile: engineProfile,
+      box, capturedAt, now: performance.now(), single: true,
+      confidence: Number(face.faceScore || face.boxScore || face.score || 0),
+      referenceSimilarity: recognitionReference ? similarity(face.embedding, recognitionReference) : NaN,
+    }) : window.QuantumFaceIdentityMath.chooseIdentity(compared, engineProfile);
+    if (tracking && decision.reason === 'MATCH') recognitionReference = face.embedding.slice();
+    else if (!decision.accepted) recognitionReference = null;
     const bestIdentity = decision.identity;
     const bestSimilarity = decision.similarity;
     window.quantumFaceDiagnostics = {
@@ -454,15 +469,12 @@
         similarity: candidate.similarity,
       })),
     };
-    const now = performance.now();
-    recognitionMemory = recognitionMemory.filter((item) => now - item.seenAt < 1600);
     if (decision.accepted && bestIdentity) {
-      const memory = recognitionMemory.find((item) => item.id === bestIdentity.id);
-      if (memory) Object.assign(memory, { box, seenAt: now, similarity: bestSimilarity });
-      else recognitionMemory.push({ id: bestIdentity.id, name: bestIdentity.name, box, seenAt: now, similarity: bestSimilarity });
-      return { id: bestIdentity.id, name: bestIdentity.name, registered: true, similarity: bestSimilarity };
+      return { id: bestIdentity.id, name: bestIdentity.name, registered: true,
+        similarity: bestSimilarity, reason: decision.reason };
     }
-    return { id: temporaryIdFor(box), name: "Não cadastrado", registered: false, similarity: bestSimilarity };
+    return { id: temporaryIdFor(box), name: "Não cadastrado", registered: false,
+      similarity: bestSimilarity, reason: decision.reason };
   }
 
   function captureFace(face) {
@@ -554,7 +566,11 @@
     setCheck(checks.pose, quality.validations.pose);
     currentFaceId.textContent = registering ? "CAPTURANDO" : item.identity.id;
     if (!registering) {
-      faceHint.textContent = item.identity.registered
+      faceHint.textContent = selectedTargetId && !item.identity.registered
+        ? item.identity.reason === 'AMBIGUOUS'
+          ? 'Leitura parecida com mais de um cadastro. Separe as pessoas na imagem.'
+          : 'Rosto visível, mas a identidade não conferiu nesta leitura. Mantenha o rosto nítido; a confirmação é automática.'
+        : item.identity.registered
         ? `${item.identity.name} reconhecido(a). ${selectedTargetId === item.identity.id
           ? 'Alvo do seguimento. Veja o estado do Modo 2 acima.' : 'Clique em Seguir no cadastro para iniciar o Modo 2.'}`
         : quality.acceptable
@@ -608,6 +624,7 @@
     control?.patch("vision", { active: false, status: "LOADING", tracking: "SEARCHING" }, { source: "face-model" });
     control?.log("INFO", "VISÃO", `Carregando FaceID local: ${engine}`);
     currentFaces = []; registerButton.disabled = true;
+    resetRecognition();
     publishPersonTracking([], true);
     faceInference.close(); modelsReady = false;
     modelsPromiseEngine = engine;
@@ -644,6 +661,7 @@
     if (!cameraActive || detectionBusy) return;
     if (video.readyState < 2 || video.currentTime === lastFaceVideoTime) {
       if (currentFaces.length && performance.now() - currentFaces[0].capturedAt > 800) {
+        resetRecognition();
         qualityStabilizer.reset();
         drawFaces([]);
         updatePanel([]);
@@ -683,9 +701,11 @@
         backend: result.backend || 'local', engine: activeEngine, profile: processing.tracking ? 'tracking' : 'enrollment',
         stages: result.performance || null };
       if (result.face.length !== 1) qualityStabilizer.reset();
+      const trackIdentity = processing.tracking && Boolean(selectedTargetId) && result.face.length === 1;
+      if (!trackIdentity) resetRecognition();
       const faces = result.face.map((rawFace) => {
         const face = window.QuantumFaceProcessing.restore(rawFace, processing.scaleX, processing.scaleY);
-        const identity = identifyFace(face);
+        const identity = identifyFace(face, capturedAt, trackIdentity);
         return {
           face,
           identity,
@@ -694,6 +714,12 @@
           capturedAt,
         };
       });
+      // Export only decision metrics, never names, IDs, photos or descriptors.
+      window.quantumFaceRecognition = { faceCount: faces.length, capturedAt,
+        decision: faces.length === 1 ? window.quantumFaceDiagnostics.decision : faces.length ? 'MULTIPLE_FACES' : 'NO_FACE',
+        similarity: faces.length === 1 ? window.quantumFaceDiagnostics.bestSimilarity : null,
+        margin: faces.length === 1 ? window.quantumFaceDiagnostics.margin ?? null : null,
+        threshold: profiles.profile(activeEngine).threshold };
       // Keep the most recent measured mesh between its slower visual updates.
       // Clear it on a changed/lost face, a large jump, or visual expiry.
       const previousFace = currentFaces.length === 1 ? currentFaces[0] : null;
@@ -717,6 +743,7 @@
       setStatus(count ? `${count} ROSTO${count === 1 ? "" : "S"} DETECTADO${count === 1 ? "" : "S"}` : "PROCURANDO ROSTO", true);
     } catch (error) {
       if (generation !== detectionGeneration) return;
+      resetRecognition();
       currentFaces = [];
       qualityStabilizer.reset();
       drawFaces([]);
@@ -761,6 +788,7 @@
   }
 
   async function startIdentification() {
+    resetRecognition();
     const generation = ++detectionGeneration;
     cameraActive = true;
     lastFaceVideoTime = -1;
@@ -788,6 +816,7 @@
   }
 
   function stopIdentification() {
+    resetRecognition();
     ++detectionGeneration;
     ++enrollmentGeneration;
     cameraActive = false;
@@ -991,6 +1020,7 @@
     registerButton.disabled = true;
   });
   window.addEventListener("quantum:camera-view-changed", async (event) => {
+    resetRecognition();
     const generation = ++detectionGeneration;
     activeView = event.detail?.view === "hand" ? "hand" : "face";
     clearTimeout(detectionTimer);

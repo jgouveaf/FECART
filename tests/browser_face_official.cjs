@@ -27,6 +27,9 @@ const site=process.env.QT_SITE_URL || 'http://127.0.0.1:9877/';
       const isNew=engine===window.QuantumFaceProfiles.ONNX;
       const embedding=isNew ? Array(128).fill(0) : Array(1024).fill(id+1);
       if(isNew) embedding[id]=1;
+      if(isNew && Number.isFinite(t.score)) {
+        embedding.fill(0);embedding[id]=t.score;embedding[4]=Math.sqrt(1-t.score*t.score);
+      }
       if(t.invalid) embedding[5]=NaN;
       const w=cfg.filter.width,h=cfg.filter.height,size=180*w/video.videoWidth;
       const face={box:[w*.5-size/2,h*.25,size,size],faceScore:.99,embedding,engine,
@@ -50,6 +53,24 @@ const site=process.env.QT_SITE_URL || 'http://127.0.0.1:9877/';
   let saved=(await records())[0];assert.equal(saved.sfaceEmbeddings.length,5);assert.equal(saved.embeddings.length,0);
   assert.equal(saved.engine,'scrfd-sface-2021dec-v1');assert.equal(saved.sfaceEmbeddings[0].length,128);
   console.log('ok - official enrollment saves five SFace samples without fabricated Human samples');
+  await page.locator('.follow-person').click();
+  await page.evaluate(()=>{window.__official.score=.6;});
+  await page.waitForTimeout(500);
+  await page.evaluate(()=>{window.__official.score=.48;});
+  await page.waitForFunction(()=>window.quantumFaceDiagnostics?.decision==='CONTINUITY_MATCH');
+  assert.equal(await page.locator('#currentFaceId').textContent(),'QT-001');
+  const weakAt=Date.now();
+  await page.waitForFunction(()=>window.quantumFaceDiagnostics?.decision==='BELOW_THRESHOLD');
+  assert.ok(Date.now()-weakAt<2000);
+  assert.notEqual(await page.locator('#currentFaceId').textContent(),'QT-001');
+  await page.evaluate(()=>{window.__official.score=.6;});
+  await page.waitForFunction(()=>window.quantumFaceDiagnostics?.decision==='MATCH');
+  await page.waitForTimeout(400);
+  await page.evaluate(()=>{window.__official.score=.48;window.__official.id=1;});
+  await page.waitForFunction(()=>document.getElementById('currentFaceId').textContent!=='QT-001');
+  assert.notEqual(await page.evaluate(()=>window.quantumFaceDiagnostics.decision),'CONTINUITY_MATCH');
+  await page.evaluate(()=>{delete window.__official.score;window.__official.id=0;});
+  console.log('ok - SFace continuity bridges a borderline read, expires and rejects a different face');
   await page.reload();await page.waitForFunction(()=>document.querySelectorAll('.follow-person').length===1);
   assert.equal((await records())[0].id,saved.id);
   const downloadPromise=page.waitForEvent('download');await page.locator('#exportIdentities').click();

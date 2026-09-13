@@ -82,16 +82,18 @@ test('distinct distant clothes do not interrupt a continuous target', () => {
 });
 test('loss requires a new face; matching clothes cannot reacquire the target', () => {
   const { step, face } = trained();
-  assert.equal(step(1600, { faces: [], people: [] }).command, 'PARAR');
-  assert.equal(step(1800, { faces: [] }).command, 'PARAR');
-  assert.equal(step(2000, { faces: [face(1400)] }).command, 'PARAR');
-  assert.equal(step(2200).state, 'CONFIRMING');
-  assert.equal(step(2400).command, 'FRENTE');
+  assert.equal(step(1600, { faces: [], people: [] }).dropout, true);
+  // Loss must outlast the existing 450 ms facial dropout grace.
+  assert.equal(step(2000, { faces: [], people: [] }).command, 'PARAR');
+  assert.equal(step(2200, { faces: [] }).command, 'PARAR');
+  assert.equal(step(2400, { faces: [face(1400)] }).command, 'PARAR');
+  assert.equal(step(2600).state, 'CONFIRMING');
+  assert.equal(step(2800).command, 'FRENTE');
 });
 test('delayed facial inference can reacquire after repeated missing observations', () => {
-  const { step, face } = trained(); step(1600, { people: [], faces: [] }); step(1800, { faces: [] });
-  assert.equal(step(2000, { faces: [face(1700)] }).state, 'CONFIRMING');
-  assert.equal(step(2200, { faces: [face(1900)] }).command, 'FRENTE');
+  const { step, face } = trained(); step(2000, { people: [], faces: [] }); step(2200, { faces: [] });
+  assert.equal(step(2400, { faces: [face(2100)] }).state, 'CONFIRMING');
+  assert.equal(step(2600, { faces: [face(2300)] }).command, 'FRENTE');
 });
 test('missing descriptor keeps the existing three-second bound', () => {
   const { step, body } = trained();

@@ -72,6 +72,49 @@
     };
   }
 
+  // Hysteresis applies only to an already confirmed, continuously measured
+  // face. Weak matches never refresh the strict reference or its expiry.
+  class FaceIdentityTracker {
+    constructor() { this.reset(); }
+    reset() { this.track = null; }
+    update({ candidates, profile, box, capturedAt, now, single, confidence, referenceSimilarity }) {
+      const decision = chooseIdentity(candidates, profile);
+      const previous = this.track;
+      const valid = single && Number.isFinite(confidence) && confidence >= .58
+        && box && [box.x, box.y, box.width, box.height].every(Number.isFinite)
+        && box.x >= 0 && box.y >= 0 && box.width > 0 && box.height > 0
+        && Number.isFinite(capturedAt) && Number.isFinite(now)
+        && capturedAt <= now && now - capturedAt <= 600 && (!previous || capturedAt > previous.at);
+      // A strict match can still be displayed with its original timestamp;
+      // the follower enforces freshness. It must not seed temporal continuity.
+      if (!valid) { this.reset(); return decision; }
+      const intersection = previous ? Math.max(0, Math.min(box.x + box.width, previous.box.x + previous.box.width) - Math.max(box.x, previous.box.x))
+        * Math.max(0, Math.min(box.y + box.height, previous.box.y + previous.box.height) - Math.max(box.y, previous.box.y)) : 0;
+      const iou = previous ? intersection / (box.width * box.height + previous.box.width * previous.box.height - intersection || 1) : 0;
+      const continuous = previous && previous.engine === profile.engine && capturedAt > previous.at
+        && capturedAt - previous.at <= 600 && iou >= .5;
+      if (decision.accepted) {
+        const same = continuous && previous.id === decision.identity.id;
+        this.track = { id: decision.identity.id, engine: profile.engine, box: { ...box }, at: capturedAt,
+          strictAt: capturedAt, since: same ? previous.since : capturedAt,
+          samples: same ? Math.min(2, previous.samples + 1) : 1 };
+        return decision;
+      }
+      const best = decision.ranked[0];
+      const retain = continuous && previous.samples >= 2 && previous.strictAt - previous.since >= 120
+        && now - previous.strictAt <= 800 && decision.reason === 'BELOW_THRESHOLD'
+        && best?.identity.id === previous.id && best.referenceCount >= MIN_REFERENCE_SAMPLES
+        && decision.margin >= profile.ambiguityMargin && decision.similarity >= profile.continuationThreshold
+        && Number.isFinite(referenceSimilarity) && referenceSimilarity >= profile.referenceThreshold;
+      if (retain) {
+        this.track = { ...previous, box: { ...box }, at: capturedAt };
+        return { ...decision, accepted: true, identity: best.identity, reason: 'CONTINUITY_MATCH' };
+      }
+      this.reset();
+      return decision;
+    }
+  }
+
   const api = Object.freeze({
     MIN_SIMILARITY,
     AMBIGUITY_MARGIN,
@@ -80,6 +123,7 @@
     mergeSamples,
     aggregateSimilarity,
     chooseIdentity,
+    FaceIdentityTracker,
   });
 
   if (typeof window !== "undefined") window.QuantumFaceIdentityMath = api;

@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { FaceIdentityTracker } = require('../web/face-identity-math.js');
 const profiles = require('../web/face-identity-profiles.js');
+const { cosine } = require('../web/face-onnx-math.js');
 const { PersonFollower } = require('../web/person-follow-math.js');
 const target = { id: 'QT-001' }, rival = { id: 'QT-002' };
 const box = { x: .43, y: .15, width: .14, height: .16 };
@@ -27,16 +28,51 @@ test('near-threshold facial readings retain a confirmed target and forward motio
     const result = r.read(t, score);
     assert.equal(result.accepted, true);
     assert.equal(result.motion.command, 'FRENTE');
-    assert.equal(result.reason, score < .5 ? 'CONTINUITY_MATCH' : 'MATCH');
+    assert.equal(result.reason, score < .5 ? 'SESSION_MATCH' : 'MATCH');
   }
 });
-test('weak evidence cannot acquire identity or extend the last strict match forever', () => {
+test('a live reference confirms each fresh frame without an 800 ms gallery expiry', () => {
+  const r = rig();
+  assert.equal(r.read(1000).captureReference, false);
+  assert.equal(r.read(1200).captureReference, true);
+  for (let t = 1400; t <= 61400; t += 200) {
+    const result = r.read(t, .48);
+    assert.equal(result.reason, 'SESSION_MATCH');
+    assert.equal(result.motion.command, 'FRENTE');
+    assert.equal(result.captureReference, false, 'Session matches must never train their own reference');
+  }
+  assert.equal(r.tracker.track.referenceAt, 1200);
+  assert.equal(r.read(61600).captureReference, true, 'Only a new strict gallery match may refresh the reference');
+  assert.equal(r.read(61800, .48, { referenceSimilarity: .79 }).accepted, false);
+  assert.equal(r.read(62000, .48).accepted, false, 'A mismatch cancels the session');
+});
+test('weak gallery evidence cannot acquire or move without a confirmed live reference', () => {
   const r = rig(); assert.equal(r.read(1000,.49).accepted, false);
   r.read(1200); assert.equal(r.read(1400,.49).accepted, false, 'One strict frame is insufficient');
   r.read(1600); r.read(1800);
-  for (const t of [2000,2200,2400,2500]) assert.equal(r.read(t,.48).accepted, true);
-  assert.equal(r.read(2600,.48).accepted, false);
+  assert.equal(r.read(2000,.48,{referenceSimilarity:.79}).accepted, false);
   assert.equal(r.read(3000,.48).accepted, false);
+});
+test('SFace session comparisons cannot drift by learning from each accepted session frame', () => {
+  const r = rig();
+  const vector = (score, angle = 0) => [score, Math.sqrt(1 - score * score) * Math.cos(angle),
+    Math.sqrt(1 - score * score) * Math.sin(angle), ...Array(125).fill(0)];
+  const reference = vector(.6);
+  r.read(1000); r.read(1200);
+  let previous = reference, lost = false;
+  for (let i = 1; i <= 10; i++) {
+    const current = vector(.48, i * .1);
+    assert.ok(cosine(previous, current) > .98, 'Consecutive frames look alike');
+    const result = r.read(1200 + i * 200, .48, { referenceSimilarity: cosine(reference, current) });
+    assert.equal(result.captureReference, false);
+    if (cosine(reference, current) < .8) {
+      assert.equal(result.accepted, false);
+      assert.equal(result.motion.command, 'PARAR');
+      lost = true;
+    }
+    previous = current;
+  }
+  assert.equal(lost, true, 'The original gallery-confirmed reference must reject accumulated drift');
 });
 test('a different face in the same position cannot inherit the target', () => {
   for (const overrides of [

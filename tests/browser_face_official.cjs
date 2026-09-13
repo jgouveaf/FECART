@@ -28,7 +28,9 @@ const site=process.env.QT_SITE_URL || 'http://127.0.0.1:9877/';
       const embedding=isNew ? Array(128).fill(0) : Array(1024).fill(id+1);
       if(isNew) embedding[id]=1;
       if(isNew && Number.isFinite(t.score)) {
-        embedding.fill(0);embedding[id]=t.score;embedding[4]=Math.sqrt(1-t.score*t.score);
+        embedding.fill(0);embedding[id]=t.score;
+        embedding[4]=Math.sqrt(1-t.score*t.score)*Math.cos(t.angle||0);
+        embedding[5]=Math.sqrt(1-t.score*t.score)*Math.sin(t.angle||0);
       }
       if(t.invalid) embedding[5]=NaN;
       const w=cfg.filter.width,h=cfg.filter.height,size=180*w/video.videoWidth;
@@ -57,28 +59,50 @@ const site=process.env.QT_SITE_URL || 'http://127.0.0.1:9877/';
   await page.evaluate(()=>{window.__official.score=.6;});
   await page.waitForTimeout(500);
   await page.evaluate(()=>{window.__official.score=.48;});
-  await page.waitForFunction(()=>window.quantumFaceDiagnostics?.decision==='CONTINUITY_MATCH');
+  await page.waitForFunction(()=>window.quantumFaceDiagnostics?.decision==='SESSION_MATCH');
   assert.equal(await page.locator('#currentFaceId').textContent(),'QT-001');
-  const weakAt=Date.now();
+  await page.waitForTimeout(3000);
+  assert.equal(await page.locator('#currentFaceId').textContent(),'QT-001');
+  assert.equal(await page.evaluate(()=>window.quantumFaceDiagnostics.decision),'SESSION_MATCH');
+  assert.equal(await page.locator('#faceSimilarityLabel').textContent(),'Referência da sessão');
+  assert.equal(await page.locator('#faceQuality').textContent(),'ACOMPANHANDO');
+  assert.match(await page.locator('#faceHint').textContent(),/referência desta sessão/);
+  await page.locator('.face-metrics').screenshot({path:'tests/artifacts/face-session-metrics.png'});
+  assert.equal((await records())[0].sfaceEmbeddings.length,5, 'Session reference is never saved to the gallery');
+  // Drift away from the frozen .6 live descriptor while retaining a borderline
+  // gallery score. Matching the previous weak frame must not train the next one.
+  for(let i=1;i<=9;i++) {
+    await page.evaluate(angle=>{window.__official.angle=angle;},i*.1);
+    await page.waitForTimeout(100);
+  }
   await page.waitForFunction(()=>window.quantumFaceDiagnostics?.decision==='BELOW_THRESHOLD');
-  assert.ok(Date.now()-weakAt<2000);
   assert.notEqual(await page.locator('#currentFaceId').textContent(),'QT-001');
-  await page.evaluate(()=>{window.__official.score=.6;});
+  await page.evaluate(()=>{window.__official.score=.6;window.__official.angle=0;});
   await page.waitForFunction(()=>window.quantumFaceDiagnostics?.decision==='MATCH');
   await page.waitForTimeout(400);
   await page.evaluate(()=>{window.__official.score=.48;window.__official.id=1;});
   await page.waitForFunction(()=>document.getElementById('currentFaceId').textContent!=='QT-001');
-  assert.notEqual(await page.evaluate(()=>window.quantumFaceDiagnostics.decision),'CONTINUITY_MATCH');
+  assert.notEqual(await page.evaluate(()=>window.quantumFaceDiagnostics.decision),'SESSION_MATCH');
   await page.evaluate(()=>{delete window.__official.score;window.__official.id=0;});
-  console.log('ok - SFace continuity bridges a borderline read, expires and rejects a different face');
+  console.log('ok - SFace session verifies fresh descriptors beyond 800 ms and rejects mismatches without changing enrollment');
   await page.reload();await page.waitForFunction(()=>document.querySelectorAll('.follow-person').length===1);
   assert.equal((await records())[0].id,saved.id);
   const downloadPromise=page.waitForEvent('download');await page.locator('#exportIdentities').click();
   const download=await downloadPromise,backup=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
   assert.equal(backup.version,4);assert.equal(backup.identities[0].sfaceEmbeddings.length,5);
   const importBackup=async backup=>{
+    const previous=Object.fromEntries((await records()).map(record=>[record.name,record.updatedAt]));
     await page.locator('#identityBackupFile').setInputFiles({name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
-    await page.waitForFunction(()=>document.getElementById('faceHint').textContent.includes('atualizado(s)'));
+    // Recognition updates the same hint on every frame. Wait for committed
+    // records, not a success message that can disappear before a polling tick.
+    await page.waitForFunction(({previous,names})=>new Promise(resolve=>{
+      const request=indexedDB.open('quantum_tracker_biometrics',1);
+      request.onsuccess=()=>{const db=request.result,q=db.transaction('identities').objectStore('identities').getAll();
+        q.onsuccess=()=>{db.close();resolve(names.every(name=>{
+          const record=q.result.find(item=>item.name===name);
+          return record && record.updatedAt!==previous[name];
+        }));};};
+    }),{previous,names:backup.identities.map(record=>record.name)});
   };
   await importBackup(backup);assert.equal((await records())[0].sfaceEmbeddings.length,5);
   const old={...saved,id:'QT-010',name:'Cadastro antigo',engine:'human-faceres-3.3.6',embeddings:Array(5).fill(Array(1024).fill(2))};delete old.sfaceEmbeddings;

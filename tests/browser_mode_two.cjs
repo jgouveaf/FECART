@@ -294,7 +294,7 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       await page.evaluate(() => { window.__test.strongIdentity = true; });
       await page.waitForTimeout(500);
       await page.evaluate(() => { window.__test.strongIdentity = false; window.__test.scoreOscillation = true; window.__test.writes = []; window.__test.events = []; });
-      await page.waitForFunction(() => window.quantumFaceDiagnostics?.decision === 'CONTINUITY_MATCH');
+      await page.waitForFunction(() => window.quantumFaceDiagnostics?.decision === 'SESSION_MATCH');
       await page.waitForTimeout(2100);
       const observed = await page.evaluate(() => ({ writes: window.__test.writes, events: window.__test.events,
         id: document.getElementById('currentFaceId').textContent }));
@@ -303,9 +303,26 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       assert.ok(!observed.writes.includes('CMD:PARAR'), JSON.stringify(observed.events));
       await page.evaluate(() => { window.__test.scoreOscillation = false; });
     });
-    await check('weak identity cannot keep the robot moving indefinitely', async () => {
+    await check('continuous live identity keeps sending forward beyond the old gallery timeout', async () => {
+      await page.evaluate(() => { window.__test.strongIdentity = true; });
       await page.waitForTimeout(400);
+      await page.evaluate(() => { window.__test.strongIdentity = false; window.__test.weakIdentity = true; window.__test.writes = []; window.__test.events = []; });
+      await page.waitForTimeout(5000);
+      const observed = await page.evaluate(() => ({ writes: window.__test.writes, events: window.__test.events,
+        recognition: window.quantumFaceRecognition }));
+      assert.equal(await page.locator('#currentFaceId').textContent(), 'QT-001');
+      assert.equal(observed.recognition.decision, 'SESSION_MATCH');
+      assert.ok(observed.recognition.sessionSimilarity >= .9);
+      assert.ok(observed.writes.filter(line => line === 'CMD:FRENTE').length >= 6);
+      assert.ok(!observed.writes.includes('CMD:PARAR'), JSON.stringify(observed.events));
+      await page.evaluate(() => { window.__test.weakIdentity = false; });
+    });
+    await check('weak gallery evidence without a matching live reference stops and cannot reacquire', async () => {
+      // Invalidate the session with a different descriptor at the same position.
+      await page.evaluate(() => { window.__test.embedding = 2; });
+      await page.waitForFunction(() => window.quantumFaceDiagnostics?.decision === 'BELOW_THRESHOLD');
       await page.evaluate(() => { window.__test.weakIdentity = true; window.__test.writes = []; });
+      await page.evaluate(() => { window.__test.embedding = 1; });
       await page.waitForFunction(() => window.__test.writes.includes('CMD:PARAR'));
       assert.notEqual(await page.locator('#currentFaceId').textContent(), 'QT-001');
       assert.equal(await page.locator('#currentFaceId').textContent(), 'NÃO CONFIRMADO');

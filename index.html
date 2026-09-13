@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#17324d">
-  <meta name="application-version" content="2.0.3">
+  <meta name="application-version" content="2.0.4">
   <meta name="description" content="Quantum Tracker — painel web e laboratório de simulação do projeto FECART.">
   <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
   <title>Quantum Tracker — Painel Web</title>
@@ -276,7 +276,7 @@
             <div class="face-metrics" aria-live="polite">
               <div><small>Confiança</small><strong id="faceConfidence">—</strong></div>
               <div><small>Qualidade</small><strong id="faceQuality">—</strong></div>
-              <div><small>Similaridade</small><strong id="faceSimilarity">—</strong></div>
+              <div><small id="faceSimilarityLabel">Cadastro salvo</small><strong id="faceSimilarity">—</strong></div>
               <div><small>Amostras</small><strong id="sampleProgress">0/5</strong></div>
               <div><small>Rastreamento</small><strong id="faceTrackingState">PROCURANDO</strong></div>
               <div><small>Direção pela visão</small><strong id="faceDirection">PARAR</strong></div>
@@ -546,13 +546,13 @@
   <script src="web/face-onnx-math.js?v=1" defer></script>
   <script src="web/face-identity-profiles.js?v=2" defer></script>
   <script src="web/face-mesh-overlay.js?v=1" defer></script>
-  <script src="web/face-identity-math.js?v=5" defer></script>
+  <script src="web/face-identity-math.js?v=6" defer></script>
   <script src="web/gesture-math.js?v=8" defer></script>
   <script src="web/gesture-calibration.js?v=1" defer></script>
   <script src="web/person-appearance.js?v=2" defer></script>
   <script src="web/person-follow-math.js?v=7" defer></script>
   <script src="web/person-follow.js?v=9" defer></script>
-  <script src="web/face-identities.js?v=24" defer></script>
+  <script src="web/face-identities.js?v=25" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>
 </html>

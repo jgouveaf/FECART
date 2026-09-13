@@ -443,13 +443,14 @@
       identity,
       scores: profiles.samples(identity, activeEngine).map((reference) => similarity(face.embedding, reference)),
     }));
+    const referenceSimilarity = recognitionReference ? similarity(face.embedding, recognitionReference) : NaN;
     const decision = tracking ? identityTracker.update({ candidates: compared, profile: engineProfile,
       box, capturedAt, now: performance.now(), single: true,
       confidence: Number(face.faceScore || face.boxScore || face.score || 0),
-      referenceSimilarity: recognitionReference ? similarity(face.embedding, recognitionReference) : NaN,
+      referenceSimilarity,
     }) : window.QuantumFaceIdentityMath.chooseIdentity(compared, engineProfile);
-    if (tracking && decision.reason === 'MATCH') recognitionReference = face.embedding.slice();
-    else if (!decision.accepted) recognitionReference = null;
+    if (tracking && decision.captureReference) recognitionReference = face.embedding.slice();
+    else if (!tracking || !identityTracker.track || identityTracker.track.referenceAt == null) recognitionReference = null;
     const bestIdentity = decision.identity;
     const bestSimilarity = decision.similarity;
     window.quantumFaceDiagnostics = {
@@ -460,6 +461,8 @@
       decision: decision.reason,
       threshold: engineProfile.threshold,
       engine: activeEngine,
+      sessionReady: tracking && identityTracker.track?.referenceAt != null,
+      sessionSimilarity: Number.isFinite(referenceSimilarity) ? referenceSimilarity : null,
       embeddingLength: face.embedding?.length || 0,
       selfSimilarity: similarity(face.embedding, face.embedding),
       compared: decision.ranked.map((candidate) => ({
@@ -471,7 +474,8 @@
     };
     if (decision.accepted && bestIdentity) {
       return { id: bestIdentity.id, name: bestIdentity.name, registered: true,
-        similarity: bestSimilarity, reason: decision.reason };
+        similarity: bestSimilarity, sessionSimilarity: window.quantumFaceDiagnostics.sessionSimilarity,
+        reason: decision.reason };
     }
     return { id: temporaryIdFor(box), name: "Não cadastrado", registered: false,
       similarity: bestSimilarity, reason: decision.reason };
@@ -535,6 +539,8 @@
     faceQuality.textContent = "—";
     faceQuality.className = "";
     faceSimilarity.textContent = "—";
+    const similarityLabel = document.getElementById('faceSimilarityLabel');
+    if (similarityLabel) similarityLabel.textContent = 'Cadastro salvo';
     resetChecks();
     if (!registering) setSampleProgress(0);
   }
@@ -561,9 +567,13 @@
     }
     const quality = item.quality;
     faceConfidence.textContent = `${Math.round(quality.confidence * 100)}%`;
-    faceQuality.textContent = quality.trackingOnly ? 'IDENTIFICAÇÃO' : quality.label;
+    const sessionMatch = item.identity.reason === 'SESSION_MATCH';
+    faceQuality.textContent = quality.trackingOnly ? sessionMatch ? 'ACOMPANHANDO' : 'IDENTIFICAÇÃO' : quality.label;
     faceQuality.className = quality.trackingOnly || quality.acceptable ? "good" : "bad";
-    faceSimilarity.textContent = item.identity.similarity ? `${Math.round(item.identity.similarity * 100)}%` : "—";
+    const similarityLabel = document.getElementById('faceSimilarityLabel');
+    if (similarityLabel) similarityLabel.textContent = sessionMatch ? 'Referência da sessão' : 'Cadastro salvo';
+    const displayedSimilarity = sessionMatch ? item.identity.sessionSimilarity : item.identity.similarity;
+    faceSimilarity.textContent = displayedSimilarity ? `${Math.round(displayedSimilarity * 100)}%` : "—";
     setCheck(checks.single, quality.validations.single);
     setCheck(checks.size, quality.validations.size);
     setCheck(checks.pose, quality.validations.pose);
@@ -576,7 +586,8 @@
           : 'Rosto visível, mas a identidade não conferiu nesta leitura. Mantenha o rosto nítido; a confirmação é automática.'
         : item.identity.registered
         ? `${item.identity.name} reconhecido(a). ${selectedTargetId === item.identity.id
-          ? 'Alvo do seguimento. Veja o estado do Modo 2 acima.' : 'Clique em Seguir no cadastro para iniciar o Modo 2.'}`
+          ? sessionMatch ? 'Rosto confirmado pela referência desta sessão. Veja o comando do carrinho acima.'
+            : 'Alvo do seguimento. Veja o estado do Modo 2 acima.' : 'Clique em Seguir no cadastro para iniciar o Modo 2.'}`
         : quality.acceptable
           ? `Rosto pronto. Digite o nome e capture ${REQUIRED_SAMPLES} amostras.`
           : quality.reason;
@@ -726,6 +737,8 @@
         decision: faces.length === 1 ? window.quantumFaceDiagnostics.decision : faces.length ? 'MULTIPLE_FACES' : 'NO_FACE',
         similarity: faces.length === 1 ? window.quantumFaceDiagnostics.bestSimilarity : null,
         margin: faces.length === 1 ? window.quantumFaceDiagnostics.margin ?? null : null,
+        sessionReady: faces.length === 1 && Boolean(window.quantumFaceDiagnostics.sessionReady),
+        sessionSimilarity: faces.length === 1 ? window.quantumFaceDiagnostics.sessionSimilarity ?? null : null,
         threshold: profiles.profile(activeEngine).threshold };
       // Keep the most recent measured mesh between its slower visual updates.
       // Clear it on a changed/lost face, a large jump, or visual expiry.

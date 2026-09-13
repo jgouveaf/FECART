@@ -72,13 +72,15 @@
     };
   }
 
-  // Hysteresis applies only to an already confirmed, continuously measured
-  // face. Weak matches never refresh the strict reference or its expiry.
+  // Acquire from the saved gallery, then verify against a live reference.
+  // Every continuation needs a fresh descriptor and continuous geometry; the
+  // reference changes only on a strict gallery match after acquisition, never
+  // from session matches. Its age alone is not evidence that the person changed.
   class FaceIdentityTracker {
     constructor() { this.reset(); }
     reset() { this.track = null; }
     update({ candidates, profile, box, capturedAt, now, single, confidence, referenceSimilarity }) {
-      const decision = chooseIdentity(candidates, profile);
+      const decision = { ...chooseIdentity(candidates, profile), captureReference: false };
       const previous = this.track;
       const valid = single && Number.isFinite(confidence) && confidence >= .58
         && box && [box.x, box.y, box.width, box.height].every(Number.isFinite)
@@ -95,20 +97,22 @@
         && capturedAt - previous.at <= 600 && iou >= .5;
       if (decision.accepted) {
         const same = continuous && previous.id === decision.identity.id;
+        const since = same ? previous.since : capturedAt;
+        const samples = same ? Math.min(2, previous.samples + 1) : 1;
+        const referenceAt = same ? previous.referenceAt : null;
+        const captureReference = samples >= 2 && capturedAt - since >= 120;
         this.track = { id: decision.identity.id, engine: profile.engine, box: { ...box }, at: capturedAt,
-          strictAt: capturedAt, since: same ? previous.since : capturedAt,
-          samples: same ? Math.min(2, previous.samples + 1) : 1 };
-        return decision;
+          since, samples, referenceAt: captureReference ? capturedAt : referenceAt };
+        return { ...decision, captureReference };
       }
       const best = decision.ranked[0];
-      const retain = continuous && previous.samples >= 2 && previous.strictAt - previous.since >= 120
-        && now - previous.strictAt <= 800 && decision.reason === 'BELOW_THRESHOLD'
+      const retain = continuous && previous.referenceAt != null && decision.reason === 'BELOW_THRESHOLD'
         && best?.identity.id === previous.id && best.referenceCount >= MIN_REFERENCE_SAMPLES
         && decision.margin >= profile.ambiguityMargin && decision.similarity >= profile.continuationThreshold
         && Number.isFinite(referenceSimilarity) && referenceSimilarity >= profile.referenceThreshold;
       if (retain) {
         this.track = { ...previous, box: { ...box }, at: capturedAt };
-        return { ...decision, accepted: true, identity: best.identity, reason: 'CONTINUITY_MATCH' };
+        return { ...decision, accepted: true, identity: best.identity, reason: 'SESSION_MATCH' };
       }
       this.reset();
       return decision;

@@ -480,9 +480,21 @@
     return snapshot.toDataURL("image/jpeg", 0.8);
   }
 
+  let lastMeshDrawnAt = -Infinity;
   function drawFaces(faces) {
     window.QuantumFaceMesh.draw(context, faces.map(item => item.face), human?.faceTriangulation, canvas.width, canvas.height);
+    if (faces.some(item => item.face.mesh?.length)) lastMeshDrawnAt = performance.now();
   }
+
+  faceInference.onMesh = ({ id, faces }) => {
+    if (!cameraActive || activeView !== 'face' || lastResult?.frameId !== id || !Array.isArray(faces)) return;
+    const { scaleX, scaleY } = lastResult.processing;
+    currentFaces.forEach((item, index) => {
+      item.face.mesh = faces[index]?.mesh?.map(p => [p[0] * scaleX, p[1] * scaleY, (p[2] || 0) * scaleX]);
+    });
+    // A late visual update never refreshes identity evidence or motor commands.
+    drawFaces(currentFaces);
+  };
 
   // Face identification supplies evidence, never motor commands. Mode 2 owns that decision.
   function publishPersonTracking(faces, _force = false, failed = false) {
@@ -662,12 +674,14 @@
         return;
       }
       lastResult = result;
+      lastResult.processing = processing;
       consecutiveInferenceErrors = 0;
       nextDetectionDelayMs = DETECTION_DELAY_MS;
       if (retryDetectionButton) retryDetectionButton.hidden = true;
       const detectedAt = performance.now();
       window.quantumFacePerformance = { processingMs: Math.round(detectedAt - capturedAt),
-        backend: result.backend || 'local', engine: activeEngine, profile: processing.tracking ? 'tracking' : 'enrollment' };
+        backend: result.backend || 'local', engine: activeEngine, profile: processing.tracking ? 'tracking' : 'enrollment',
+        stages: result.performance || null };
       if (result.face.length !== 1) qualityStabilizer.reset();
       const faces = result.face.map((rawFace) => {
         const face = window.QuantumFaceProcessing.restore(rawFace, processing.scaleX, processing.scaleY);
@@ -680,7 +694,13 @@
           capturedAt,
         };
       });
-      drawFaces(faces);
+      // Keep the most recent measured mesh between its slower visual updates.
+      // Clear it on a changed/lost face, a large jump, or visual expiry.
+      const previousFace = currentFaces.length === 1 ? currentFaces[0] : null;
+      const keepMesh = processing.config.identityFirst && activeEngine === profiles.ONNX && faces.length === 1
+        && previousFace?.identity.id === faces[0].identity.id && performance.now() - lastMeshDrawnAt <= 600
+        && window.QuantumFaceONNXMath.overlap(previousFace.face.box, faces[0].face.box) >= .5;
+      if (!keepMesh) drawFaces(faces);
       updatePanel(faces);
       publishPersonTracking(faces);
       control?.patch("vision", { active: true, status: "ONLINE" }, { source: "face-loop" });

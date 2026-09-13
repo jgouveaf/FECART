@@ -54,6 +54,7 @@
       this.strongBodyAt = null;
       this.identifiedAt = null;
       this.lastSampleAt = -Infinity;
+      this.lastFaceSampleAt = -Infinity;
       this.confirmedFrames = 0;
       this.confirmedSince = null;
       this.confirmedFaceSamples = 0;
@@ -105,33 +106,38 @@
       const info = { box: null, faceBox: track.box, trackingSource: 'face',
         confidence: track.confidence, center: track.center, capturedAt: track.at,
         identityAgeMs: now - track.at, appearanceReady: false, dropout: true };
-      if (safety.requireSensor && (!Number.isFinite(safety.distance) || safety.distance <= 0
-        || !Number.isFinite(safety.sensorAgeMs) || safety.sensorAgeMs < 0 || safety.sensorAgeMs > 700)) {
-        return this.stop("SENSOR_WAIT", info);
-      }
-      if (safety.requireSensor) this.holdDistance = this.holdDistance ? safety.distance < 40 : safety.distance <= 30;
-      else this.holdDistance = false;
-      this.holdFaceSize = this.holdFaceSize ? track.box.height > .34 : track.box.height >= .40;
-      if (this.holdDistance || this.holdFaceSize) return this.stop("KEEP_DISTANCE", { ...info, visible: true });
+      const blocked = this.proximityStop(info, track.box.height, safety, true);
+      if (blocked) return blocked;
       return { ...info, steering: this.steering, visible: true, command: this.command,
         state: 'FACE_TRACKING', id: this.id, prediction: null };
     }
-    update({ people = [], faces = [], now, capturedAt, cameraMoving = false,
+    update({ people = [], faces = [], now, capturedAt, cameraMoving = false, source = 'body',
       requireSensor = false, distance = null, sensorAgeMs = Infinity }) {
       if (!this.id) return this.stop("SELECT_TARGET");
+      // The two workers finish independently. A fresh face must not invalidate
+      // an earlier body capture that finishes next, or vice versa.
+      const sampleKey = source === 'face' ? 'lastFaceSampleAt' : 'lastSampleAt';
       if (!Number.isFinite(now) || !Number.isFinite(capturedAt) || capturedAt > now
-        || now - capturedAt > MAX_FRAME_AGE_MS || capturedAt <= this.lastSampleAt) return this.missing(now, "STALE_FRAME", true);
-      this.lastSampleAt = capturedAt;
+        || now - capturedAt > MAX_FRAME_AGE_MS || capturedAt <= this[sampleKey]) return this.missing(now, "STALE_FRAME", true);
+      this[sampleKey] = capturedAt;
+      // Expiry of a cached result is not a new observation of an empty scene.
+      // Stop until fresh evidence arrives, retaining only the trajectory needed
+      // to compare its real capture time. A capture gap still reacquires below.
+      if (people.length === 0 && faces.length === 1 && faces[0].registered && faces[0].id === this.id
+        && Number.isFinite(faces[0].capturedAt) && now - faces[0].capturedAt > MAX_FRAME_AGE_MS) {
+        return this.stop('STALE_FRAME', { capturedAt: faces[0].capturedAt, trackingSource: 'face' });
+      }
       const observedBodies = people.filter(p => validBox(p.box) && Number.isFinite(p.confidence) && p.confidence >= 0.50);
       const observedFaces = faces.filter(f => validBox(f.box) && Number.isFinite(f.confidence) && f.confidence >= 0.58
         && Number.isFinite(f.capturedAt) && now - f.capturedAt >= 0 && now - f.capturedAt <= 800
-        && Math.abs(capturedAt - f.capturedAt) <= 500 && f.capturedAt > this.reidentifyAfter);
+        && (people.length === 0 || Math.abs(capturedAt - f.capturedAt) <= 500) && f.capturedAt > this.reidentifyAfter);
       const freshFaces = observedFaces.filter(f => f.registered);
       const targets = freshFaces.filter(f => f.id === this.id);
       if (targets.length > 1) return this.invalidate(now, "AMBIGUOUS");
       // Keep direct facial evidence separate from body history. A face box must
       // never become a body track that can continue after the face disappears.
-      const directFace = targets.length === 1 && observedFaces.length === 1 ? targets[0] : null;
+      const directFace = targets.length === 1 && observedFaces.length === 1
+        && now - targets[0].capturedAt <= MAX_FRAME_AGE_MS ? targets[0] : null;
       if (directFace && now - directFace.capturedAt <= MAX_FRAME_AGE_MS) {
         const previous = this.faceTrack;
         if (!previous || directFace.capturedAt < previous.at || directFace.capturedAt - previous.at > MAX_FRAME_AGE_MS
@@ -256,16 +262,25 @@
       return this.decideMotion(info, chosen.box.height, { requireSensor, distance, sensorAgeMs },
         targets.length ? 'FOLLOWING' : appearanceTracking ? 'APPEARANCE_TRACKING' : 'BODY_TRACKING');
     }
-    decideMotion(info, height, { requireSensor, distance, sensorAgeMs }, state) {
+    proximityStop(info, height, { requireSensor, distance, sensorAgeMs }, faceOnly) {
       if (requireSensor && (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(sensorAgeMs) || sensorAgeMs < 0 || sensorAgeMs > 700)) {
         return this.stop("SENSOR_WAIT", info);
       }
       if (requireSensor) this.holdDistance = this.holdDistance ? distance < 40 : distance <= 30;
       else this.holdDistance = false;
-      const faceOnly = state === 'FACE_TRACKING';
-      if (faceOnly) this.holdFaceSize = this.holdFaceSize ? height > .34 : height >= .40;
+      // Image coverage depends on camera framing and is not calibrated in cm.
+      // Physical control requires a current sensor reading; visual proximity
+      // remains a preview fallback only, never a substitute for a failed sensor.
+      if (requireSensor) { this.holdFaceSize = false; this.holdSize = false; }
+      else if (faceOnly) this.holdFaceSize = this.holdFaceSize ? height > .34 : height >= .40;
       else this.holdSize = this.holdSize ? height > .65 : height >= .75;
-      if (this.holdDistance || (faceOnly ? this.holdFaceSize : this.holdSize)) return this.stop("KEEP_DISTANCE", { ...info, visible: true });
+      if (this.holdDistance) return this.stop("KEEP_DISTANCE", { ...info, visible: true, reason: 'SENSOR_DISTANCE', distance });
+      if (faceOnly ? this.holdFaceSize : this.holdSize) return this.stop("KEEP_DISTANCE", { ...info, visible: true, reason: 'VISUAL_DISTANCE' });
+      return null;
+    }
+    decideMotion(info, height, safety, state) {
+      const blocked = this.proximityStop(info, height, safety, state === 'FACE_TRACKING');
+      if (blocked) return blocked;
       const previous = this.steering;
       if (info.center < (previous === "ESQUERDA" ? 0.46 : 0.40)) this.steering = "ESQUERDA";
       else if (info.center > (previous === "DIREITA" ? 0.54 : 0.60)) this.steering = "DIREITA";

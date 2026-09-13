@@ -5,6 +5,7 @@ const { plan, restore } = require('../web/face-processing.js');
 test('tracking caps input while keeping registration models out of the follow loop', () => {
   const p = plan({ width: 1280, height: 720, modeTwo: true, enrolling: false });
   assert.equal(p.config.filter.width, 640); assert.equal(p.config.filter.height, 360);
+  assert.equal(p.config.identityFirst, true);
   for (const key of ['iris', 'antispoof', 'liveness']) assert.equal(p.config.face[key].enabled, false);
   assert.equal(p.config.face.detector.return, false);
   assert.equal(p.config.face.detector.minSize * p.scaleX, 70);
@@ -13,6 +14,7 @@ test('enrollment restores full resolution without re-enabling presence classifie
   for (const flags of [{ modeTwo: true, enrolling: true }, { modeTwo: false, enrolling: false }]) {
     const p = plan({ width: 1280, height: 720, ...flags });
     assert.equal(p.config.filter.width, 1280); assert.equal(p.config.filter.height, 720);
+    assert.equal(p.config.identityFirst, false);
     for (const key of ['iris', 'antispoof', 'liveness']) assert.equal(p.config.face[key].enabled, false);
   }
 });

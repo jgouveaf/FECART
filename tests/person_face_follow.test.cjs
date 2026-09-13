@@ -48,6 +48,32 @@ test('cached face expires after 600 ms despite fresh body-worker frames', () => 
   assert.equal(step(1700, { now: 1800, faces: [face(1200)] }).command, 'FRENTE');
   assert.equal(step(1701, { now: 1801, faces: [face(1200)] }).command, 'PARAR');
 });
+
+test('direct face evidence does not need synchronization with an empty body result', () => {
+  const { step } = running();
+  assert.equal(step(1750, { now: 1790, faces: [face(1200)] }).command, 'FRENTE');
+});
+
+test('delayed identity results resume without a perpetual stop and reacquisition loop', () => {
+  const { step } = running();
+  // A 400 ms inference is still running when its previous observation expires.
+  assert.equal(step(1780, { now: 1850, faces: [face(1200)] }).command, 'PARAR');
+  const recovered = step(1890, { now: 1920, faces: [face(1600)] });
+  assert.equal(recovered.command, 'FRENTE', 'The new, fresh observation keeps the verified trajectory');
+  assert.equal(step(2200, { now: 2250, faces: [face(1600)] }).command, 'PARAR');
+  assert.equal(step(2300, { now: 2320, faces: [face(2000)] }).command, 'FRENTE');
+  assert.equal(step(3100, { now: 3150, faces: [face(2800)] }).command, 'PARAR', 'A true capture gap needs reacquisition');
+});
+
+test('independent face and body completion order does not invalidate fresh evidence', () => {
+  const { step } = rig();
+  step(1000, { source: 'face', now: 1150 });
+  assert.equal(step(1200, { source: 'face', now: 1350 }).command, 'FRENTE');
+  assert.equal(step(1150, { now: 1360, faces: [face(1200)] }).command, 'FRENTE');
+  assert.equal(step(1400, { now: 1430, faces: [face(1200)] }).command, 'FRENTE');
+  assert.equal(step(1350, { source: 'face', now: 1500 }).command, 'FRENTE');
+  assert.equal(step(1600, { now: 2010, faces: [face(1350)] }).command, 'PARAR');
+});
 test('one isolated face dropout keeps the current face command briefly', () => {
   const { step } = running();
   const r = step(1400, { faces: [] });
@@ -96,6 +122,34 @@ test('a large face stops with separate size hysteresis', () => {
   sample(1000, .4); assert.equal(sample(1200, .4).state, 'KEEP_DISTANCE');
   assert.equal(sample(1400, .36).command, 'PARAR');
   assert.equal(sample(1600, .33).command, 'FRENTE');
+});
+
+test('camera framing does not override a fresh clear physical distance', () => {
+  for (const people of [[], [{ ...body, box: { ...body.box, height: .88 } }]]) {
+    const { step } = rig();
+    const sample = (t, safety = {}) => step(t, { people, faces: [face(t, .5, 'QT-001', .45)],
+      requireSensor: true, distance: 100, sensorAgeMs: 0, ...safety });
+    assert.equal(sample(1000).command, 'PARAR', 'Acquisition still needs two observations');
+    for (let t = 1200; t <= 3000; t += 200) assert.equal(sample(t).command, 'FRENTE');
+    assert.equal(sample(3200, { distance: 25 }).command, 'PARAR');
+    assert.equal(sample(3400, { distance: 39 }).command, 'PARAR');
+    assert.equal(sample(3600, { distance: 40 }).command, 'FRENTE');
+    assert.equal(sample(3800, { sensorAgeMs: 701 }).state, 'SENSOR_WAIT');
+    assert.equal(sample(4000, { distance: null }).state, 'SENSOR_WAIT');
+    assert.equal(sample(4200).command, 'FRENTE');
+    assert.equal(sample(4400, { requireSensor: false }).state, 'KEEP_DISTANCE', 'Local preview retains visual proximity');
+    assert.equal(sample(4600).command, 'FRENTE', 'A previous visual stop cannot latch physical control');
+  }
+});
+
+test('large-face dropout uses the same distance rule and still expires', () => {
+  const { step } = rig();
+  const sample = (t, changes = {}) => step(t, { faces: [face(t, .5, 'QT-001', .45)],
+    requireSensor: true, distance: 100, sensorAgeMs: 0, ...changes });
+  sample(1000); assert.equal(sample(1200).command, 'FRENTE');
+  assert.equal(sample(1400, { faces: [] }).command, 'FRENTE');
+  assert.equal(sample(1500, { faces: [], distance: 25 }).command, 'PARAR');
+  assert.equal(sample(1800, { faces: [] }).command, 'PARAR');
 });
 test('weak or conflicting bodies do not bypass the existing stop rules through the face path', () => {
   for (const people of [[{ ...body, confidence: .49 }], [body, { ...body }]]) {

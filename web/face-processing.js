@@ -6,7 +6,7 @@
     const inputWidth = Math.max(1, Math.round(width * scale));
     const inputHeight = Math.max(1, Math.round(height * scale));
     return { tracking, scaleX: width / inputWidth, scaleY: height / inputHeight,
-      config: { filter: { width: inputWidth, height: inputHeight, return: false },
+      config: { identityFirst: tracking, filter: { width: inputWidth, height: inputHeight, return: false },
         face: { detector: { return: false, minSize: 70 * scale },
           iris: { enabled: false }, antispoof: { enabled: false }, liveness: { enabled: false } } } };
   }

@@ -10,12 +10,21 @@
     async initialize(config) {
       if (this.ready) return;
       this.close();
-      const path = config.identityEngine === 'scrfd-sface-2021dec-v1' ? 'web/face-onnx.worker.js?v=1' : 'web/face-detector.worker.js?v=1';
+      const path = config.identityEngine === 'scrfd-sface-2021dec-v1' ? 'web/face-onnx.worker.js?v=2' : 'web/face-detector.worker.js?v=1';
       const worker = this.worker = new Worker(new URL(path, document.baseURI));
       worker.onmessage = ({ data }) => {
-        if (worker !== this.worker || data.id !== this.pending?.id) return;
+        if (worker !== this.worker) return;
+        if (data.type === 'mesh') {
+          if (data.id === this.completedFrameId) this.onMesh?.(data);
+          return;
+        }
+        if (data.id !== this.pending?.id) return;
         const task = this.pending; this.pending = null; clearTimeout(task.timer);
-        if (data.error) task.reject(new Error(data.error)); else task.resolve(data.result || data);
+        if (data.error) task.reject(new Error(data.error));
+        else {
+          if (data.result) { this.completedFrameId = data.id; data.result.frameId = data.id; }
+          task.resolve(data.result || data);
+        }
       };
       worker.onerror = error => { if (worker === this.worker) this.close(new Error(error.message || 'Falha no detector facial.')); };
       worker.onmessageerror = () => { if (worker === this.worker) this.close(new Error('Resposta facial inválida.')); };
@@ -45,6 +54,7 @@
     }
     close(error = new Error('Detector facial encerrado.')) {
       this.worker?.terminate(); this.worker = null; this.ready = false;
+      this.completedFrameId = null;
       if (this.pending) { clearTimeout(this.pending.timer); this.pending.reject(error); this.pending = null; }
     }
   }

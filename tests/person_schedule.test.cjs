@@ -50,7 +50,8 @@ function rig(latency = 120, selected = true) {
     }
     now = until;
   }
-  return { advance, starts, max: () => maxInFlight, stop: () => listeners['quantum:camera-stopped'](), context };
+  return { advance, starts, max: () => maxInFlight, stop: () => listeners['quantum:camera-stopped'](), context,
+    observe: faces => listeners['quantum:face-observations']({ detail: { selectedId: 'QT-001', faces } }) };
 }
 test('slow body inference resumes at completion without waiting for polling', async () => {
   const r = rig(120); await r.advance(1700);
@@ -64,6 +65,25 @@ test('camera without a selected target does not spend CPU on body inference', as
 test('fast body inference retains a 100 ms minimum start interval', async () => {
   const r = rig(25); await r.advance(1350);
   assert.deepEqual(r.starts, [1000, 1100, 1200, 1300]); assert.equal(r.max(), 1);
+});
+test('fresh target faces reduce body CPU work, with fast cadence restored on loss', async () => {
+  const r = rig(25);
+  r.observe([{ id: 'QT-001', registered: true, capturedAt: 1000, confidence: .9,
+    box: { x: .44, y: .15, width: .12, height: .16 } }]);
+  await r.advance(1500); assert.deepEqual(r.starts, [1000, 1200, 1400]);
+  r.observe([]); await r.advance(1850);
+  assert.deepEqual(r.starts, [1000, 1200, 1400, 1600, 1700, 1800]);
+  assert.equal(r.max(), 1);
+});
+test('fresh identity can command between body frames, but never after camera stop', async () => {
+  const r = rig(25), face = capturedAt => [{ id: 'QT-001', registered: true, capturedAt, confidence: .9,
+    box: { x: .44, y: .15, width: .12, height: .16 } }];
+  r.observe(face(1000)); await r.advance(1130);
+  assert.deepEqual(r.starts, [1000], 'The next body frame has not started');
+  r.observe(face(1130));
+  assert.equal(r.context.window.quantumPersonFollower.snapshot.command, 'FRENTE');
+  r.stop(); await r.advance(1250); r.observe(face(1250));
+  assert.equal(r.context.window.quantumPersonFollower.snapshot.command, 'PARAR');
 });
 test('a late worker reply after camera stop cannot schedule another image', async () => {
   const r = rig(120); await r.advance(1050); r.stop(); await r.advance(1600);

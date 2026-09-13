@@ -30,7 +30,7 @@
         outputFaceBlendshapes:false,outputFacialTransformationMatrixes:false,
       });
     }
-    async detect(bitmap) {
+    async detect(bitmap, onIdentity = null) {
       const started=performance.now(), {width,height}=bitmap;
       if (!this.surface || this.surface.width!==width || this.surface.height!==height) this.surface=new OffscreenCanvas(width,height);
       const ctx=this.surface.getContext('2d',{willReadFrequently:true}); ctx.drawImage(bitmap,0,0);
@@ -45,6 +45,7 @@
       let faces;
       try { faces=QuantumFaceONNXMath.decode(this.detector.outputNames.map(name=>output[name]),width,height,scale); }
       finally { tensor.dispose(); Object.values(output).forEach(t=>t.dispose()); }
+      const detected=performance.now();
       // Keep detections of additional people, but bound expensive descriptions.
       for (const face of faces.slice(0,3)) {
         const aligned=QuantumFaceONNXMath.alignedRGB(pixels,face.keypoints);
@@ -58,7 +59,14 @@
           pitch:0,roll:Math.atan2(right[1]-left[1],right[0]-left[0])}};
         face.engine=QuantumFaceONNXMath.ENGINE;
       }
-      if (faces.length) {
+      const recognized=performance.now();
+      const meshDue=!onIdentity || this.lastMeshAt == null || recognized-this.lastMeshAt >= 450;
+      // Identity is control evidence; the mesh is display work. Let tracking
+      // consume the measured identity before spending time drawing landmarks.
+      onIdentity?.({face:faces,gesture:[],engine:QuantumFaceONNXMath.ENGINE,backend:'onnx-wasm',
+        performance:{total:recognized-started,detectionMs:detected-started,recognitionMs:recognized-detected}});
+      if (faces.length && meshDue) {
+        this.lastMeshAt=recognized;
         const meshes=this.mesh.detect(bitmap).faceLandmarks.map(points=>{
           const mesh=points.map(p=>[p.x*width,p.y*height,p.z*width]);
           const xs=mesh.map(p=>p[0]),ys=mesh.map(p=>p[1]),x=Math.min(...xs),y=Math.min(...ys);
@@ -70,7 +78,8 @@
           if (best?.iou>.25) face.mesh=best.mesh;
         }
       }
-      return {face:faces,gesture:[],engine:QuantumFaceONNXMath.ENGINE,backend:'onnx-wasm',performance:{total:performance.now()-started}};
+      return {face:faces,gesture:[],meshUpdated:meshDue,engine:QuantumFaceONNXMath.ENGINE,backend:'onnx-wasm',performance:{total:performance.now()-started,
+        detectionMs:detected-started,recognitionMs:recognized-detected,meshMs:performance.now()-recognized}};
     }
   }
   self.QuantumFaceONNXEngine=FaceONNXEngine;

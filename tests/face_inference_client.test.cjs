@@ -62,3 +62,21 @@ test('model errors reject the frame instead of inventing observations', async ()
   r.workers[0].reply({ error: 'modelo falhou' }); await assert.rejects(pending, /modelo falhou/);
   assert.equal(r.timers.size, 0); assert.equal(r.client.capturing, false);
 });
+
+test('identity resolves before optional mesh; old mesh cannot finish another request', async () => {
+  const r = rig(); await r.ready(); const meshes = []; r.client.onMesh = data => meshes.push(data.id);
+  const first = r.client.detect({}, cfg); await new Promise(setImmediate);
+  const worker = r.workers[0], firstId = worker.messages.at(-1).id;
+  worker.reply({ type: 'result', result: { face: [{ embedding: [1] }] } });
+  assert.equal((await first).frameId, firstId);
+  const second = r.client.detect({}, cfg); await new Promise(setImmediate);
+  const secondId = worker.messages.at(-1).id;
+  worker.onmessage({ data: { id: firstId, type: 'mesh', faces: [] } });
+  assert.equal(r.client.pending.id, secondId);
+  assert.deepEqual(meshes, [firstId]);
+  worker.reply({ type: 'result', result: { face: [] } }); await second;
+  worker.onmessage({ data: { id: firstId, type: 'mesh', faces: [] } });
+  assert.deepEqual(meshes, [firstId], 'Old geometry cannot overwrite the new frame');
+  r.client.close(); worker.onmessage({ data: { id: secondId, type: 'mesh', faces: [] } });
+  assert.deepEqual(meshes, [firstId], 'Closed camera/model cannot receive a visual update');
+});

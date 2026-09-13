@@ -12,6 +12,8 @@
     AMBIGUOUS: "Pessoas sobrepostas · confirme o rosto", REIDENTIFY: "Mostre o rosto para confirmar o alvo",
     TARGET_LOST: "Alvo perdido · parado", PREDICTED_STOP: "Posição estimada · robô parado",
     KEEP_DISTANCE: "Distância de parada atingida", SENSOR_WAIT: "Aguardando leitura atual do sensor",
+    SENSOR_DISTANCE: "Sensor detectou obstáculo · retoma com pelo menos 40 cm livres",
+    VISUAL_DISTANCE: "Pessoa muito próxima na imagem · prévia sem Arduino",
     STALE_FRAME: "Imagem atrasada ou congelada · parado", LOADING: "Carregando detector de pessoas",
     LOW_BODY_CONFIDENCE: "Detecção do corpo incerta · parado",
     OFFLINE: "Ative o Modo 2 e a câmera", ERROR: "Detector indisponível · parado", PAUSED: "Seguimento pausado",
@@ -26,6 +28,10 @@
   const enabled = () => modeTwo() && cameraActive && activeView === "face" && !paused && !document.hidden && Boolean(follower.id);
   const movingCamera = () => ["DIREITA", "ESQUERDA", "GIRAR"].includes(control?.state.robot.command)
     || control?.state.robot.firmwareState === "DESVIANDO";
+  // Give facial identification CPU time while it sees the selected target.
+  // Body-only continuation keeps the faster cadence; freshness limits stay fixed.
+  const frameInterval = () => faces.some(f => f.id === follower.id && f.registered
+    && performance.now() - f.capturedAt >= 0 && performance.now() - f.capturedAt <= 600) ? 200 : 100;
 
   function updateCount(now = performance.now()) {
     const viewing = cameraActive && activeView === 'face' && !document.hidden;
@@ -52,8 +58,12 @@
     const freshTargetFace = faces.some(f => f.id === follower.id && f.registered
       && now - f.capturedAt >= 0 && now - f.capturedAt <= 800);
     const framingNeeded = freshTargetFace && ['REIDENTIFY', 'TARGET_LOST'].includes(reason);
+    const statusLabel = result.state === 'KEEP_DISTANCE' ? labels[reason] || labels[result.state] : labels[result.state];
     $("personFollowStatus").textContent = framingNeeded
-      ? 'Rosto identificado; mantenha o alvo visível e separado de outras pessoas.' : labels[result.state] || result.state;
+      ? 'Rosto identificado; mantenha o alvo visível e separado de outras pessoas.' : statusLabel || result.state;
+    if (reason === 'SENSOR_DISTANCE' && Number.isFinite(result.distance)) {
+      $("personFollowStatus").textContent += ` · leitura: ${Math.round(result.distance)} cm`;
+    }
     if (result.state === 'FOLLOWING') $("personFollowStatus").textContent += result.appearanceReady
       ? ' · continuidade visual pronta' : ' · preparando continuidade visual';
     updateCount(now);
@@ -63,7 +73,7 @@
       : Number.isFinite(result.center)
         ? `${result.center < .4 ? 'À esquerda' : result.center > .6 ? 'À direita' : 'No centro'} · ${Math.round(result.center * 100)}% da largura`
         : 'Aguardando alvo';
-    $("faceTrackingState").textContent = labels[result.state] || result.state;
+    $("faceTrackingState").textContent = statusLabel || result.state;
     $("faceDirection").textContent = result.command;
     if ($('personFrameAge')) $('personFrameAge').textContent = diagnostics.frameAgeMs == null ? '—' : `${diagnostics.frameAgeMs} ms`;
     if ($('personFrameInterval')) $('personFrameInterval').textContent = diagnostics.frameIntervalMs == null ? '—' : `${diagnostics.frameIntervalMs} ms`;
@@ -130,7 +140,7 @@
       if (token !== generation || !enabled()) { bitmap.close(); return; }
       worker.postMessage({ type: "frame", id, capturedAt, bitmap }, [bitmap]);
     } catch (error) { if (token === generation) fail(error.message); }
-    finally { if (token === generation && enabled()) schedule = setTimeout(() => frame(token), 100); }
+    finally { if (token === generation && enabled()) schedule = setTimeout(() => frame(token), frameInterval()); }
   }
   function start() {
     if (!enabled() || worker) return;
@@ -161,9 +171,9 @@
         publish(result, data.people);
         if (token !== generation || !enabled()) return;
         // Resume from completion instead of waiting for the next polling tick.
-        // At most one frame is in flight, and starts remain at least 100 ms apart.
+        // At most one frame is in flight, respecting the current CPU budget.
         clearTimeout(schedule);
-        schedule = setTimeout(() => frame(token), Math.max(0, 100 - (performance.now() - data.capturedAt)));
+        schedule = setTimeout(() => frame(token), Math.max(0, frameInterval() - (performance.now() - data.capturedAt)));
       };
       worker.postMessage({ type: "init" });
     } catch (error) { fail(error.message); }
@@ -192,6 +202,18 @@
     }
     if (detail.failed) { faces = []; follower.reset(); stopped("ERROR"); }
     if (enrolling) { follower.reset(); stopped("ENROLLING"); }
+    // Consume identity as soon as it arrives, without waiting another body
+    // inference cycle. An empty, current body result is required: never discard
+    // known competing/uncertain bodies or bypass a failed/stalled detector.
+    const now = performance.now(), capturedAt = Math.max(...faces.map(f => f.capturedAt));
+    if (!detail.failed && !enrolling && enabled() && ready && observedPeople.length === 0
+      && lastFrameAt > 0 && now - lastFrameAt >= 0 && now - lastFrameAt <= 600
+      && Number.isFinite(capturedAt) && capturedAt <= now && now - capturedAt <= 600
+      && capturedAt > follower.lastFaceSampleAt) {
+      publish(follower.update({ source: 'face', people: [], faces, now, capturedAt,
+        cameraMoving: movingCamera(), requireSensor: Boolean(control.state.robot.connected),
+        distance, sensorAgeMs: now - sensorAt }));
+    }
   });
   window.addEventListener("quantum:camera-started", () => { cameraActive = true; start(); });
   window.addEventListener("quantum:camera-stopped", () => { cameraActive = false; faces = []; stop(); });

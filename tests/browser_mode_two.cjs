@@ -20,7 +20,7 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
         async detect(video, config = {}) {
           if (window.__test.failFace) throw new Error("injected face failure");
           const t = window.__test, w = config.filter?.width || video.videoWidth, h = config.filter?.height || video.videoHeight;
-          const size = 160 * w / video.videoWidth;
+          const size = (t.faceSize || 160) * w / video.videoWidth;
           const embedding = Array(1024).fill(t.embedding); embedding[1023] += ++t.frames / 1000;
           const faces = t.face ? [{ box: [t.x * w - size / 2, .13 * h, size, size],
             faceScore: .99, real: .99, live: .99, embedding,
@@ -44,7 +44,7 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
             for (let i = 0; i < 24 * 48; i++) rgba.set([...(i < 24 * 24 ? (t.outfit ? [30, 220, 30] : [220, 30, 30]) : [30, 50, 170]), 255], i * 4);
             const clothing = window.QuantumPersonAppearance.describe(rgba, 24, 48);
             const confidence = t.confidenceOscillation && data.capturedAt % 500 < 300 ? .53 : .92;
-            const people = t.people ? [{ confidence, box: { x: t.x - .18, y: .1, width: .36, height: .6 }, appearance: t.appearance ? clothing : null }] : [];
+            const people = t.people ? [{ confidence, box: { x: t.x - .18, y: .1, width: .36, height: t.bodyHeight || .6 }, appearance: t.appearance ? clothing : null }] : [];
             if (t.rival) people.push({ confidence: .92, box: { x: .75, y: .1, width: .24, height: .6 }, appearance: clothing });
             if (data.type === "frame" && t.failWorker) { this.onmessage?.({ data: { type: "error", message: "injected worker error" } }); return; }
             this.onmessage?.({ data: data.type === "init" ? { type: "ready" } : {
@@ -157,6 +157,42 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
     await page.locator("#emergencyStop").click();
     await page.waitForFunction(() => window.__test.writes.includes("CMD:FRENTE"));
     await check("Mode 2 decision reaches existing Web Serial controller", async () => assert.ok(await page.evaluate(() => window.__test.writes.includes("MODE:2"))));
+    await check('a tall person in the camera sends forward over USB when the physical path is clear', async () => {
+      await page.evaluate(() => { window.__test.bodyHeight = .88; window.__test.distance = 100; });
+      await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.box?.height === .88
+        && window.quantumPersonFollower.snapshot.command === 'FRENTE');
+      await page.evaluate(() => { window.__test.events = []; window.__test.writes = []; });
+      await page.waitForTimeout(1200);
+      const observed = await page.evaluate(() => ({ events: window.__test.events, writes: window.__test.writes }));
+      assert.ok(observed.events.length >= 4);
+      assert.ok(observed.events.every(event => event.command === 'FRENTE'));
+      assert.ok(observed.writes.includes('CMD:FRENTE'));
+      assert.ok(!observed.writes.includes('CMD:PARAR'));
+    });
+    await check('a large face with zero bodies follows over USB and still stops for a measured obstacle', async () => {
+      await page.evaluate(() => { window.__test.people = false;
+        window.__test.faceSize = document.getElementById('cameraVideo').videoHeight * .45; });
+      await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.faceBox?.height >= .4
+        && window.quantumPersonFollower.snapshot.command === 'FRENTE');
+      await page.evaluate(() => { window.__test.writes = []; });
+      await page.waitForFunction(() => window.__test.writes.includes('CMD:FRENTE'));
+      await page.evaluate(() => { window.__test.distance = 25; window.__test.writes = []; });
+      await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.reason === 'SENSOR_DISTANCE'
+        && window.__test.writes.includes('CMD:PARAR'));
+      assert.match(await page.locator('#personFollowStatus').textContent(), /Sensor.*25 cm/);
+      await page.evaluate(() => { window.__test.distance = 39; window.__test.writes = []; });
+      await page.waitForTimeout(600);
+      assert.equal((await snap()).command, 'PARAR');
+      assert.ok(!await page.evaluate(() => window.__test.writes.includes('CMD:FRENTE')));
+      await page.evaluate(() => { window.__test.distance = 40; window.__test.writes = []; });
+      await page.waitForFunction(() => window.__test.writes.includes('CMD:FRENTE'));
+      await page.evaluate(() => { window.__test.distance = -1; window.__test.writes = []; });
+      await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === 'SENSOR_WAIT'
+        && window.__test.writes.includes('CMD:PARAR'));
+      await page.evaluate(() => { window.__test.people = true; window.__test.faceSize = 160;
+        window.__test.bodyHeight = .6; window.__test.distance = 60; });
+      await waitCommand('FRENTE');
+    });
     await check('confidence oscillation preserves movement over simulated USB', async () => {
       await waitCommand('FRENTE');
       await page.evaluate(() => { window.__test.events = []; window.__test.writes = []; window.__test.confidenceOscillation = true; });
@@ -242,7 +278,12 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
     await waitCommand("PARAR");
     await page.waitForFunction(() => window.__test.writes.includes("CMD:PARAR"));
     await check("lost person produces estimate but only STOP", async () => {
-      assert.ok(await page.evaluate(() => window.__test.events.some(e => e.prediction && e.command === "PARAR" && !e.visible)));
+      // A current face may briefly outlast the last body result. If that
+      // happens, its bounded dropout can expire after the prediction window.
+      // Estimates are optional; they must never authorize motor commands.
+      const events = await page.evaluate(() => window.__test.events);
+      assert.ok(events.some(e => e.command === 'PARAR' && !e.visible));
+      assert.ok(events.filter(e => e.prediction).every(e => e.command === 'PARAR' && !e.visible));
       await page.waitForTimeout(700); assert.equal((await snap()).prediction, null);
     });
     await page.evaluate(() => { window.__test.people = true; window.__test.face = true; }); await waitCommand("FRENTE");

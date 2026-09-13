@@ -76,6 +76,7 @@
   let lineWaiters = new Set();
   let splitBrainHandling = false;
   let programRunning = false;
+  let telemetryQueryPending = false, lastTelemetryQueryAt = -Infinity;
 
   function delay(milliseconds) {
     return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -1178,6 +1179,19 @@
   });
   stopMotorTestButton?.addEventListener("click", stopPhysicalTest);
 
+  async function requestTelemetry() {
+    if (!connected || !transportOpen || closing || modeTransitioning || programRunning || activeMode !== 2
+      || telemetryQueryPending || performance.now() - lastTelemetryQueryAt < 500) return false;
+    telemetryQueryPending = true;
+    lastTelemetryQueryAt = performance.now();
+    try {
+      // Query only. Neither an ACK nor a successful write refreshes distance.
+      return await enqueueLine('STATUS', { connectionToken: connectionGeneration,
+        operationToken: operationGeneration, modeToken: modeGeneration, maxAgeMs: 500 });
+    } catch { return false; }
+    finally { telemetryQueryPending = false; }
+  }
+
   const publicApi = {
     connect: connectRobot,
     runProgram,
@@ -1186,6 +1200,7 @@
       ? disconnectForFirmware()
       : closePort({ sendEstop: activeMode !== 1, reason: "API" }),
     requestMode,
+    requestTelemetry,
     emergencyStop: toggleEmergency,
     send(command) { return acceptIntent(String(command || "").toUpperCase(), "api", { fresh: true }); },
     get connected() { return connected; },

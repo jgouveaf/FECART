@@ -78,7 +78,7 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
             this.writable = new WritableStream({ write(bytes) {
               const line = new TextDecoder().decode(bytes).trim(); window.__test.writes.push(line);
               if (line === "HELLO") send("QT:READY:V7");
-              else if (line === "STATUS") telemetry();
+              else if (line === "STATUS") { if (!window.__test.ignoreStatus) telemetry(); }
               else {
                 if (line.startsWith("MODE:")) mode = Number(line.split(":")[1]);
                 if (line === "ESTOP") { emergency = true; command = "PARAR"; }
@@ -87,7 +87,7 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
                 send(`OK:${line}`);
               }
             } });
-            timer = setInterval(telemetry, 200);
+            timer = setInterval(() => { if (!window.__test.pauseTelemetry) telemetry(); }, 200);
           }, async close() { clearInterval(timer); },
         };
       };
@@ -264,6 +264,32 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       assert.equal(await page.locator('#personCount').textContent(), '1');
       await page.locator('.person-follow-panel').screenshot({ path: 'tests/artifacts/mode-two-face-follow.png' });
     });
+    await check('delayed periodic telemetry requests a fresh distance without a stop loop', async () => {
+      await page.evaluate(() => { window.__test.pauseTelemetry = true; window.__test.writes = []; });
+      await page.waitForTimeout(2200);
+      const writes = await page.evaluate(() => window.__test.writes);
+      assert.ok(writes.filter(line => line === 'STATUS').length >= 2);
+      assert.ok(writes.includes('CMD:FRENTE'));
+      assert.ok(!writes.includes('CMD:PARAR'), JSON.stringify(writes));
+    });
+    await check('old numeric distance cannot authorize motion or hide visual tracking', async () => {
+      const target = await page.locator('#personTarget').textContent();
+      await page.evaluate(() => { window.__test.ignoreStatus = true; window.__test.writes = []; });
+      await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.state === 'SENSOR_WAIT');
+      await page.waitForFunction(() => window.__test.writes.includes('CMD:PARAR'));
+      assert.equal((await snap()).visualCommand, 'FRENTE');
+      assert.equal(await page.locator('#personVisualCommand').textContent(), 'FRENTE');
+      assert.match(await page.locator('#personMotionCommand').textContent(), /PARAR/);
+      assert.match(await page.locator('#personSensorReading').textContent(), /atrasada/);
+      assert.equal(await page.locator('#personTarget').textContent(), target);
+      await page.evaluate(() => { window.__test.writes = []; });
+      await page.waitForTimeout(800);
+      assert.ok(!(await page.evaluate(() => window.__test.writes)).includes('CMD:FRENTE'));
+      await page.locator('.person-follow-panel').screenshot({ path: 'tests/artifacts/mode-two-sensor-wait.png' });
+      await page.evaluate(() => { window.__test.pauseTelemetry = false; window.__test.ignoreStatus = false; });
+      await waitCommand('FRENTE');
+      assert.equal(await page.locator('#personTarget').textContent(), target);
+    });
     await check('brief score oscillation preserves a confirmed face and forward USB requests', async () => {
       await page.evaluate(() => { window.__test.strongIdentity = true; });
       await page.waitForTimeout(500);
@@ -282,6 +308,9 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       await page.evaluate(() => { window.__test.weakIdentity = true; window.__test.writes = []; });
       await page.waitForFunction(() => window.__test.writes.includes('CMD:PARAR'));
       assert.notEqual(await page.locator('#currentFaceId').textContent(), 'QT-001');
+      assert.equal(await page.locator('#currentFaceId').textContent(), 'NÃO CONFIRMADO');
+      assert.match(await page.locator('#personTarget').textContent(), /QT-001/);
+      assert.match(await page.locator('#faceHint').textContent(), /alvo escolhido permanece Pessoa de teste/);
       assert.match(await page.locator('#faceTrackingState').textContent(), /Confirmando a identidade/);
       assert.match(await page.locator('#faceHint').textContent(), /identidade não conferiu/);
       await page.evaluate(() => { window.__test.writes = []; });

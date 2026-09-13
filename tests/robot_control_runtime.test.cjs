@@ -126,7 +126,7 @@ class FakePort {
     }
     if (line.startsWith("MODE:")) return `OK:${line}`;
     if (line.startsWith("CMD:")) return `OK:${line}`;
-    if (line === "STATUS") return "QT|MODE:1|DIST:50.0|CMD:PARAR|STATE:AUTONOMO";
+    if (line === "STATUS") return this.options.statusLine || "QT|MODE:1|DIST:50.0|CMD:PARAR|STATE:AUTONOMO";
     return null;
   }
 }
@@ -848,6 +848,28 @@ async function main() {
       assert.equal(environment.elements.robotStateStatus.textContent, "AUTONOMO");
       assert.equal(environment.control.state.safety.emergency, false);
       await cleanup(environment);
+    },
+    async function testTelemetryQueriesAreReadOnlyAndBounded() {
+      const e = createEnvironment({ statusLine: 'QT|MODE:2|DIST:60|CMD:PARAR|STATE:ESTOP' });
+      try {
+        assert.equal(await e.robot.requestTelemetry(), false);
+        await e.robot.connect();
+        assert.equal(await e.robot.requestTelemetry(), false, 'Mode 1 is unchanged');
+        await e.robot.requestMode(2, 'test');
+        await waitFor(() => e.robot.mode === 2);
+        const before = e.port.writes.length;
+        const results = await Promise.all(Array.from({ length: 20 }, () => e.robot.requestTelemetry()));
+        assert.equal(results.filter(Boolean).length, 1);
+        assert.deepEqual(e.port.writes.slice(before), ['STATUS']);
+        assert.equal(e.control.state.safety.emergency, true, 'A query never releases ESTOP');
+        assert.equal(e.robot._test.lastFreshInputAt, 0, 'A query is not visual evidence');
+        await waitFor(() => e.control.state.robot.distance === 60);
+        assert.equal(await e.robot.requestTelemetry(), false, 'Rate limit also applies after completion');
+        await e.robot.requestMode(3, 'test');
+        await waitFor(() => e.robot.mode === 3);
+        assert.equal(await e.robot.requestTelemetry(), false, 'Mode 3 is unchanged');
+      } finally { await cleanup(e); }
+      assert.equal(await e.robot.requestTelemetry(), false);
     },
     testRobotStatusKeepsTechnicalStateAndReadableLabel,
     testHandshakeAndAcknowledgements,

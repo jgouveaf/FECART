@@ -12,6 +12,24 @@ function rig(x = .5) {
 }
 function running(x = .5) { const r = rig(x); r.step(1000); r.step(1200); return r; }
 
+test('sensor waiting preserves the visual decision but blocks the motor command', () => {
+  for (const [x, expected] of [[.25, 'ESQUERDA'], [.5, 'FRENTE'], [.75, 'DIREITA']]) {
+    const { f, step } = rig(x);
+    step(1000, { requireSensor: true });
+    const blocked = step(1200, { requireSensor: true, distance: 60, sensorAgeMs: 701 });
+    assert.equal(blocked.state, 'SENSOR_WAIT');
+    assert.equal(blocked.trackingState, 'FACE_TRACKING');
+    assert.equal(blocked.visualCommand, expected);
+    assert.equal(blocked.command, 'PARAR');
+    assert.equal(blocked.visible, false);
+    assert.equal(f.command, 'PARAR');
+    const recovered = step(1400, { requireSensor: true, distance: 60, sensorAgeMs: 0 });
+    assert.equal(recovered.command, expected);
+    assert.equal(recovered.id, 'QT-001');
+    assert.equal(step(1600, { faces: [], requireSensor: true, distance: 60, sensorAgeMs: 701 }).command, 'PARAR');
+  }
+});
+
 for (const [x, command] of [[.25, 'ESQUERDA'], [.5, 'FRENTE'], [.75, 'DIREITA']]) {
   test(`selected visible face at ${x} drives ${command} without a body`, () => {
     const { f, step } = rig(x);

@@ -105,7 +105,8 @@
       const track = this.faceTrack;
       const info = { box: null, faceBox: track.box, trackingSource: 'face',
         confidence: track.confidence, center: track.center, capturedAt: track.at,
-        identityAgeMs: now - track.at, appearanceReady: false, dropout: true };
+        identityAgeMs: now - track.at, appearanceReady: false, dropout: true,
+        trackingState: 'FACE_TRACKING', visualCommand: this.command };
       const blocked = this.proximityStop(info, track.box.height, safety, true);
       if (blocked) return blocked;
       return { ...info, steering: this.steering, visible: true, command: this.command,
@@ -264,7 +265,7 @@
     }
     proximityStop(info, height, { requireSensor, distance, sensorAgeMs }, faceOnly) {
       if (requireSensor && (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(sensorAgeMs) || sensorAgeMs < 0 || sensorAgeMs > 700)) {
-        return this.stop("SENSOR_WAIT", info);
+        return this.stop("SENSOR_WAIT", { ...info, distance, sensorAgeMs });
       }
       if (requireSensor) this.holdDistance = this.holdDistance ? distance < 40 : distance <= 30;
       else this.holdDistance = false;
@@ -279,8 +280,6 @@
       return null;
     }
     decideMotion(info, height, safety, state) {
-      const blocked = this.proximityStop(info, height, safety, state === 'FACE_TRACKING');
-      if (blocked) return blocked;
       const previous = this.steering;
       if (info.center < (previous === "ESQUERDA" ? 0.46 : 0.40)) this.steering = "ESQUERDA";
       else if (info.center > (previous === "DIREITA" ? 0.54 : 0.60)) this.steering = "DIREITA";
@@ -297,7 +296,12 @@
         const phase = Math.max(0, info.capturedAt - this.turnCycleAt) % 800;
         this.command = offset >= .35 || phase < turnMs ? this.steering : 'FRENTE';
       }
-      return { ...info, steering: this.steering, visible: true, command: this.command, state,
+      // Preserve what current vision calculated, then apply motor protection.
+      // Only command/visible authorize delivery; visualCommand is diagnostic.
+      const visual = { ...info, trackingState: state, visualCommand: this.command };
+      const blocked = this.proximityStop(visual, height, safety, state === 'FACE_TRACKING');
+      if (blocked) return blocked;
+      return { ...visual, steering: this.steering, visible: true, command: this.command, state,
         id: this.id, prediction: null };
     }
   }

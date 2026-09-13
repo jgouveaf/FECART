@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#17324d">
-  <meta name="application-version" content="2.0.2">
+  <meta name="application-version" content="2.0.3">
   <meta name="description" content="Quantum Tracker — painel web e laboratório de simulação do projeto FECART.">
   <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
   <title>Quantum Tracker — Painel Web</title>
@@ -227,7 +227,7 @@
           <section class="person-follow-panel" aria-labelledby="personFollowTitle">
             <span class="section-tag">Modo 2 · câmera na frente do carrinho</span>
             <h3 id="personFollowTitle">Seguir uma pessoa cadastrada</h3>
-            <p>Clique em <strong>Seguir</strong> no cadastro para escolher o alvo. No centro, o robô avança; fora do centro, intercala curvas curtas com avanço. O rosto pode orientar sozinho, e o corpo ajuda quando a pessoa vira.</p>
+            <p>Clique em <strong>Seguir</strong> no cadastro para fixar o alvo. No centro, a visão pede avanço; fora do centro, pede curvas curtas. Compare a direção da visão com o comando para o carrinho: o sensor e a parada de emergência controlam a liberação dos motores.</p>
             <div class="person-follow-actions">
               <a class="secondary-button" href="#registeredPeople">Escolher pessoa cadastrada</a>
               <button class="primary-button" id="preparePersonFollow" type="button">Preparar Modo 2 e câmera</button>
@@ -239,6 +239,9 @@
               <div><dt>Pessoas na imagem</dt><dd id="personCount">—</dd></div>
               <div><dt>Alvo escolhido</dt><dd id="personTarget">Nenhum · clique em Seguir no cadastro</dd></div>
               <div><dt>Posição do alvo</dt><dd id="personPrediction">Aguardando alvo</dd></div>
+              <div><dt>Direção calculada pela visão</dt><dd id="personVisualCommand">PARAR</dd></div>
+              <div><dt>Comando para o carrinho</dt><dd id="personMotionCommand">Sem envio</dd></div>
+              <div><dt>Leitura do sensor e idade</dt><dd id="personSensorReading">Arduino desconectado</dd></div>
             </dl>
             <p id="personFollowDelivery">Somente o Modo 2 recebe estas decisões.</p>
             <details class="person-follow-diagnostics">
@@ -252,7 +255,7 @@
               <button class="secondary-button" id="downloadPersonDiagnostics" type="button">Baixar diagnóstico</button>
               <p class="privacy-note">Guarda os últimos 60 estados desta sessão, sem imagens, nomes ou cadastros faciais.</p>
             </details>
-            <p class="privacy-note">Mostre rosto, tronco e pernas e aguarde “continuidade visual pronta” antes de virar de costas. Acompanha enquanto corpo e roupa permanecem visíveis e compatíveis. Roupas parecidas, mudança de aparência, perda do alvo ou imagem atrasada pedem parada e nova confirmação facial. Sem uma aparência utilizável, mantém o limite de 3 segundos sem rosto. A previsão de até 0,5 segundo nunca autoriza movimento às cegas. No Modo 2 conectado, para com obstáculo a 30 cm e só libera a partir de 40 cm. Ainda requer teste físico com a câmera montada.</p>
+            <p class="privacy-note">O alvo só muda quando você escolhe outro cadastro. Depois da identificação, o corpo e a roupa podem manter o acompanhamento quando o rosto sai de vista. Perda da associação, pessoas confundíveis ou imagem atrasada fazem o carrinho parar. A leitura do sensor libera os motores; ela não escolhe a pessoa.</p>
           </section>
           <div class="identity-register-card">
             <div class="identity-heading">
@@ -265,7 +268,7 @@
             <div class="current-face">
               <div class="face-preview" id="facePreview"><span>◎</span><img id="facePreviewImage" alt="Rosto pronto para cadastro"></div>
               <div>
-                <small>Rosto selecionado</small>
+                <small>Leitura facial atual · não altera o alvo escolhido</small>
                 <strong id="currentFaceId">NENHUM</strong>
                 <span id="faceHint">Inicie a câmera e fique de frente, sozinho, para cadastrar.</span>
               </div>
@@ -276,12 +279,12 @@
               <div><small>Similaridade</small><strong id="faceSimilarity">—</strong></div>
               <div><small>Amostras</small><strong id="sampleProgress">0/5</strong></div>
               <div><small>Rastreamento</small><strong id="faceTrackingState">PROCURANDO</strong></div>
-              <div><small>Direção</small><strong id="faceDirection">PARAR</strong></div>
+              <div><small>Direção pela visão</small><strong id="faceDirection">PARAR</strong></div>
             </div>
             <div class="sample-progress" aria-hidden="true"><span id="sampleProgressBar"></span></div>
             <div class="face-validation" aria-label="Validações do rosto">
               <span id="checkSingle">Um rosto</span>
-              <span id="checkSize">Distância</span>
+              <span id="checkSize">Tamanho do rosto</span>
               <span id="checkPose">De frente</span>
             </div>
             <p class="privacy-note">Digite o nome, olhe de frente e clique em cadastrar. Não é necessário piscar nem fazer movimentos de confirmação.</p>
@@ -536,7 +539,7 @@
   <script src="web/app.js?v=19" defer></script>
   <script type="module" src="web/arduino-flasher.js?v=9"></script>
   <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
-  <script src="web/robot-control.js?v=20" defer></script>
+  <script src="web/robot-control.js?v=21" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/face-processing.js?v=3" defer></script>
   <script src="web/face-inference-client.js?v=3" defer></script>
@@ -547,9 +550,9 @@
   <script src="web/gesture-math.js?v=8" defer></script>
   <script src="web/gesture-calibration.js?v=1" defer></script>
   <script src="web/person-appearance.js?v=2" defer></script>
-  <script src="web/person-follow-math.js?v=6" defer></script>
-  <script src="web/person-follow.js?v=8" defer></script>
-  <script src="web/face-identities.js?v=23" defer></script>
+  <script src="web/person-follow-math.js?v=7" defer></script>
+  <script src="web/person-follow.js?v=9" defer></script>
+  <script src="web/face-identities.js?v=24" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>
 </html>

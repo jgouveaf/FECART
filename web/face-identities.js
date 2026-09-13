@@ -542,6 +542,7 @@
   function updatePanel(faces) {
     currentFaces = faces;
     const item = faces.length === 1 ? faces[0] : null;
+    const selected = identities.find(identity => identity.id === selectedTargetId);
     const existing = identityByName(personName.value);
     const identityConflict = item?.identity.registered && item.identity.id !== existing?.id;
     registerButton.disabled = !(item && !identityConflict && item.quality.acceptable
@@ -551,8 +552,10 @@
     if (!item) {
       resetMetrics();
       setCheck(checks.single, faces.length === 1);
-      currentFaceId.textContent = faces.length ? `${faces.length} ROSTOS` : "NENHUM";
-      faceHint.textContent = faces.length ? "Para cadastrar, deixe apenas uma pessoa na imagem." : "Nenhum rosto detectado. Olhe de frente para a câmera.";
+      currentFaceId.textContent = faces.length ? `${faces.length} ROSTOS` : selected ? 'ROSTO FORA DE VISTA' : 'NENHUM';
+      faceHint.textContent = faces.length ? 'Para cadastrar, deixe apenas uma pessoa na imagem.'
+        : selected ? `O alvo escolhido continua sendo ${selected.name}. Nenhum rosto detectado nesta leitura.`
+          : 'Nenhum rosto detectado. Olhe de frente para a câmera.';
       facePreview.classList.remove("has-image");
       return;
     }
@@ -564,7 +567,8 @@
     setCheck(checks.single, quality.validations.single);
     setCheck(checks.size, quality.validations.size);
     setCheck(checks.pose, quality.validations.pose);
-    currentFaceId.textContent = registering ? "CAPTURANDO" : item.identity.id;
+    currentFaceId.textContent = registering ? 'CAPTURANDO'
+      : selectedTargetId && !item.identity.registered ? 'NÃO CONFIRMADO' : item.identity.id;
     if (!registering) {
       faceHint.textContent = selectedTargetId && !item.identity.registered
         ? item.identity.reason === 'AMBIGUOUS'
@@ -576,6 +580,9 @@
         : quality.acceptable
           ? `Rosto pronto. Digite o nome e capture ${REQUIRED_SAMPLES} amostras.`
           : quality.reason;
+      if (selectedTargetId && item.identity.id !== selectedTargetId) {
+        faceHint.textContent += ` O alvo escolhido permanece ${selected?.name || selectedTargetId}.`;
+      }
     }
     if (performance.now() - lastPreviewAt > 900) {
       facePreviewImage.src = captureFace(item.face);

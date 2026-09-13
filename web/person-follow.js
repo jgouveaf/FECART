@@ -40,13 +40,24 @@
       ? String(window.QuantumPersonFollowMath.visiblePeople(bodies, faces, now)) : '—';
   }
 
+  function updateSensor(now = performance.now()) {
+    const element = $('personSensorReading');
+    if (!element) return;
+    const age = Math.max(0, Math.round(now - sensorAt));
+    element.textContent = !control.state.robot.connected ? 'Arduino desconectado'
+      : !sensorAt ? 'Ainda sem telemetria'
+        : !Number.isFinite(distance) || distance <= 0 ? `Sem leitura válida · ${age} ms`
+          : `${distance.toFixed(1)} cm · ${age > 700 ? 'leitura atrasada · ' : ''}${age} ms`;
+  }
+
   function publish(result, people = []) {
     const now = performance.now();
     const changed = !lastOutput || lastOutput.state !== result.state || lastOutput.command !== result.command;
     const reason = result.reason || result.state;
     if (changed) {
       diagnostics.transitions.push({ atMs: Math.round(now), state: result.state, reason,
-        command: result.command, frameAgeMs: lastFrameAt ? Math.round(now - lastFrameAt) : null,
+        command: result.command, visualCommand: result.visualCommand || 'PARAR',
+        frameAgeMs: lastFrameAt ? Math.round(now - lastFrameAt) : null,
         bodyConfidence: Number.isFinite(result.confidence) ? result.confidence : null,
         sensorCm: distance, sensorAgeMs: sensorAt ? Math.round(now - sensorAt) : null,
         recognition: window.quantumFaceRecognition || null });
@@ -72,14 +83,19 @@
     if (result.state === 'FOLLOWING') $("personFollowStatus").textContent += result.appearanceReady
       ? ' · continuidade visual pronta' : ' · preparando continuidade visual';
     updateCount(now);
+    updateSensor(now);
     $("personTarget").textContent = follower.id ? `${selectedName || follower.id} · ${follower.id}` : "Nenhum · clique em Seguir no cadastro";
     $("personPrediction").textContent = result.prediction
       ? `${Math.round(result.prediction.x * 100)}% da largura · estimativa de ${Math.round(result.prediction.ageMs)} ms`
       : Number.isFinite(result.center)
         ? `${result.center < .4 ? 'À esquerda' : result.center > .6 ? 'À direita' : 'No centro'} · ${Math.round(result.center * 100)}% da largura`
         : 'Aguardando alvo';
-    $("faceTrackingState").textContent = identityPending ? 'Confirmando a identidade do rosto visível' : statusLabel || result.state;
-    $("faceDirection").textContent = result.command;
+    $("faceTrackingState").textContent = identityPending ? 'Confirmando a identidade do rosto visível'
+      : labels[result.trackingState] || statusLabel || result.state;
+    $("faceDirection").textContent = result.visualCommand || 'PARAR';
+    if ($('personVisualCommand')) $('personVisualCommand').textContent = result.visualCommand || 'PARAR';
+    if ($('personMotionCommand')) $('personMotionCommand').textContent = !control.state.robot.connected ? 'Sem envio'
+      : control.state.safety.emergency ? 'PARAR · emergência' : result.command;
     if ($('personFrameAge')) $('personFrameAge').textContent = diagnostics.frameAgeMs == null ? '—' : `${diagnostics.frameAgeMs} ms`;
     if ($('personFrameInterval')) $('personFrameInterval').textContent = diagnostics.frameIntervalMs == null ? '—' : `${diagnostics.frameIntervalMs} ms`;
     if ($('personLastStop')) $('personLastStop').textContent = diagnostics.lastStop?.label || 'Nenhuma parada registrada';
@@ -185,8 +201,14 @@
   }
   const watchdog = setInterval(() => {
     updateCount();
+    updateSensor();
     if (!enabled() || !worker || enrolling) return;
     const now = performance.now();
+    // Ask for a new sample before the existing 700 ms expiry. No response
+    // means STOP; a cached number or a command ACK never renews the sensor.
+    if (control.state.robot.connected && (!sensorAt || now - sensorAt >= 400)) {
+      window.quantumRobot?.requestTelemetry?.();
+    }
     if (pending && now - pending.capturedAt > (ready ? 5000 : 30000)) { fail("Tempo de processamento esgotado"); return; }
     if (ready && (!lastFrameAt || now - lastFrameAt > 600)) {
       // Stop the expired command, but let the next observed frame decide if the
@@ -236,7 +258,10 @@
   document.addEventListener("visibilitychange", () => { if (document.hidden) stop("PAUSED"); else start(); });
   window.addEventListener("pagehide", () => { stop(); clearInterval(watchdog); });
   control?.subscribe?.(({ section, current, meta }) => {
-    if (section === "robot" && meta?.source === "arduino-telemetry") { distance = current.robot.distance; sensorAt = performance.now(); }
+    if (section === 'robot') {
+      if (meta?.source === 'arduino-telemetry') { distance = current.robot.distance; sensorAt = performance.now(); }
+      else if (!current.robot.connected) { distance = null; sensorAt = 0; }
+    }
   });
   async function prepare() {
     paused = false;

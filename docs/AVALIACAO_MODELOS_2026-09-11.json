@@ -1,0 +1,572 @@
+{
+  "fixtures": 20,
+  "commonLatencyCases": [
+    "A-covered.png",
+    "A-dim.png",
+    "A-reference.png",
+    "A-repeat.png",
+    "A-rotate10.png",
+    "A-small.png",
+    "B-dim.png",
+    "B-reference.png",
+    "B-repeat.png",
+    "B-rotate10.png"
+  ],
+  "limitations": "Three source identities; query variants reuse each original photo. No accuracy estimate, back-facing continuity or physical robot test.",
+  "sourceHashes": {
+    "humanWarmup": "502ce26abcf6c6d418722b2eeb5a0ff9f0b7b104fa937ceab0a415ed19f0a5c8",
+    "ultralyticsZidane": "16d73869e3267a7d4ed00de8e860833bd1657c1b252e94c0c348277adc7b6edb"
+  },
+  "results": [
+    {
+      "engine": "human-worker",
+      "version": "3.3.6",
+      "initMs": 1332.5,
+      "warmupMs": 282.69999998807907,
+      "commonSingleFaceMedianMs": 277.35,
+      "detectedSingleFaceCases": 11,
+      "singleFaceCases": 18,
+      "correctQueries": 8,
+      "wrongIdentityQueries": 0,
+      "queries": 15,
+      "referenceIdentities": [
+        "A",
+        "B"
+      ],
+      "emptySceneFaces": 0,
+      "multipleSceneFaces": 2,
+      "rows": [
+        {
+          "file": "A-reference.png",
+          "condition": "reference",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 276.70000000298023,
+          "predicted": "A"
+        },
+        {
+          "file": "A-repeat.png",
+          "condition": "repeat",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 281.5,
+          "predicted": "A"
+        },
+        {
+          "file": "A-dim.png",
+          "condition": "dim",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 323.1000000089407,
+          "predicted": "A"
+        },
+        {
+          "file": "A-rotate10.png",
+          "condition": "rotate10",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 314.20000000298023,
+          "predicted": "A"
+        },
+        {
+          "file": "A-small.png",
+          "condition": "small",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 261.30000001192093,
+          "predicted": "A"
+        },
+        {
+          "file": "A-covered.png",
+          "condition": "covered",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 275.79999999701977,
+          "predicted": null
+        },
+        {
+          "file": "B-reference.png",
+          "condition": "reference",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 256.09999999403954,
+          "predicted": "B"
+        },
+        {
+          "file": "B-repeat.png",
+          "condition": "repeat",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 253.40000000596046,
+          "predicted": "B"
+        },
+        {
+          "file": "B-dim.png",
+          "condition": "dim",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 334.09999999403954,
+          "predicted": "B"
+        },
+        {
+          "file": "B-rotate10.png",
+          "condition": "rotate10",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 278,
+          "predicted": "B"
+        },
+        {
+          "file": "B-small.png",
+          "condition": "small",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 105.59999999403954,
+          "predicted": null
+        },
+        {
+          "file": "B-covered.png",
+          "condition": "covered",
+          "faces": 1,
+          "embeddingLength": 1024,
+          "ms": 283.20000000298023,
+          "predicted": "B"
+        },
+        {
+          "file": "C-reference.png",
+          "condition": "reference",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 132.80000001192093,
+          "predicted": null
+        },
+        {
+          "file": "C-repeat.png",
+          "condition": "repeat",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 123.90000000596046,
+          "predicted": null
+        },
+        {
+          "file": "C-dim.png",
+          "condition": "dim",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 178.59999999403954,
+          "predicted": null
+        },
+        {
+          "file": "C-rotate10.png",
+          "condition": "rotate10",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 118.70000000298023,
+          "predicted": null
+        },
+        {
+          "file": "C-small.png",
+          "condition": "small",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 91.09999999403954,
+          "predicted": null
+        },
+        {
+          "file": "C-covered.png",
+          "condition": "covered",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 113.20000000298023,
+          "predicted": null
+        },
+        {
+          "file": "empty.png",
+          "condition": "empty",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 131.79999999701977,
+          "predicted": null
+        },
+        {
+          "file": "multiple.png",
+          "condition": "multiple",
+          "faces": 2,
+          "embeddingLength": 1024,
+          "ms": 448.5,
+          "predicted": null
+        }
+      ]
+    },
+    {
+      "engine": "deepface-yunet",
+      "version": "0.0.99",
+      "initMs": 26440.36,
+      "warmupMs": 123.52,
+      "commonSingleFaceMedianMs": 66.7,
+      "detectedSingleFaceCases": 11,
+      "singleFaceCases": 18,
+      "correctQueries": 9,
+      "wrongIdentityQueries": 0,
+      "queries": 15,
+      "referenceIdentities": [
+        "A",
+        "B"
+      ],
+      "emptySceneFaces": 0,
+      "multipleSceneFaces": 2,
+      "rows": [
+        {
+          "file": "A-reference.png",
+          "condition": "reference",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 66.8,
+          "predicted": "A"
+        },
+        {
+          "file": "A-repeat.png",
+          "condition": "repeat",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 65.84,
+          "predicted": "A"
+        },
+        {
+          "file": "A-dim.png",
+          "condition": "dim",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 66.6,
+          "predicted": "A"
+        },
+        {
+          "file": "A-rotate10.png",
+          "condition": "rotate10",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 61.12,
+          "predicted": "A"
+        },
+        {
+          "file": "A-small.png",
+          "condition": "small",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 59.4,
+          "predicted": "A"
+        },
+        {
+          "file": "A-covered.png",
+          "condition": "covered",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 69.91,
+          "predicted": "A"
+        },
+        {
+          "file": "B-reference.png",
+          "condition": "reference",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 63.68,
+          "predicted": "B"
+        },
+        {
+          "file": "B-repeat.png",
+          "condition": "repeat",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 71.61,
+          "predicted": "B"
+        },
+        {
+          "file": "B-dim.png",
+          "condition": "dim",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 79.79,
+          "predicted": "B"
+        },
+        {
+          "file": "B-rotate10.png",
+          "condition": "rotate10",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 69.56,
+          "predicted": "B"
+        },
+        {
+          "file": "B-small.png",
+          "condition": "small",
+          "faces": 1,
+          "embeddingLength": 128,
+          "ms": 63.0,
+          "predicted": "B"
+        },
+        {
+          "file": "B-covered.png",
+          "condition": "covered",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 24.31,
+          "predicted": null
+        },
+        {
+          "file": "C-reference.png",
+          "condition": "reference",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 26.71,
+          "predicted": null
+        },
+        {
+          "file": "C-repeat.png",
+          "condition": "repeat",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 28.8,
+          "predicted": null
+        },
+        {
+          "file": "C-dim.png",
+          "condition": "dim",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 29.26,
+          "predicted": null
+        },
+        {
+          "file": "C-rotate10.png",
+          "condition": "rotate10",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 26.15,
+          "predicted": null
+        },
+        {
+          "file": "C-small.png",
+          "condition": "small",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 28.92,
+          "predicted": null
+        },
+        {
+          "file": "C-covered.png",
+          "condition": "covered",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 32.6,
+          "predicted": null
+        },
+        {
+          "file": "empty.png",
+          "condition": "empty",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 25.68,
+          "predicted": null
+        },
+        {
+          "file": "multiple.png",
+          "condition": "multiple",
+          "faces": 2,
+          "embeddingLength": 128,
+          "ms": 101.3,
+          "predicted": null
+        }
+      ]
+    },
+    {
+      "engine": "insightface",
+      "version": "1.0.1",
+      "initMs": 6081.72,
+      "warmupMs": 3968.51,
+      "commonSingleFaceMedianMs": 226.77,
+      "detectedSingleFaceCases": 17,
+      "singleFaceCases": 18,
+      "correctQueries": 14,
+      "wrongIdentityQueries": 0,
+      "queries": 15,
+      "referenceIdentities": [
+        "A",
+        "B",
+        "C"
+      ],
+      "emptySceneFaces": 0,
+      "multipleSceneFaces": 2,
+      "rows": [
+        {
+          "file": "A-reference.png",
+          "condition": "reference",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 203.22,
+          "predicted": "A"
+        },
+        {
+          "file": "A-repeat.png",
+          "condition": "repeat",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 194.08,
+          "predicted": "A"
+        },
+        {
+          "file": "A-dim.png",
+          "condition": "dim",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 214.79,
+          "predicted": "A"
+        },
+        {
+          "file": "A-rotate10.png",
+          "condition": "rotate10",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 238.46,
+          "predicted": "A"
+        },
+        {
+          "file": "A-small.png",
+          "condition": "small",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 192.24,
+          "predicted": "A"
+        },
+        {
+          "file": "A-covered.png",
+          "condition": "covered",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 222.63,
+          "predicted": "A"
+        },
+        {
+          "file": "B-reference.png",
+          "condition": "reference",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 374.12,
+          "predicted": "B"
+        },
+        {
+          "file": "B-repeat.png",
+          "condition": "repeat",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 255.32,
+          "predicted": "B"
+        },
+        {
+          "file": "B-dim.png",
+          "condition": "dim",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 284.95,
+          "predicted": "B"
+        },
+        {
+          "file": "B-rotate10.png",
+          "condition": "rotate10",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 230.92,
+          "predicted": "B"
+        },
+        {
+          "file": "B-small.png",
+          "condition": "small",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 212.48,
+          "predicted": "B"
+        },
+        {
+          "file": "B-covered.png",
+          "condition": "covered",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 222.76,
+          "predicted": "B"
+        },
+        {
+          "file": "C-reference.png",
+          "condition": "reference",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 203.68,
+          "predicted": "C"
+        },
+        {
+          "file": "C-repeat.png",
+          "condition": "repeat",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 212.34,
+          "predicted": "C"
+        },
+        {
+          "file": "C-dim.png",
+          "condition": "dim",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 202.85,
+          "predicted": "C"
+        },
+        {
+          "file": "C-rotate10.png",
+          "condition": "rotate10",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 249.38,
+          "predicted": "C"
+        },
+        {
+          "file": "C-small.png",
+          "condition": "small",
+          "faces": 1,
+          "embeddingLength": 512,
+          "ms": 202.86,
+          "predicted": "C"
+        },
+        {
+          "file": "C-covered.png",
+          "condition": "covered",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 59.8,
+          "predicted": null
+        },
+        {
+          "file": "empty.png",
+          "condition": "empty",
+          "faces": 0,
+          "embeddingLength": 0,
+          "ms": 55.7,
+          "predicted": null
+        },
+        {
+          "file": "multiple.png",
+          "condition": "multiple",
+          "faces": 2,
+          "embeddingLength": 512,
+          "ms": 363.49,
+          "predicted": null
+        }
+      ]
+    }
+  ],
+  "date": "2026-09-11",
+  "applicationCommit": "1d7515fbb085cb165386447995b2809e21b3fe46",
+  "machine": "Windows; Intel Core i5-10300H; 4 cores / 8 logical processors",
+  "runtimeNotes": {
+    "human-worker": "Human 3.3.6; Chromium 151.0.7922.34; WASM worker; includes facial mesh and bitmap transfer; descriptor reuse disabled",
+    "deepface-yunet": "DeepFace 0.0.99; SFace + YuNet; Python 3.12.3; OpenCV 4.13.0; OpenCV and TF threads set to 2; startup includes first model downloads",
+    "insightface": "InsightFace 1.0.1; Buffalo L; Python 3.12.14; ONNX Runtime 1.27.0 CPU defaults; detection + recognition only; detector 320x320; OpenCV threads 2"
+  },
+  "matchingNotes": "Single-photo reference per identity; Human similarity >=0.8 with margin >=0.05; SFace cosine similarity >=0.407; InsightFace cosine >=0.42. This probes detection/description, not the production multi-sample enrollment policy."
+}

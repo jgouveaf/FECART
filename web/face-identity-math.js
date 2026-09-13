@@ -6,8 +6,8 @@
   const TOP_SAMPLE_COUNT = 3;
   const MIN_REFERENCE_SAMPLES = 3;
 
-  function mergeSamples(existing = [], incoming = [], limit = 15) {
-    const valid = sample => Array.isArray(sample) && sample.length === 1024 && sample.every(Number.isFinite);
+  function mergeSamples(existing = [], incoming = [], limit = 15, length = 1024) {
+    const valid = sample => Array.isArray(sample) && sample.length === length && sample.every(Number.isFinite);
     const previous = existing.filter(valid), next = incoming.filter(valid);
     const merged = previous.slice(), available = new Map();
     for (const sample of previous) {
@@ -37,7 +37,7 @@
     return strongest.reduce((total, score) => total + score, 0) / strongest.length;
   }
 
-  function chooseIdentity(candidates) {
+  function chooseIdentity(candidates, { threshold = MIN_SIMILARITY, ambiguityMargin = AMBIGUITY_MARGIN } = {}) {
     const ranked = (Array.isArray(candidates) ? candidates : [])
       .map((candidate) => ({
         ...candidate,
@@ -51,7 +51,7 @@
     const similarity = best?.similarity || 0;
     const margin = second ? similarity - second.similarity : 1;
     const accepted = Boolean(best && best.referenceCount >= MIN_REFERENCE_SAMPLES
-      && similarity >= MIN_SIMILARITY && margin >= AMBIGUITY_MARGIN);
+      && similarity >= threshold && margin >= ambiguityMargin);
 
     return {
       accepted,
@@ -64,9 +64,9 @@
         ? "NO_IDENTITIES"
         : best.referenceCount < MIN_REFERENCE_SAMPLES
           ? "INSUFFICIENT_SAMPLES"
-          : similarity < MIN_SIMILARITY
+          : similarity < threshold
             ? "BELOW_THRESHOLD"
-            : margin < AMBIGUITY_MARGIN
+            : margin < ambiguityMargin
               ? "AMBIGUOUS"
               : "MATCH",
     };

@@ -5,6 +5,7 @@
     ? require('./person-appearance.js') : window.QuantumPersonAppearance;
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   const MAX_FRAME_AGE_MS = 600;
+  const FACE_DROPOUT_GRACE_MS = 450;
   const center = box => box.x + box.width / 2;
   function validBox(b) {
     return b && [b.x, b.y, b.width, b.height].every(Number.isFinite)
@@ -99,6 +100,22 @@
       if (age > 500) { this.box = null; this.identifiedAt = null; this.velocity = 0; this.smoothed = null; }
       return this.stop(prediction ? "PREDICTED_STOP" : state, { prediction, reason: state });
     }
+    holdFaceDropout(now, safety) {
+      const track = this.faceTrack;
+      const info = { box: null, faceBox: track.box, trackingSource: 'face',
+        confidence: track.confidence, center: track.center, capturedAt: track.at,
+        identityAgeMs: now - track.at, appearanceReady: false, dropout: true };
+      if (safety.requireSensor && (!Number.isFinite(safety.distance) || safety.distance <= 0
+        || !Number.isFinite(safety.sensorAgeMs) || safety.sensorAgeMs < 0 || safety.sensorAgeMs > 700)) {
+        return this.stop("SENSOR_WAIT", info);
+      }
+      if (safety.requireSensor) this.holdDistance = this.holdDistance ? safety.distance < 40 : safety.distance <= 30;
+      else this.holdDistance = false;
+      this.holdFaceSize = this.holdFaceSize ? track.box.height > .34 : track.box.height >= .40;
+      if (this.holdDistance || this.holdFaceSize) return this.stop("KEEP_DISTANCE", { ...info, visible: true });
+      return { ...info, steering: this.steering, visible: true, command: this.command,
+        state: 'FACE_TRACKING', id: this.id, prediction: null };
+    }
     update({ people = [], faces = [], now, capturedAt, cameraMoving = false,
       requireSensor = false, distance = null, sensorAgeMs = Infinity }) {
       if (!this.id) return this.stop("SELECT_TARGET");
@@ -121,13 +138,22 @@
           || overlap(previous.box, directFace.box) < .35
           || Math.abs(center(previous.box) - center(directFace.box)) >= .18) {
           this.faceTrack = { box: { ...directFace.box }, at: directFace.capturedAt,
-            since: directFace.capturedAt, samples: 1, center: center(directFace.box) };
+            since: directFace.capturedAt, samples: 1, center: center(directFace.box),
+            confidence: directFace.confidence };
         } else if (directFace.capturedAt > previous.at) {
           this.faceTrack = { box: { ...directFace.box }, at: directFace.capturedAt,
             since: previous.since, samples: Math.min(2, previous.samples + 1),
-            center: .55 * previous.center + .45 * center(directFace.box) };
+            center: .55 * previous.center + .45 * center(directFace.box),
+            confidence: directFace.confidence };
         }
-      } else this.faceTrack = null;
+      }
+      const isolatedDropout = faces.length === 0 && people.length === 0 && this.faceTrack
+        && this.faceTrack.samples >= 2 && this.command === 'FRENTE'
+        && now - this.faceTrack.at >= 0 && now - this.faceTrack.at <= FACE_DROPOUT_GRACE_MS;
+      if (!directFace && isolatedDropout) {
+        return this.holdFaceDropout(now, { requireSensor, distance, sensorAgeMs });
+      }
+      if (!directFace) this.faceTrack = null;
       // No complete body is required. A single detection covering only this
       // head is compatible; conflicting/uncertain full bodies retain stop rules.
       const faceOnlyScene = people.length === 0 || (people.length === 1 && observedBodies.length === 1

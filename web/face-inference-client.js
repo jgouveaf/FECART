@@ -10,7 +10,8 @@
     async initialize(config) {
       if (this.ready) return;
       this.close();
-      const worker = this.worker = new Worker(new URL('web/face-detector.worker.js?v=1', document.baseURI));
+      const path = config.identityEngine === 'scrfd-sface-2021dec-v1' ? 'web/face-onnx.worker.js?v=1' : 'web/face-detector.worker.js?v=1';
+      const worker = this.worker = new Worker(new URL(path, document.baseURI));
       worker.onmessage = ({ data }) => {
         if (worker !== this.worker || data.id !== this.pending?.id) return;
         const task = this.pending; this.pending = null; clearTimeout(task.timer);
@@ -18,7 +19,7 @@
       };
       worker.onerror = error => { if (worker === this.worker) this.close(new Error(error.message || 'Falha no detector facial.')); };
       worker.onmessageerror = () => { if (worker === this.worker) this.close(new Error('Resposta facial inválida.')); };
-      try { await this.request({ type: 'init', config }, [], 30000); this.ready = true; }
+      try { await this.request({ type: 'init', config }, [], 90000); this.ready = true; }
       catch (error) { this.close(error); throw error; }
     }
     request(message, transfer = [], timeoutMs = 5000) {

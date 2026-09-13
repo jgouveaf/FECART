@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 const site = process.env.QT_SITE_URL || 'http://127.0.0.1:9877/';
+const mockedUSB = process.env.QT_TEST_USB === '1';
 const fixture = /V0=`([^`]+)`/.exec(fs.readFileSync(path.join(__dirname, '../web/vendor/human/human.js'), 'utf8'))[1];
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -16,9 +17,9 @@ const fixture = /V0=`([^`]+)`/.exec(fs.readFileSync(path.join(__dirname, '../web
     page.on('pageerror', e => errors.push(e.message));
     page.on('request', r => { if (/\.wasm|models\//.test(r.url()) && new URL(r.url()).origin !== new URL(site).origin) external.push(r.url()); });
     await page.route('**/__target.jpg', r => r.fulfill({ contentType: 'image/jpeg', body: Buffer.from(fixture, 'base64') }));
-    await page.addInitScript(() => {
+    await page.addInitScript(({ mockedUSB }) => {
       localStorage.setItem('quantumAuth:v1', 'ok');
-      window.__fixture = { x: .5, visible: true, bodyCount: null, events: [], usbRequests: 0 };
+      window.__fixture = { x: .5, visible: true, bodyCount: null, events: [], usbRequests: 0, writes: [], stops: [], distance: 100 };
       addEventListener('quantum:person-tracking', e => window.__fixture.events.push(e.detail));
       addEventListener('quantum:face-observations', e => { window.__fixture.faces = e.detail.faces; });
       const RealWorker = Worker;
@@ -31,7 +32,36 @@ const fixture = /V0=`([^`]+)`/.exec(fs.readFileSync(path.join(__dirname, '../web
           return worker;
         }
       };
-      Object.defineProperty(navigator, 'serial', { value: { requestPort() { window.__fixture.usbRequests++; throw Error('No hardware allowed'); } } });
+      const serial = new EventTarget();
+      serial.requestPort = async () => {
+        window.__fixture.usbRequests++;
+        if (!mockedUSB) throw Error('No hardware allowed');
+        let receive, timer, mode=1, command='PARAR', emergency=true;
+        const send=line=>{try {receive.enqueue(new TextEncoder().encode(line+'\n'));} catch {}};
+        const telemetry=()=>send(`QT|MODE:${mode}|DIST:${window.__fixture.distance}|CMD:${command}|STATE:${emergency?'ESTOP':'SEGUINDO'}`);
+        return {
+          async open() {
+            this.readable=new ReadableStream({start(c){receive=c;}});
+            this.writable=new WritableStream({write(bytes){
+              const line=new TextDecoder().decode(bytes).trim();window.__fixture.writes.push(line);
+              if(line==='CMD:PARAR') window.__fixture.stops.push({at:performance.now(),
+                follow:window.quantumPersonFollower?.snapshot,performance:window.quantumFacePerformance,
+                reason:document.getElementById('personLastStop')?.textContent,phase:window.QuantumControl?.state.mode});
+              if(line==='HELLO') send('QT:READY:V7');
+              else if(line==='STATUS') telemetry();
+              else {
+                if(line.startsWith('MODE:')) mode=Number(line.split(':')[1]);
+                if(line==='ESTOP'){emergency=true;command='PARAR';}
+                if(line==='RESET_ESTOP') emergency=false;
+                if(line.startsWith('CMD:')) command=emergency?'PARAR':line.slice(4);
+                send(`OK:${line}`);
+              }
+            }});
+            timer=setInterval(telemetry,200);
+          },async close(){clearInterval(timer);},
+        };
+      };
+      Object.defineProperty(navigator, 'serial', { value: serial });
       const media = new EventTarget();
       media.enumerateDevices = async () => [{ kind: 'videoinput', deviceId: 'fixture', label: 'Local fixture' }];
       media.getUserMedia = async () => {
@@ -47,7 +77,7 @@ const fixture = /V0=`([^`]+)`/.exec(fs.readFileSync(path.join(__dirname, '../web
         return stream;
       };
       Object.defineProperty(navigator, 'mediaDevices', { value: media });
-    });
+    }, { mockedUSB });
     await page.goto(site, { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => window.quantumCameraController.start());
     await page.locator('#personName').fill('Alvo do teste local');
@@ -62,17 +92,50 @@ const fixture = /V0=`([^`]+)`/.exec(fs.readFileSync(path.join(__dirname, '../web
       bodyCount: window.__fixture.bodyCount, personCount: document.getElementById('personCount').textContent }));
     assert.equal(result.state, 'FACE_TRACKING'); assert.equal(result.bodyCount, 0);
     assert.equal(result.personCount, '1'); assert.equal(result.id, 'QT-001');
+    if (mockedUSB) {
+      page.on('dialog',dialog=>dialog.accept());
+      await page.locator('#connectRobot').click();
+      await page.waitForFunction(()=>window.quantumRobot.connected);
+      assert.equal(await page.evaluate(()=>window.QuantumControl.state.safety.emergency),true);
+      assert.equal(await page.evaluate(()=>window.__fixture.writes.includes('RESET_ESTOP')),false);
+      await page.locator('#emergencyStop').click();
+      await page.waitForFunction(()=>window.__fixture.writes.includes('CMD:FRENTE'),null,{timeout:15000});
+      await page.evaluate(()=>{
+        window.__fixture.writes=[];window.__fixture.stops=[];window.__fixture.gaps=[];let previous=performance.now();
+        window.__fixture.timer=setInterval(()=>{const now=performance.now();window.__fixture.gaps.push(now-previous);previous=now;},25);
+      });
+      await page.waitForTimeout(8000);
+      const steady=await page.evaluate(()=>{
+        clearInterval(window.__fixture.timer);return {writes:window.__fixture.writes,stops:window.__fixture.stops,maxUiGapMs:Math.max(...window.__fixture.gaps),performance:window.quantumFacePerformance};
+      });
+      console.log('STEADY - eight seconds of real inference and mocked USB',JSON.stringify(steady));
+      assert.equal(steady.writes.includes('CMD:PARAR'),false,'Steady target cannot alternate between forward and stop');
+    }
+    await page.locator('#camera-gestos').scrollIntoViewIfNeeded();
+    fs.mkdirSync(path.join(__dirname,'artifacts'),{recursive:true});
+    await page.screenshot({path:path.join(__dirname,'artifacts/official-mode-two.png')});
     for (const [x, turn] of [[.25, 'ESQUERDA'], [.75, 'DIREITA']]) {
       await page.evaluate(x => { window.__fixture.x = x; window.__fixture.events = []; }, x);
       await page.waitForFunction(turn => window.__fixture.events.some(e => e.command === turn && e.state === 'FACE_TRACKING'), turn, { timeout: 30000 });
       await page.waitForFunction(() => window.__fixture.events.some(e => e.command === 'FRENTE' && e.state === 'FACE_TRACKING'), null, { timeout: 30000 });
+      if(mockedUSB) await page.waitForFunction(turn=>window.__fixture.writes.includes('CMD:'+turn),turn,{timeout:15000});
     }
-    await page.evaluate(() => { window.__fixture.visible = false; });
+    if(mockedUSB) {
+      await page.evaluate(()=>{window.__fixture.x=.5;window.__fixture.distance=20;window.__fixture.writes=[];});
+      await page.waitForFunction(()=>window.__fixture.writes.includes('CMD:PARAR'));
+      await page.evaluate(()=>{window.__fixture.distance=100;window.__fixture.writes=[];});
+      await page.waitForFunction(()=>window.__fixture.writes.includes('CMD:FRENTE'));
+    }
+    await page.evaluate(() => { window.__fixture.visible = false; window.__fixture.writes=[]; });
     await page.waitForFunction(() => window.quantumPersonFollower.snapshot.command === 'PARAR' && document.getElementById('personCount').textContent === '0');
-    assert.equal(await page.evaluate(() => window.__fixture.usbRequests), 0);
+    assert.equal(await page.evaluate(() => window.__fixture.usbRequests), mockedUSB ? 1 : 0);
+    if(mockedUSB) {
+      await page.waitForFunction(()=>window.__fixture.writes.includes('CMD:PARAR'));
+      await page.locator('#disconnectRobot').click();
+    }
     assert.deepEqual(external, []); assert.deepEqual(errors, []);
     await page.evaluate(() => window.quantumCameraController.stop());
-    console.log('PASS - real models count and follow a face with zero detected bodies, curve both ways and stop on loss', JSON.stringify(result));
+    console.log('PASS - real models count and follow a face with zero detected bodies, curve both ways and stop on loss', JSON.stringify({...result,mockedUSB}));
   } catch (error) {
     if (page) console.error(await page.evaluate(() => ({ status: document.getElementById('personFollowStatus').textContent,
       hint: document.getElementById('faceHint').textContent, face: document.getElementById('currentFaceId').textContent,

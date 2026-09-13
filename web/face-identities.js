@@ -39,10 +39,11 @@
   const LEGACY_STORAGE_KEY = "quantum_tracker_face_identities_v1";
   const MIGRATION_KEY = "quantum_tracker_indexeddb_migrated_v1";
   const HUMAN_ENGINE = "human-faceres-3.3.6";
+  const profiles = window.QuantumFaceProfiles;
+  let activeEngine = null;
   const REQUIRED_SAMPLES = 5;
   const MAX_SAMPLES_PER_IDENTITY = 15;
   const EMBEDDING_LENGTH = 1024;
-  const MATCH_THRESHOLD = window.QuantumFaceIdentityMath.MIN_SIMILARITY;
   const MIN_CONFIDENCE = 0.58;
   const MIN_FACE_SIZE = 140;
   const DETECTION_DELAY_MS = 70;
@@ -85,6 +86,7 @@
   const faceInference = new window.QuantumFaceInference.FaceInferenceClient();
   let humanLibraryPromise = null;
   let modelsPromise = null;
+  let modelsPromiseEngine = null;
   let database = null;
   let identities = [];
   let modelsReady = false;
@@ -175,13 +177,16 @@
     const legacyDescriptors = Array.isArray(item.descriptors)
       ? item.descriptors.filter((value) => Array.isArray(value) && value.length === 128 && value.every(Number.isFinite)).slice(-MAX_SAMPLES_PER_IDENTITY)
       : [];
-    const engine = humanEmbeddings.length ? HUMAN_ENGINE : legacyDescriptors.length ? "face-api-legacy" : "";
+    const sfaceEmbeddings = profiles.samples(item, profiles.ONNX);
+    const engine = sfaceEmbeddings.length ? profiles.engineFor({embeddings:humanEmbeddings,sfaceEmbeddings})
+      : humanEmbeddings.length ? HUMAN_ENGINE : legacyDescriptors.length ? "face-api-legacy" : "";
     if (!engine || typeof item.photo !== "string" || !item.photo.startsWith("data:image/")) return null;
     return {
       id: String(item.id),
       name: item.name.trim().slice(0, 60),
       engine,
       embeddings: humanEmbeddings,
+      sfaceEmbeddings,
       descriptors: legacyDescriptors,
       photo: item.photo,
       createdAt: item.createdAt || new Date().toISOString(),
@@ -230,8 +235,23 @@
     return normalized ? identities.find((identity) => normalizedPersonName(identity.name) === normalized) || null : null;
   }
 
-  function mergeEmbeddings(existing = [], incoming = []) {
-    return window.QuantumFaceIdentityMath.mergeSamples(existing, incoming, MAX_SAMPLES_PER_IDENTITY);
+  function mergeEmbeddings(existing = [], incoming = [], engine = HUMAN_ENGINE) {
+    return window.QuantumFaceIdentityMath.mergeSamples(existing, incoming, MAX_SAMPLES_PER_IDENTITY, profiles.profile(engine).length);
+  }
+
+  function desiredEngine() {
+    if (personName.value.trim()) return profiles.DEFAULT_ENGINE;
+    const selected = identities.find(item => item.id === selectedTargetId);
+    if (selected) return profiles.engineFor(selected);
+    // Existing galleries continue working until their owner updates the face.
+    if (identities.some(item => profiles.samples(item, HUMAN_ENGINE).length)
+      && !identities.some(item => profiles.samples(item, profiles.ONNX).length >= 3)) return HUMAN_ENGINE;
+    return profiles.DEFAULT_ENGINE;
+  }
+
+  function similarity(first, second, engine = activeEngine) {
+    return engine === profiles.ONNX ? window.QuantumFaceONNXMath.cosine(first, second)
+      : human.match.similarity(first, second, MATCH_OPTIONS);
   }
 
   function renderIdentities() {
@@ -250,8 +270,10 @@
       name.textContent = identity.name;
       const id = document.createElement("small");
       const legacy = identity.engine === "face-api-legacy";
-      const incomplete = !legacy && identity.embeddings.length < window.QuantumFaceIdentityMath.MIN_REFERENCE_SAMPLES;
-      id.textContent = legacy ? `${identity.id} · LEGADO — RECADASTRE` : `${identity.id} · ${identity.embeddings.length} amostras`;
+      const recordEngine = profiles.engineFor(identity);
+      const sampleCount = profiles.samples(identity, recordEngine).length;
+      const incomplete = !legacy && sampleCount < window.QuantumFaceIdentityMath.MIN_REFERENCE_SAMPLES;
+      id.textContent = legacy ? `${identity.id} · LEGADO — RECADASTRE` : `${identity.id} · ${sampleCount} amostras`;
       if (incomplete) id.textContent += ' · complete o cadastro';
       id.classList.toggle("legacy", legacy);
       text.append(name, id);
@@ -278,6 +300,7 @@
       follow.setAttribute("aria-pressed", String(selectedTargetId === identity.id));
       follow.disabled = legacy;
       follow.addEventListener("click", () => {
+        if (registering) { ++enrollmentGeneration; registering = false; setSampleProgress(0); }
         if (incomplete) {
           selectedTargetId = null;
           personName.value = identity.name;
@@ -288,11 +311,24 @@
           return;
         }
         selectedTargetId = selectedTargetId === identity.id ? null : identity.id;
+        personName.value = '';
         renderIdentities();
-        publishPersonTracking(currentFaces, true);
+        currentFaces = [];
+        qualityStabilizer.reset();
+        publishPersonTracking([], true);
         if (selectedTargetId) window.quantumPersonFollower?.prepare();
       });
       actions.append(follow, remove);
+      if (recordEngine === HUMAN_ENGINE && profiles.DEFAULT_ENGINE !== HUMAN_ENGINE) {
+        const upgrade = document.createElement('button');
+        upgrade.type = 'button'; upgrade.className = 'upgrade-person'; upgrade.textContent = 'Atualizar reconhecimento';
+        upgrade.addEventListener('click', () => {
+          selectedTargetId = null; personName.value = identity.name; currentFaces = [];
+          qualityStabilizer.reset(); renderIdentities(); updatePanel([]); publishPersonTracking([], true);
+          window.quantumPersonFollower?.prepare(); personName.focus();
+        });
+        actions.append(upgrade);
+      }
       card.classList.toggle("target-active", selectedTargetId === identity.id);
       card.append(image, text, actions);
       registeredPeople.append(card);
@@ -324,12 +360,14 @@
     const poseByAngle = Math.abs(yaw) <= 0.38 && Math.abs(pitch) <= 0.34 && Math.abs(roll) <= 0.42;
     const pose = gestures.includes("facing center") || poseByAngle;
     const embedding = Array.isArray(face.embedding) ? face.embedding : [];
+    // SCRFD returns a tighter facial box than Human; SFace aligns to 112 px.
+    const requiredSize = activeEngine === profiles.ONNX ? 100 : MIN_FACE_SIZE;
     const validations = {
       single: result.face.length === 1,
-      size: size >= MIN_FACE_SIZE,
+      size: size >= requiredSize,
       pose,
       fresh: Number.isFinite(capturedAt) && capturedAt <= performance.now() && performance.now() - capturedAt <= 800,
-      descriptor: embedding.length === EMBEDDING_LENGTH && embedding.every(Number.isFinite),
+      descriptor: profiles.valid(embedding, activeEngine),
       confidence: confidence >= MIN_CONFIDENCE,
     };
     const acceptable = !trackingOnly && validations.single && validations.size && validations.pose
@@ -379,23 +417,24 @@
 
   function identifyFace(face) {
     const box = boxObject(face);
-    if (!Array.isArray(face.embedding) || face.embedding.length !== EMBEDDING_LENGTH || !face.embedding.every(Number.isFinite)) {
+    const engineProfile = profiles.profile(activeEngine);
+    if (!profiles.valid(face.embedding, activeEngine)) {
       window.quantumFaceDiagnostics = {
         known: identities.length,
         bestSimilarity: 0,
         decision: "INVALID_EMBEDDING",
-        threshold: MATCH_THRESHOLD,
+        threshold: engineProfile.threshold,
         embeddingLength: face.embedding?.length || 0,
         compared: [],
       };
       return { id: temporaryIdFor(box), name: "Não cadastrado", registered: false, similarity: 0 };
     }
-    const known = identities.filter((identity) => identity.engine === HUMAN_ENGINE && identity.embeddings.length);
+    const known = identities.filter((identity) => profiles.samples(identity, activeEngine).length);
     const compared = known.map((identity) => ({
       identity,
-      scores: identity.embeddings.map((reference) => human.match.similarity(face.embedding, reference, MATCH_OPTIONS)),
+      scores: profiles.samples(identity, activeEngine).map((reference) => similarity(face.embedding, reference)),
     }));
-    const decision = window.QuantumFaceIdentityMath.chooseIdentity(compared);
+    const decision = window.QuantumFaceIdentityMath.chooseIdentity(compared, engineProfile);
     const bestIdentity = decision.identity;
     const bestSimilarity = decision.similarity;
     window.quantumFaceDiagnostics = {
@@ -404,9 +443,10 @@
       secondSimilarity: decision.secondSimilarity,
       margin: decision.margin,
       decision: decision.reason,
-      threshold: MATCH_THRESHOLD,
+      threshold: engineProfile.threshold,
+      engine: activeEngine,
       embeddingLength: face.embedding?.length || 0,
-      selfSimilarity: human.match.similarity(face.embedding, face.embedding, MATCH_OPTIONS),
+      selfSimilarity: similarity(face.embedding, face.embedding),
       compared: decision.ranked.map((candidate) => ({
         id: candidate.identity.id,
         name: candidate.identity.name,
@@ -543,22 +583,30 @@
     }
   }
 
-  async function loadModels() {
-    if (modelsReady && faceInference.ready) return;
-    if (modelsPromise) return modelsPromise;
+  async function loadModels(engine = desiredEngine()) {
+    if (modelsReady && faceInference.ready && activeEngine === engine) return;
+    if (modelsPromise && modelsPromiseEngine === engine) return modelsPromise;
+    if (modelsPromise) await modelsPromise.catch(() => {});
+    if (modelsReady && faceInference.ready && activeEngine === engine) return;
     if (window.location?.protocol === "file:") {
       throw new Error("O FaceID exige o site HTTPS. Abra https://jgouveaf.github.io/FECART/.");
     }
     setStatus("CARREGANDO FACEID", true);
+    faceHint.textContent = 'Preparando o reconhecimento local. Na primeira abertura, aguarde o download dos modelos.';
     control?.patch("vision", { active: false, status: "LOADING", tracking: "SEARCHING" }, { source: "face-model" });
-    control?.log("INFO", "VISÃO", "Carregando Human FaceID local");
+    control?.log("INFO", "VISÃO", `Carregando FaceID local: ${engine}`);
+    currentFaces = []; registerButton.disabled = true;
+    publishPersonTracking([], true);
+    faceInference.close(); modelsReady = false;
+    modelsPromiseEngine = engine;
     modelsPromise = (async () => {
       const HumanLibrary = await loadHumanLibrary();
       const candidate = new HumanLibrary.Human(humanConfig);
-      await faceInference.load(humanConfig);
+      await faceInference.load({...humanConfig, identityEngine: engine});
       human = candidate;
+      activeEngine = engine;
       modelsReady = true;
-      control?.log("INFO", "VISÃO", "Human FaceID pronto");
+      control?.log("INFO", "VISÃO", `FaceID local pronto: ${engine}`);
     })();
     try {
       await modelsPromise;
@@ -571,6 +619,7 @@
       throw error;
     } finally {
       modelsPromise = null;
+      modelsPromiseEngine = null;
     }
   }
 
@@ -591,17 +640,24 @@
       return;
     }
     lastFaceVideoTime = video.currentTime;
-    const capturedAt = performance.now();
+    let capturedAt = performance.now();
     const generation = detectionGeneration;
+    const expectedEngine = desiredEngine();
     detectionBusy = true;
     try {
+      if (!modelsReady || !faceInference.ready || activeEngine !== expectedEngine) {
+        qualityStabilizer.reset();
+        await loadModels(expectedEngine);
+      }
+      if (generation !== detectionGeneration || !cameraActive || expectedEngine !== desiredEngine() || activeEngine !== expectedEngine) return;
+      capturedAt = performance.now();
       disposeResult(lastResult);
       lastResult = null;
       const processing = window.QuantumFaceProcessing.plan({ width: video.videoWidth, height: video.videoHeight,
         modeTwo: Number(control?.state.mode.id) === 2 && control?.state.mode.phase === 'ACTIVE',
         enrolling: registering || Boolean(personName.value.trim()) });
       const result = await faceInference.detect(video, processing.config);
-      if (generation !== detectionGeneration || !cameraActive || activeView !== "face") {
+      if (generation !== detectionGeneration || !cameraActive || activeView !== "face" || expectedEngine !== desiredEngine()) {
         disposeResult(result);
         return;
       }
@@ -611,7 +667,7 @@
       if (retryDetectionButton) retryDetectionButton.hidden = true;
       const detectedAt = performance.now();
       window.quantumFacePerformance = { processingMs: Math.round(detectedAt - capturedAt),
-        backend: result.backend || 'local', profile: processing.tracking ? 'tracking' : 'enrollment' };
+        backend: result.backend || 'local', engine: activeEngine, profile: processing.tracking ? 'tracking' : 'enrollment' };
       if (result.face.length !== 1) qualityStabilizer.reset();
       const faces = result.face.map((rawFace) => {
         const face = window.QuantumFaceProcessing.restore(rawFace, processing.scaleX, processing.scaleY);
@@ -695,10 +751,10 @@
     canvas.height = video.videoHeight || 540;
     if (activeView !== "face") return;
     try {
-      await loadModels();
       await loadIdentities();
+      await loadModels();
       if (generation !== detectionGeneration || !cameraActive || activeView !== "face") return;
-      setStatus("HUMAN FACEID PRONTO", true);
+      setStatus("RECONHECIMENTO LOCAL PRONTO", true);
       control?.patch("vision", { active: true, status: "ONLINE", tracking: "SEARCHING" }, { source: "face-start" });
       await detectFaces();
       scheduleDetection();
@@ -757,7 +813,13 @@
     });
   }
 
-  personName.addEventListener("input", () => updatePanel(currentFaces));
+  personName.addEventListener("input", () => {
+    if (registering) { ++enrollmentGeneration; registering = false; setSampleProgress(0); }
+    if (activeEngine !== desiredEngine()) {
+      currentFaces = []; qualityStabilizer.reset(); publishPersonTracking([], true);
+    }
+    updatePanel(currentFaces);
+  });
   retryDetectionButton?.addEventListener("click", async () => {
     if (!cameraActive || activeView !== "face") return;
     retryDetectionButton.disabled = true;
@@ -780,6 +842,8 @@
     if (existing && !item.identity.registered
       && !window.confirm(`${existing.name} já está salvo. Deseja acrescentar estas novas amostras ao cadastro existente?`)) return;
     registering = true;
+    const enrollmentEngine = activeEngine;
+    const enrollmentProfile = profiles.profile(enrollmentEngine);
     const token = ++enrollmentGeneration;
     publishPersonTracking(currentFaces, true);
     registerButton.disabled = true;
@@ -789,7 +853,8 @@
       for (let index = 0; index < REQUIRED_SAMPLES; index += 1) {
         if (index > 0) item = await waitForFreshFace(item.capturedAt, existing?.id || null, token);
         if (token !== enrollmentGeneration) throw new Error("Cadastro cancelado.");
-        if (embeddings.length && human.match.similarity(item.quality.embedding, embeddings[0], MATCH_OPTIONS) < MATCH_THRESHOLD) {
+        if (activeEngine !== enrollmentEngine || !profiles.valid(item.quality.embedding, enrollmentEngine)) throw new Error('Reconhecimento mudou; reinicie o cadastro.');
+        if (embeddings.length && similarity(item.quality.embedding, embeddings[0], enrollmentEngine) < enrollmentProfile.threshold) {
           throw new Error("O rosto mudou durante a captura. Cadastre uma pessoa por vez.");
         }
         embeddings.push(Array.from(item.quality.embedding));
@@ -800,14 +865,16 @@
       const identity = {
         id: existing?.id || nextPermanentId(),
         name,
-        engine: HUMAN_ENGINE,
-        embeddings: mergeEmbeddings(existing?.embeddings, embeddings),
+        engine: enrollmentEngine,
+        embeddings: existing?.embeddings || [],
+        sfaceEmbeddings: existing?.sfaceEmbeddings || [],
+        [enrollmentProfile.field]: mergeEmbeddings(profiles.samples(existing,enrollmentEngine), embeddings, enrollmentEngine),
         descriptors: [],
         photo,
         createdAt: existing?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         enrollment: {
-          samples: mergeEmbeddings(existing?.embeddings, embeddings).length,
+          samples: mergeEmbeddings(profiles.samples(existing,enrollmentEngine), embeddings, enrollmentEngine).length,
           confidence: item.quality.confidence,
           presenceMethod: 'NOT_REQUIRED',
         },
@@ -821,7 +888,7 @@
       personName.value = "";
       currentFaceId.textContent = identity.id;
       faceHint.textContent = existing
-        ? `${identity.name} atualizado(a). O cadastro agora possui ${identity.embeddings.length} amostras.`
+        ? `${identity.name} atualizado(a). O cadastro agora possui ${identity[enrollmentProfile.field].length} amostras.`
         : `${identity.name} cadastrado(a) com ${REQUIRED_SAMPLES} amostras neste navegador.`;
       registerButton.textContent = existing ? "Cadastro atualizado ✓" : "Cadastrado ✓";
     } catch (error) {
@@ -840,7 +907,7 @@
 
   exportButton.addEventListener("click", () => {
     if (!identities.length) return;
-    const backup = { format: "quantum-tracker-face-identities", version: 3, engine: HUMAN_ENGINE, exportedAt: new Date().toISOString(), identities };
+    const backup = { format: "quantum-tracker-face-identities", version: 4, engine: 'multi-engine', exportedAt: new Date().toISOString(), identities };
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
@@ -867,10 +934,12 @@
         const sameName = identityByName(candidate.name);
         if (sameName) {
           const mergedEmbeddings = mergeEmbeddings(sameName.embeddings, candidate.embeddings);
+          const sfaceEmbeddings = mergeEmbeddings(sameName.sfaceEmbeddings, candidate.sfaceEmbeddings, profiles.ONNX);
           const merged = {
             ...sameName,
-            engine: mergedEmbeddings.length ? HUMAN_ENGINE : sameName.engine,
+            engine: sfaceEmbeddings.length ? profiles.engineFor({embeddings:mergedEmbeddings,sfaceEmbeddings}) : mergedEmbeddings.length ? HUMAN_ENGINE : sameName.engine,
             embeddings: mergedEmbeddings,
+            sfaceEmbeddings,
             photo: candidate.photo || sameName.photo,
             updatedAt: new Date().toISOString(),
             enrollment: { ...(sameName.enrollment || {}), samples: mergedEmbeddings.length },

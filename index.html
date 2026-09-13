@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#17324d">
+  <meta name="application-version" content="2.0.0">
   <meta name="description" content="Quantum Tracker — painel web e laboratório de simulação do projeto FECART.">
   <link rel="icon" href="web/favicon.svg" type="image/svg+xml">
   <title>Quantum Tracker — Painel Web</title>
@@ -255,7 +256,7 @@
           </section>
           <div class="identity-register-card">
             <div class="identity-heading">
-              <div><span class="section-tag">Identificação local</span><h3>Cadastrar pessoa</h3></div>
+              <div><span class="section-tag">Reconhecimento local · Oficial 2.0</span><h3>Cadastrar pessoa</h3></div>
               <div class="identity-status-actions">
                 <span class="identity-status" role="status" aria-live="polite"><span class="status-dot idle" id="faceStatusDot"></span><span id="faceStatus">AGUARDANDO CÂMERA</span></span>
                 <button class="secondary-button compact" id="retryFaceDetection" type="button" hidden>Tentar FaceID novamente</button>
@@ -538,15 +539,17 @@
   <script src="web/robot-control.js?v=20" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/face-processing.js?v=2" defer></script>
-  <script src="web/face-inference-client.js?v=1" defer></script>
+  <script src="web/face-inference-client.js?v=2" defer></script>
+  <script src="web/face-onnx-math.js?v=1" defer></script>
+  <script src="web/face-identity-profiles.js?v=1" defer></script>
   <script src="web/face-mesh-overlay.js?v=1" defer></script>
-  <script src="web/face-identity-math.js?v=3" defer></script>
+  <script src="web/face-identity-math.js?v=4" defer></script>
   <script src="web/gesture-math.js?v=8" defer></script>
   <script src="web/gesture-calibration.js?v=1" defer></script>
   <script src="web/person-appearance.js?v=2" defer></script>
   <script src="web/person-follow-math.js?v=5" defer></script>
   <script src="web/person-follow.js?v=6" defer></script>
-  <script src="web/face-identities.js?v=20" defer></script>
+  <script src="web/face-identities.js?v=21" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>
 </html>

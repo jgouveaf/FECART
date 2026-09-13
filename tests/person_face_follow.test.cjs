@@ -48,9 +48,15 @@ test('cached face expires after 600 ms despite fresh body-worker frames', () => 
   assert.equal(step(1700, { now: 1800, faces: [face(1200)] }).command, 'FRENTE');
   assert.equal(step(1701, { now: 1801, faces: [face(1200)] }).command, 'PARAR');
 });
-test('face disappearing stops immediately without a guessed body continuation', () => {
-  const { step } = running(); const r = step(1400, { faces: [] });
-  assert.equal(r.command, 'PARAR'); assert.equal(r.visible, false); assert.equal(r.prediction, null);
+test('one isolated face dropout keeps the current face command briefly', () => {
+  const { step } = running();
+  const r = step(1400, { faces: [] });
+  assert.equal(r.command, 'FRENTE'); assert.equal(r.visible, true); assert.equal(r.dropout, true);
+  assert.equal(step(1701, { faces: [] }).command, 'PARAR');
+});
+test('face disappearing does not invent a body continuation', () => {
+  const { step } = running();
+  assert.equal(step(1400, { faces: [], people: [body] }).command, 'PARAR');
   assert.equal(step(1600, { faces: [], people: [body] }).command, 'PARAR');
 });
 test('a body that appears after direct face following needs its own acquisition', () => {
@@ -138,7 +144,9 @@ test('larger deviations get more curve time, while centered jitter stays straigh
 });
 test('losing the target or an obstacle stops during either phase of a curve', () => {
   for (const t of [1400, 1700]) {
-    assert.equal(running(.25).step(t, { faces: [] }).command, 'PARAR');
+    const loss = running(.25);
+    loss.step(t, { faces: [] });
+    assert.equal(loss.step(t + 501, { faces: [] }).command, 'PARAR');
     assert.equal(running(.25).step(t, { requireSensor: true, distance: 20, sensorAgeMs: 0 }).command, 'PARAR');
   }
 });

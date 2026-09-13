@@ -36,7 +36,10 @@ for (const [family, mutate] of cases) test(`630 variants: ${family}`, () => {
     const sample = input(1400, x); mutate(f, sample, n);
     const result = f.update(sample);
     const safe = family === 'valid target and clear sensor';
-    assert.equal(result.command, safe ? ['ESQUERDA', 'FRENTE', 'DIREITA'][position] : 'PARAR', `${family} #${n}`);
+    const isolatedForwardDropout = family === 'missing person' && position === 1;
+    assert.equal(result.command, safe ? ['ESQUERDA', 'FRENTE', 'DIREITA'][position]
+      : isolatedForwardDropout ? 'FRENTE' : 'PARAR', `${family} #${n}`);
+    if (isolatedForwardDropout) assert.equal(result.dropout, true);
     if (safe) assert.equal(result.visible, true);
     if (result.prediction) assert.equal(result.command, 'PARAR');
     count++;

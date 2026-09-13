@@ -55,7 +55,10 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/simulator-controller.js?v=2',
             'web/robot-control.js?v=20',
             'web/code-editor-utils.js?v=1',
-            'web/face-identity-math.js?v=3',
+            'web/face-inference-client.js?v=2',
+            'web/face-onnx-math.js?v=1',
+            'web/face-identity-profiles.js?v=1',
+            'web/face-identity-math.js?v=4',
             'web/face-identities.js?v=',
             'web/face-mesh-overlay.js?v=',
             'id="toggleGestures"',
@@ -184,7 +187,8 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertRegex(self.face_js, r"EMBEDDING_LENGTH\s*=\s*1024")
         self.assertIn("embeddings.push", self.face_js)
         self.assertIn("human.match.similarity", self.face_js)
-        self.assertIn("MATCH_THRESHOLD", self.face_js)
+        self.assertIn("QuantumFaceProfiles", self.face_js)
+        self.assertIn("engineProfile.threshold", self.face_js)
         self.assertIn("QuantumFaceIdentityMath.chooseIdentity", self.face_js)
         self.assertIn('id="faceQuality"', self.html)
         self.assertIn('id="faceSimilarity"', self.html)
@@ -250,7 +254,8 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn('id="importIdentities"', self.html)
         self.assertIn('id="identityBackupFile"', self.html)
         self.assertIn('format: "quantum-tracker-face-identities"', self.face_js)
-        self.assertIn("version: 3", self.face_js)
+        self.assertIn("version: 4", self.face_js)
+        self.assertIn("engine: 'multi-engine'", self.face_js)
         self.assertIn("URL.createObjectURL", self.face_js)
 
     def test_web_test_never_opens_serial_or_contains_secret(self) -> None:

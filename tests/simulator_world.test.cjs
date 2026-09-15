@@ -51,3 +51,28 @@ test('following distance has hysteresis instead of alternating at one threshold'
     assert.equal(w.step(.01,{mode:'SEGUIR',virtualFollow:true}).command,command);
   }
 });
+
+test('imported office replaces old obstacles atomically and survives reset',()=>{
+  const w=new World();w.running=false;w.peopleMoving=false;
+  const obstacles=[{x:420,y:120,w:80,h:100,height:90,kind:'desk'}];
+  assert.equal(w.setEnvironment('office',obstacles),true);
+  assert.equal(w.collides(400,220),false,'old bench must no longer collide');
+  assert.equal(w.collides(460,170),true,'downloaded furniture must collide');
+  assert.equal(w.running,false);assert.equal(w.peopleMoving,false);
+  obstacles[0].x=900;assert.equal(w.obstacles[0].x,420,'owns its collision copy');
+  w.reset();assert.equal(w.obstacles[0].x,420);assert.equal(w.environmentId,'office');
+  assert.equal(w.people[1].y,430);assert.equal(w.personBlocked(w.robot.x,w.robot.y),false);
+});
+
+test('invalid imported collision data leaves the working world intact',()=>{
+  const w=new World();const old=w.obstacles;
+  assert.equal(w.setEnvironment('office',[{x:NaN,y:0,w:1,h:1,height:1}]),false);
+  assert.equal(w.setEnvironment('office',[]),false);assert.equal(w.obstacles,old);
+});
+
+test('a pedestrian waits rather than walking into a stopped robot',()=>{
+  const w=new World();w.people[0].x=w.robot.x+38;w.people[0].y=w.robot.y;
+  w.people[0].route=[[w.robot.x-100,w.robot.y]];w.people[0].leg=0;
+  for(let i=0;i<200;i++)w.advancePeople(.05);
+  assert.ok(Math.hypot(w.people[0].x-w.robot.x,w.people[0].y-w.robot.y)>=w.robot.radius+19);
+});

@@ -4,6 +4,10 @@
   "files": {
     "three.module.min.js": "e2b5ee6bccd38fd6d8a2428546b83c5f2426d84b152ef82be8055556e3b40eb6",
     "three.core.min.js": "61ba0df005b05991361d040d8ff670e1aadfd0ce7aeebd1fdb0725957a8957de",
-    "LICENSE": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601"
+    "LICENSE": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601",
+    "GLTFLoader.js": "30531ae54b775554ef082d5e7621db4b04511c05b95b7aa5c539db5cbb7698ad",
+    "BufferGeometryUtils.js": "018b6ec0dcbbaea7d68b02d8d1162ab37783b9dbd4cc85fdbc35506690a993ea",
+    "SkeletonUtils.js": "90a35aa35a1dde37b721db7283015890cc6b32ddc19b3e404e845714135be7c2",
+    "RoomEnvironment.js": "3abf1ce79bb64c3ebd457be5e5f587ac5b29ef84436cba0d49c7720d020a5905"
   }
 }

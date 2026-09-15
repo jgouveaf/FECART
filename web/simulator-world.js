@@ -30,10 +30,21 @@
         route:[[280,410],[570,410],[570,625],[445,625],[445,410]],leg:1},
         {id:'p2',name:'Lucas',x:970,y:240,angle:Math.PI/2,speed:29,color:0x45859b,
           route:[[970,240],[970,635],[1040,635],[1040,240]],leg:1}];
+      if(this.environmentId==='office') {
+        this.people[0].route=[[280,410],[570,410],[570,460],[445,460],[445,410]];
+        Object.assign(this.people[1],{x:970,y:430,route:[[970,430],[970,635],[1040,635],[1040,430]]});
+      }
       this.targetId='p1'; this.peopleVisible=true;this.peopleMoving=true;
       this.running=true;this.events=0;this.collisions=0;this.lastCollision=null;this.time=0;this.lastTime=0;
       this.resetControl();
       this.output={command:'PARAR',state:'PRONTO',distance:400,safety:'MONITORANDO',targetVisible:false};
+    }
+    setEnvironment(id,obstacles) {
+      if(!Array.isArray(obstacles)||!obstacles.length||obstacles.some(o=>
+        ![o.x,o.y,o.w,o.h,o.height].every(Number.isFinite)||o.w<=0||o.h<=0)) return false;
+      const running=this.running,peopleVisible=this.peopleVisible,peopleMoving=this.peopleMoving;
+      this.environmentId=id;this.obstacles=obstacles.map(o=>({...o}));this.reset();
+      Object.assign(this,{running,peopleVisible,peopleMoving});return true;
     }
     resetControl() { this.robot.avoidance=null;this.reverseAllowed=true;this.turnRight=true;this.sensorAt=-Infinity;
       this.near=0;this.clear=0;this.confirming=false;this.distance=400;this.followDistanceHeld=false; }
@@ -41,9 +52,9 @@
     addPerson() {
       this.peopleVisible=true;
       if(this.people.length>=5) return false;
-      const i=this.people.length;
-      this.people.push({id:`p${i+1}`,name:`Visitante ${i-1}`,x:1040-i*65,y:400,angle:0,speed:20+i,
-        color:[0x758b61,0x806fa9,0xd2b567][i-2],route:[[1040-i*65,400],[1040-i*65,710]],leg:1});
+      const i=this.people.length,y=this.environmentId==='office'?430:400;
+      this.people.push({id:`p${i+1}`,name:`Visitante ${i-1}`,x:1040-i*65,y,angle:0,speed:20+i,
+        color:[0x758b61,0x806fa9,0xd2b567][i-2],route:[[1040-i*65,y],[1040-i*65,710]],leg:1});
       return true;
     }
     personBlocked(x,y,radius=19) {
@@ -59,6 +70,7 @@
         // People belong to the same fixed laboratory as the robot: their
         // route advances rather than letting an avatar walk through furniture.
         if(this.personBlocked(next.x,next.y)) { p.leg=(p.leg+1)%p.route.length; continue; }
+        if(Math.hypot(next.x-this.robot.x,next.y-this.robot.y)<this.robot.radius+19) continue;
         p.x=next.x;p.y=next.y;
         if(length<=travel) p.leg=(p.leg+1)%p.route.length;
       }

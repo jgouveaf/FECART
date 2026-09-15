@@ -87,11 +87,19 @@ class TestWebDeliveryQuality(unittest.TestCase):
         self.assertNotRegex(HTML, r"\son(?:click|keydown|submit)=")
 
     def test_asset_versions_force_the_professional_release(self) -> None:
-        for marker in ("web/styles.css?v=22", "web/app.js?v=20", "web/robot-control.js?v=24", "web/arduino-codes.js?v=17", "web/arduino-flasher.js?v=11", "web/simulator-world.js?v=2",
-                       "web/simulator-3d.js?v=2", "web/simulator-3d.css?v=2",
+        for marker in ("web/styles.css?v=22", "web/app.js?v=20", "web/robot-control.js?v=24", "web/arduino-codes.js?v=17", "web/arduino-flasher.js?v=11", "web/simulator-world.js?v=3",
+                       "web/simulator-3d.js?v=3", "web/simulator-3d.css?v=3",
                        "web/code-editor-utils.js?v=1", "web/face-identity-math.js?v=7",
                        "web/face-identities.js?v=26", "web/person-follow-math.js?v=11", "web/person-follow.js?v=14"):
             self.assertIn(marker, HTML)
+
+    def test_simulator_models_are_local_and_have_traceable_licenses(self) -> None:
+        renderer = (ROOT / "web" / "simulator-3d.js").read_text(encoding="utf-8")
+        for path in ("office-lobby.glb", "person-mixamo.glb", "GLTFLoader.js"):
+            self.assertIn(path, renderer)
+        self.assertTrue((ROOT / "web" / "assets" / "models" / "office-lobby.glb").is_file())
+        self.assertTrue((ROOT / "web" / "assets" / "models" / "person-mixamo.glb").is_file())
+        self.assertIn("CC0", (ROOT / "docs" / "ASSET_LICENSES_3D.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

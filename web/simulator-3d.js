@@ -1,8 +1,14 @@
 /* Rendering only: world decisions never leave the virtual simulator. */
 (() => {
   'use strict';
+  const assetBase=new URL('./assets/models/',document.currentScript.src);
   async function create(container,world) {
-    const T=await import('./vendor/three/three.module.min.js');
+    const [T,{GLTFLoader},{clone:cloneSkeleton},{RoomEnvironment}]=await Promise.all([
+      import('./vendor/three/three.module.min.js'),
+      import('./vendor/three/GLTFLoader.js'),
+      import('./vendor/three/SkeletonUtils.js'),
+      import('./vendor/three/RoomEnvironment.js')
+    ]);
     const renderer=new T.WebGLRenderer({antialias:true,alpha:false,powerPreference:'low-power'});
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));
     renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
@@ -12,9 +18,20 @@
     canvas.setAttribute('aria-label','Mundo tridimensional do Quantum Tracker');
     container.prepend(canvas);
     const scene=new T.Scene();scene.background=new T.Color(0xc9dde3);scene.fog=new T.Fog(0xc9dde3,18,35);
+    const environment=new RoomEnvironment(),pmrem=new T.PMREMGenerator(renderer);
+    const environmentMap=pmrem.fromScene(environment,.04);
+    scene.environment=environmentMap.texture;scene.environmentIntensity=.65;
+    environment.dispose();pmrem.dispose();
+    let disposed=false;
+    // Commit the imported scene and its matching collision footprints together.
+    const builtInEnvironment=new T.Group(),officeEnvironment=new T.Group();
+    scene.add(builtInEnvironment,officeEnvironment);
+    const assetLoader=new GLTFLoader();
+    let humanPromise=null;
+    const humanResources=new T.Group();humanResources.visible=false;scene.add(humanResources);
     const camera=new T.PerspectiveCamera(68,1,.035,60);
-    const hemi=new T.HemisphereLight(0xdff5ff,0x5c6265,2.45);scene.add(hemi);
-    const sun=new T.DirectionalLight(0xffedd5,3.2);sun.position.set(4,8,5);sun.castShadow=true;
+    const hemi=new T.HemisphereLight(0xdff5ff,0x5c6265,1.3);scene.add(hemi);
+    const sun=new T.DirectionalLight(0xffedd5,2.3);sun.position.set(4,8,5);sun.castShadow=true;
     sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-9,right:9,top:9,bottom:-9,near:.5,far:22});
     sun.shadow.bias=-.0003;sun.shadow.normalBias=.015;sun.target.position.set(6,0,4);scene.add(sun,sun.target);
     const fill=new T.DirectionalLight(0xc3dfff,1.05);fill.position.set(-3,3,-4);scene.add(fill);
@@ -22,9 +39,9 @@
     const mat=(color,roughness=.65,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
     const materials={wall:mat(0xe9ede8,.78),metal:mat(0x64727a,.27,.74),dark:mat(0x203039,.38,.42),wood:mat(0xb98550,.58,.05),
       black:mat(0x12191d,.82,.08),orange:mat(0xf0a44a,.38,.08),white:mat(0xf7f4e9,.28,.06),blue:mat(0x267b9a,.34,.25),green:mat(0x2e7254,.78)};
-    const mesh=(geometry,material,parent=scene)=>{const m=new T.Mesh(geometry,material);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;};
-    const box=(x,y,z,w,h,d,material,parent=scene)=>{const m=mesh(new T.BoxGeometry(w,h,d),material,parent);m.position.set(x,y,z);return m;};
-    const sphere=(x,y,z,sx,sy,sz,material,parent=scene)=>{const m=mesh(new T.SphereGeometry(1,16,12),material,parent);m.scale.set(sx,sy,sz);m.position.set(x,y,z);return m;};
+    const mesh=(geometry,material,parent=builtInEnvironment)=>{const m=new T.Mesh(geometry,material);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;};
+    const box=(x,y,z,w,h,d,material,parent=builtInEnvironment)=>{const m=mesh(new T.BoxGeometry(w,h,d),material,parent);m.position.set(x,y,z);return m;};
+    const sphere=(x,y,z,sx,sy,sz,material,parent=builtInEnvironment)=>{const m=mesh(new T.SphereGeometry(1,16,12),material,parent);m.scale.set(sx,sy,sz);m.position.set(x,y,z);return m;};
     function label(text,color='#eaf0ef',background='#253c48',width=512,height=128) {
       const c=document.createElement('canvas');c.width=width;c.height=height;const ctx=c.getContext('2d');
       ctx.fillStyle=background;ctx.fillRect(0,0,width,height);ctx.fillStyle=color;ctx.font=`600 ${height*.34}px system-ui`;
@@ -52,6 +69,8 @@
     for(let z=.65;z<8;z+=1.3) {box(12,2,z,.035,2.2,1.2,glass).castShadow=false;box(12,2,z-.64,.1,2.6,.06,materials.dark);}
     box(12,3.25,4,.15,.16,8,materials.dark);
     for(let x=1;x<12;x+=2.5) {box(x,3.4,4,.08,.13,8,materials.metal);box(x,3.3,3.5,.12,.03,1.2,new T.MeshStandardMaterial({color:0xffffff,emissive:0xf1f7ff,emissiveIntensity:2}));}
+    // The downloaded lobby supplies furniture; retain the room shell and floor.
+    for(const object of [...builtInEnvironment.children]) scene.add(object);
     const sign=mesh(new T.PlaneGeometry(3.3,.75),new T.MeshBasicMaterial({map:label('QUANTUM  /  LAB 01')}));sign.position.set(5.7,2.5,.015);sign.castShadow=false;
     const smallSign=mesh(new T.PlaneGeometry(1.4,.28),new T.MeshBasicMaterial({map:label('ÁREA DE ROBÓTICA','#283e45','#e9d1a0')}));smallSign.position.set(1.5,1.9,.016);
     for(const z of [3.6,4.65]) box(6,.004,z,10,.006,.025,materials.orange).castShadow=false;
@@ -61,6 +80,37 @@
     for(let z=.9;z<3.5;z+=.78) {box(.2,.9,z,.22,1.5,.56,materials.dark);box(.32,1.35,z,.035,.018,.43,accent);}
     box(10.75,1.05,6.95,.85,1.9,.22,materials.dark);for(let y=.42;y<1.82;y+=.42) box(10.75,y,6.82,.7,.018,.05,materials.metal);
     const door=box(9.45,1.2,.025,1.05,2.35,.035,materials.dark);door.castShadow=false;box(9.82,1.2,.048,.02,2.2,.025,materials.metal).castShadow=false;
+    assetLoader.load(new URL('office-lobby.glb',assetBase).href,gltf=>{
+      const office=gltf.scene;
+      if(disposed){disposeTree(office);return;}
+      office.scale.setScalar(.9);office.position.set(6.075,0,4.32);
+      office.traverse(object=>{
+        if(!object.isMesh)return;
+        object.castShadow=true;object.receiveShadow=true;
+        const mats=Array.isArray(object.material)?object.material:[object.material];
+        mats.forEach(material=>{if(material) material.envMapIntensity=1.1;});
+      });
+      office.updateMatrixWorld(true);
+      const obstacles=[];
+      // Furniture group footprints are conservative, including chair/table
+      // overhangs. Rugs and ceiling fixtures do not obstruct the flat floor.
+      office.traverse(object=>{
+        if(!/^\d{3}-/.test(object.name)||object.isMesh)return;
+        const bounds=new T.Box3().setFromObject(object);
+        if(bounds.min.y>.1||bounds.max.y<.05)return;
+        obstacles.push({x:bounds.min.x*100,y:bounds.min.z*100,w:(bounds.max.x-bounds.min.x)*100,
+          h:(bounds.max.z-bounds.min.z)*100,height:bounds.max.y*100,kind:object.name});
+      });
+      if(!world.setEnvironment('office',obstacles)){disposeTree(office);return;}
+      officeEnvironment.add(office);
+      builtInEnvironment.visible=false;
+      container.dataset.environment='office';
+      const status=document.getElementById('simGraphicsStatus');if(status)status.textContent='Recepção 3D · cenário realista';
+    },undefined,()=>{
+      if(disposed)return;
+      // Keep the existing procedural room as an offline/failure fallback.
+      const status=document.getElementById('simGraphicsStatus');if(status)status.textContent='Laboratório · cenário local';
+    });
     // Fixed obstacles use exactly the same bounds as collision and sensor logic.
     for(const o of world.obstacles) {
       const x=(o.x+o.w/2)/100,z=(o.y+o.h/2)/100,w=o.w/100,d=o.h/100,h=o.height/100;
@@ -106,30 +156,64 @@
     function makePerson(p) {
       const skinTone=p.id==='p2'?0x8a5b45:p.id==='p3'?0xc58d69:0xe1b18d;
       const hairTone=p.id==='p2'?0x17110f:p.id==='p3'?0x633d27:0x30241f;
-      const group=new T.Group(),shirt=mat(p.color,.7,.04),pants=mat(0x293945,.86,.05),skin=mat(skinTone,.78),hair=mat(hairTone,.9);scene.add(group);
-      const torso=mesh(new T.CylinderGeometry(.205,.15,.44,20),shirt,group);torso.scale.z=.6;torso.position.y=1.15;
-      sphere(0,.87,0,.17,.13,.12,pants,group);
+      const group=new T.Group(),legacy=new T.Group(),shirt=mat(p.color,.7,.04),pants=mat(0x293945,.86,.05),skin=mat(skinTone,.78),hair=mat(hairTone,.9);scene.add(group);group.add(legacy);
+      const torso=mesh(new T.CylinderGeometry(.205,.15,.44,20),shirt,legacy);torso.scale.z=.6;torso.position.y=1.15;
+      sphere(0,.87,0,.17,.13,.12,pants,legacy);
       const limbs=[];
       for(const side of [-1,1]) {
-        const leg=new T.Group();leg.position.set(side*.1,.87,0);group.add(leg);limbs.push(leg);
+        const leg=new T.Group();leg.position.set(side*.1,.87,0);legacy.add(leg);limbs.push(leg);
         const thigh=mesh(new T.CapsuleGeometry(.065,.29,4,10),pants,leg);thigh.position.y=-.19;
         const shin=mesh(new T.CapsuleGeometry(.052,.28,4,10),pants,leg);shin.position.y=-.54;
         box(0,-.765,.045,.12,.075,.24,materials.dark,leg);
-        const arm=new T.Group();arm.position.set(side*.23,1.33,0);group.add(arm);limbs.push(arm);
+        const arm=new T.Group();arm.position.set(side*.23,1.33,0);legacy.add(arm);limbs.push(arm);
         const sleeve=mesh(new T.CapsuleGeometry(.067,.16,4,10),shirt,arm);sleeve.position.y=-.11;
         const forearm=mesh(new T.CapsuleGeometry(.046,.2,4,10),skin,arm);forearm.position.set(side*.015,-.34,.015);
         sphere(side*.015,-.49,.018,.045,.07,.035,skin,arm);
       }
-      sphere(0,1.48,0,.058,.08,.057,skin,group);sphere(0,1.64,0,.106,.143,.1,skin,group);
-      sphere(0,1.72,-.015,.109,.079,.098,hair,group);
-      sphere(0,1.64,.101,.023,.031,.027,skin,group);
-      for(const side of [-1,1]) sphere(side*.041,1.675,.089,.012,.009,.009,materials.dark,group);
+      sphere(0,1.48,0,.058,.08,.057,skin,legacy);sphere(0,1.64,0,.106,.143,.1,skin,legacy);
+      sphere(0,1.72,-.015,.109,.079,.098,hair,legacy);
+      sphere(0,1.64,.101,.023,.031,.027,skin,legacy);
+      for(const side of [-1,1]) sphere(side*.041,1.675,.089,.012,.009,.009,materials.dark,legacy);
       const badge=new T.Sprite(new T.SpriteMaterial({map:label(p.name,'#fff','#29474c',256,80),depthTest:true}));badge.position.set(0,1.99,0);badge.scale.set(.65,.2,1);group.add(badge);
       const ring=mesh(new T.RingGeometry(.24,.27,40),new T.MeshBasicMaterial({color:0x32e4b0,side:T.DoubleSide,transparent:true,opacity:.9}),group);
       ring.rotation.x=-Math.PI/2;ring.position.y=.006;ring.castShadow=false;
-      return {group,limbs,ring};
+      const avatar={group,legacy,limbs,ring,mixer:null,actions:null,motion:'',x:p.x,y:p.y};
+      // Each person gets its own armature; therefore the independent walk and
+      // idle animations never share bones or state.
+      if(!humanPromise) humanPromise=Promise.all([
+        assetLoader.loadAsync(new URL('person-mixamo.glb',assetBase).href),
+        fetch(new URL('person-motion.json',assetBase)).then(response=>{if(!response.ok)throw Error('Animações indisponíveis');return response.json();})
+      ]).then(([gltf,motion])=>{
+        if(disposed){disposeTree(gltf.scene);return null;}
+        gltf.animations=motion.clips.map(clip=>T.AnimationClip.parse(clip));
+        if(!['Idle','Walk'].every(name=>gltf.animations.some(clip=>clip.name===name))) {disposeTree(gltf.scene);throw Error('Animações incompletas');}
+        humanResources.add(gltf.scene);return gltf;
+      });
+      humanPromise.then(gltf=>{
+        if(disposed||!gltf)return;
+        const character=cloneSkeleton(gltf.scene);
+        const mixer=new T.AnimationMixer(character);
+        const idle=mixer.clipAction(gltf.animations.find(clip=>clip.name==='Idle'));
+        idle.play();mixer.update(0);
+        // Evaluate the bind hierarchy before measuring skinned vertices.
+        character.updateMatrixWorld(true);
+        character.traverse(object=>{if(object.isSkinnedMesh){object.skeleton.update();object.computeBoundingBox();}});
+        const bounds=new T.Box3().setFromObject(character);
+        const scale=1.75/(bounds.max.y-bounds.min.y);
+        character.scale.multiplyScalar(scale);character.position.y=-bounds.min.y*scale;
+        character.traverse(object=>{if(object.isMesh){object.castShadow=true;object.receiveShadow=true;}});
+        group.add(character);legacy.visible=false;
+        avatar.mixer=mixer;
+        avatar.actions={
+          walk:avatar.mixer.clipAction(gltf.animations.find(animation=>/walk/i.test(animation.name))||gltf.animations[0]),
+          idle
+        };
+        avatar.actions.idle.play();avatar.motion='idle';
+        container.dataset.peopleModel='mixamo';
+      }).catch(()=>{if(!disposed)group.userData.assetFailed=true;});
+      return avatar;
     }
-    const avatars=new Map();let view='third',orbit=0,elevation=.5,zoom=2.8,drag=null,disposed=false,healthy=true,lastFrame=0;
+    const avatars=new Map();let view='third',orbit=0,elevation=.5,zoom=2.8,drag=null,healthy=true,lastFrame=0;
     const desired=new T.Vector3(),look=new T.Vector3(),lastLook=new T.Vector3();let cameraReady=false;
     function size() {const {width,height}=container.getBoundingClientRect();renderer.setSize(width,height,false);camera.aspect=width/Math.max(height,1);camera.updateProjectionMatrix();}
     const resize=new ResizeObserver(size);resize.observe(container);size();
@@ -138,7 +222,7 @@
     const end=()=>{drag=null;};canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
     canvas.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom+e.deltaY*.003,1.2,6);canvas.dispatchEvent(new Event('viewinput',{bubbles:true}));},{passive:false});
     canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();healthy=false;container.classList.remove('has-3d');container.dataset.view='map';document.getElementById('simGraphicsStatus').textContent='Visão superior · recuperando gráficos';});
-    canvas.addEventListener('webglcontextrestored',()=>{healthy=true;container.classList.add('has-3d');container.dataset.view=view;cameraReady=false;document.getElementById('simGraphicsStatus').textContent='Laboratório · cenário fixo';canvas.dispatchEvent(new Event('viewinput',{bubbles:true}));});
+    canvas.addEventListener('webglcontextrestored',()=>{healthy=true;container.classList.add('has-3d');container.dataset.view=view;cameraReady=false;document.getElementById('simGraphicsStatus').textContent=world.environmentId==='office'?'Recepção 3D · cenário realista':'Laboratório · cenário fixo';canvas.dispatchEvent(new Event('viewinput',{bubbles:true}));});
     container.classList.add('has-3d');container.dataset.view='third';
     const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
     return {
@@ -156,6 +240,12 @@
           avatar.ring.visible=p.id===world.targetId;
           const stride=world.peopleMoving?Math.sin(world.time*p.speed/9)*.28:0;
           avatar.limbs[0].rotation.x=stride;avatar.limbs[2].rotation.x=-stride;avatar.limbs[1].rotation.x=-stride*.7;avatar.limbs[3].rotation.x=stride*.7;
+          if(avatar.mixer) {
+            const motion=Math.hypot(p.x-avatar.x,p.y-avatar.y)>.001?'walk':'idle';
+            if(avatar.motion!==motion) {avatar.actions[avatar.motion].fadeOut(.16);avatar.actions[motion].reset().fadeIn(.16).play();avatar.motion=motion;}
+            avatar.mixer.update(dt*(motion==='walk'?Math.max(.2,p.speed/140):1));
+          }
+          avatar.x=p.x;avatar.y=p.y;
         }
         const impact=world.lastCollision;
         collisionMarker.visible=Boolean(impact);
@@ -169,8 +259,11 @@
         else {const ease=1-Math.exp(-dt*9);camera.position.lerp(desired,ease);lastLook.lerp(look,ease);}
         camera.lookAt(lastLook);renderer.render(scene,camera);
       },
-      dispose(){if(disposed)return;disposed=true;resize.disconnect();const resources=new Set();scene.traverse(o=>{if(o.geometry)resources.add(o.geometry);for(const m of Array.isArray(o.material)?o.material:o.material?[o.material]:[]) {if(m.map)resources.add(m.map);resources.add(m);}});resources.forEach(r=>r.dispose());renderer.dispose();canvas.remove();}
+      dispose(){if(disposed)return;disposed=true;resize.disconnect();for(const avatar of avatars.values())avatar.mixer?.stopAllAction();disposeTree(scene);environmentMap.dispose();renderer.dispose();canvas.remove();}
     };
   }
+  function disposeTree(root){const resources=new Set();root.traverse(o=>{if(o.geometry)resources.add(o.geometry);if(o.skeleton)resources.add(o.skeleton);
+    for(const m of Array.isArray(o.material)?o.material:o.material?[o.material]:[]){for(const value of Object.values(m))if(value?.isTexture)resources.add(value);resources.add(m);}});
+    resources.forEach(r=>r.dispose());}
   window.QuantumSimulator3D=Object.freeze({create});
 })();

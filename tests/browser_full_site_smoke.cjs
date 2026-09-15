@@ -10,7 +10,8 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
 (async () => {
   const browser = await chromium.launch({
     headless: true,
-    args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+    args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream",
+      "--enable-webgl", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
   });
   const context = await browser.newContext({ permissions: ["camera"] });
   // O painel fica atrás de uma tela de login simples (client-side); autentica
@@ -63,7 +64,13 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
       await page.locator(`[data-simulator-command="${command}"]`).click();
       await page.waitForTimeout(40);
       const applied = await page.evaluate(() => window.QuantumSimulator.snapshot());
-      await page.waitForTimeout(140);
+      // Wait for actual rendered motion; a software GPU can skip a 140 ms window.
+      if (command === 'PARAR') await page.waitForTimeout(140);
+      else await page.waitForFunction(({command,robot})=>{
+        const next=window.QuantumSimulator.snapshot().robot;
+        if(command==='FRENTE'||command==='TRAS') return Math.hypot(next.x-robot.x,next.y-robot.y)>.5;
+        return command==='ESQUERDA'?next.angle<robot.angle-.001:next.angle>robot.angle+.001;
+      },{command,robot:applied.robot},{timeout:1200});
       const after = await page.evaluate(() => window.QuantumSimulator.snapshot());
       simulator[command] = { before, applied, after };
     }
@@ -141,8 +148,9 @@ const screenshotPath = process.env.QT_SCREENSHOT || "";
 
     const repeatedFaceModels = [...faceModelRequests.entries()].filter(([, count]) => count > 1);
     const simulatorPassed =
-      Math.hypot(simulator.FRENTE.after.robot.x - simulator.FRENTE.applied.robot.x, simulator.FRENTE.after.robot.y - simulator.FRENTE.applied.robot.y) > 2
-      && simulator.TRAS.after.robot.x < simulator.TRAS.applied.robot.x - 2
+      // World distances are now centimetres; exact speed is tested in World.
+      Math.hypot(simulator.FRENTE.after.robot.x - simulator.FRENTE.applied.robot.x, simulator.FRENTE.after.robot.y - simulator.FRENTE.applied.robot.y) > .5
+      && simulator.TRAS.after.robot.x < simulator.TRAS.applied.robot.x - .5
       && simulator.DIREITA.after.robot.angle > simulator.DIREITA.applied.robot.angle
       && simulator.ESQUERDA.after.robot.angle < simulator.ESQUERDA.applied.robot.angle
       && Math.abs(simulator.PARAR.after.robot.angle - simulator.PARAR.applied.robot.angle) < 0.02

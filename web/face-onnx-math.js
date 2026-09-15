@@ -62,6 +62,26 @@
     }
     return result;
   }
+  function projectMesh(mesh, previousPoints, currentPoints) {
+    if(!Array.isArray(mesh)||mesh.length<468||!mesh.every(p=>p.length>=3&&p.every(Number.isFinite))) return null;
+    try {
+      const {a,b,tx,ty}=alignment(previousPoints,currentPoints),scale=Math.hypot(a,b);
+      if(scale<.5||scale>2) return null;
+      return mesh.map(([x,y,z])=>[a*x-b*y+tx,b*x+a*y+ty,z*scale]);
+    } catch { return null; }
+  }
+  function sameAlignedFace(current, reference) {
+    // Small, fixed photometric gate. Compare against the last actual SFace
+    // input, never against another reused frame (which would allow drift).
+    if(current?.length!==3*112*112 || reference?.length!==current.length) return false;
+    let absolute=0,squared=0,count=0;
+    for(let c=0;c<3;c++) for(let y=20;y<92;y+=2) for(let x=24;x<88;x+=2) {
+      const i=c*112*112+y*112+x,d=current[i]-reference[i];
+      if(!Number.isFinite(d)) return false;
+      absolute+=Math.abs(d);squared+=d*d;count++;
+    }
+    return absolute/count<=3 && squared/count<=36;
+  }
   function normalized(values, length = 128) {
     if (values?.length !== length || !Array.from(values).every(Number.isFinite)) return null;
     const norm=Math.hypot(...values);
@@ -71,7 +91,7 @@
     const left=normalized(a),right=normalized(b);
     return left && right ? Math.max(-1,Math.min(1,left.reduce((s,v,i)=>s+v*right[i],0))) : -1;
   }
-  const api=Object.freeze({ENGINE,TEMPLATE,overlap,decode,alignment,alignedRGB,normalized,cosine});
+  const api=Object.freeze({ENGINE,TEMPLATE,overlap,decode,alignment,alignedRGB,projectMesh,sameAlignedFace,normalized,cosine});
   if (typeof module!=='undefined' && module.exports) module.exports=api;
   if (typeof self!=='undefined') self.QuantumFaceONNXMath=api;
 })();

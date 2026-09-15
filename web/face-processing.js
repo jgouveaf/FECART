@@ -14,6 +14,7 @@
     if (scaleX === 1 && scaleY === 1) return face;
     // Never mutate Human's cached coordinates: otherwise scaling compounds.
     return { ...face, box: face.box.map((v, i) => v * (i % 2 ? scaleY : scaleX)),
+      keypoints: face.keypoints?.map(p => [p[0] * scaleX, p[1] * scaleY]),
       mesh: face.mesh?.map(p => [p[0] * scaleX, p[1] * scaleY, (p[2] || 0) * scaleX]) };
   }
   const api = Object.freeze({ plan, restore });

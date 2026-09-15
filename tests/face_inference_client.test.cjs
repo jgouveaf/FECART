@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../web/face-inference-client.js'), 'utf8');
 function rig() {
   const workers = [], timers = new Map(); let serial = 0;
-  const context = { window: {}, document: { baseURI: 'http://localhost/' }, URL,
+  const context = { window: {}, performance, document: { baseURI: 'http://localhost/' }, URL,
     setTimeout(fn) { timers.set(++serial, fn); return serial; }, clearTimeout(id) { timers.delete(id); },
     createImageBitmap: async () => ({ closed: 0, close() { this.closed++; } }),
     Worker: class {
@@ -79,4 +79,20 @@ test('identity resolves before optional mesh; old mesh cannot finish another req
   assert.deepEqual(meshes, [firstId], 'Old geometry cannot overwrite the new frame');
   r.client.close(); worker.onmessage({ data: { id: secondId, type: 'mesh', faces: [] } });
   assert.deepEqual(meshes, [firstId], 'Closed camera/model cannot receive a visual update');
+});
+
+test('the CPU slot stays held through optional mesh and closes safely on cancellation',async()=>{
+  const r=rig();let releases=0;
+  r.context.window.QuantumVisionScheduler={acquire:async()=>()=>{releases++;}};
+  const loading=r.client.load({identityEngine:'scrfd-sface-2021dec-v1'});
+  r.workers[0].reply({type:'ready'});await loading;
+  const promise=r.client.detect({},{...cfg,identityFirst:true});await new Promise(setImmediate);
+  const worker=r.workers[0],id=worker.messages.at(-1).id;
+  worker.reply({type:'result',result:{face:[]}});await promise;assert.equal(releases,0);
+  worker.onmessage({data:{id,type:'mesh',faces:[]}});assert.equal(releases,0);
+  worker.onmessage({data:{id,type:'complete'}});assert.equal(releases,1);
+  worker.onmessage({data:{id,type:'complete'}});assert.equal(releases,1);
+  const second=r.client.detect({},cfg);await new Promise(setImmediate);
+  const rejected=assert.rejects(second,/encerrado/);r.client.close();await rejected;
+  assert.equal(releases,2);
 });

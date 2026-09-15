@@ -124,7 +124,9 @@
       // Expiry of a cached result is not a new observation of an empty scene.
       // Stop until fresh evidence arrives, retaining only the trajectory needed
       // to compare its real capture time. A capture gap still reacquires below.
-      if (people.length === 0 && faces.length === 1 && faces[0].registered && faces[0].id === this.id
+      if (faces.length === 1 && faces[0].registered && faces[0].id === this.id
+        && (people.length === 0 || people.length === 1 && people[0].confidence >= .5
+          && validBox(people[0].box) && validBox(faces[0].box) && headOnlyDetection(people[0].box,faces[0].box))
         && Number.isFinite(faces[0].capturedAt) && now - faces[0].capturedAt > MAX_FRAME_AGE_MS) {
         return this.stop('STALE_FRAME', { capturedAt: faces[0].capturedAt, trackingSource: 'face' });
       }
@@ -305,7 +307,7 @@
         id: this.id, prediction: null };
     }
   }
-  const api = Object.freeze({ PersonFollower, validBox, overlap, containsFace, visiblePeople });
+  const api = Object.freeze({ PersonFollower, validBox, overlap, containsFace, headOnlyDetection, visiblePeople });
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.QuantumPersonFollowMath = api;
 })();

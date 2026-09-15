@@ -10,16 +10,22 @@
     async initialize(config) {
       if (this.ready) return;
       this.close();
-      const path = config.identityEngine === 'scrfd-sface-2021dec-v1' ? 'web/face-onnx.worker.js?v=2' : 'web/face-detector.worker.js?v=1';
+      const path = config.identityEngine === 'scrfd-sface-2021dec-v1' ? 'web/face-onnx.worker.js?v=3' : 'web/face-detector.worker.js?v=1';
+      this.identityFirstSupported=config.identityEngine==='scrfd-sface-2021dec-v1';
       const worker = this.worker = new Worker(new URL(path, document.baseURI));
       worker.onmessage = ({ data }) => {
         if (worker !== this.worker) return;
+        if (data.type === 'complete') {
+          if (data.id === this.workFrameId) { this.releaseWork?.();this.releaseWork=null; }
+          return;
+        }
         if (data.type === 'mesh') {
           if (data.id === this.completedFrameId) this.onMesh?.(data);
           return;
         }
         if (data.id !== this.pending?.id) return;
         const task = this.pending; this.pending = null; clearTimeout(task.timer);
+        if (data.error || !this.holdUntilComplete) { this.releaseWork?.();this.releaseWork=null; }
         if (data.error) task.reject(new Error(data.error));
         else {
           if (data.result) { this.completedFrameId = data.id; data.result.frameId = data.id; }
@@ -47,12 +53,22 @@
       const worker = this.worker;
       let bitmap;
       try {
+        const release=window.QuantumVisionScheduler ? await window.QuantumVisionScheduler.acquire() : null;
+        if (worker !== this.worker) { release?.();throw new Error('Leitura facial cancelada.'); }
+        this.releaseWork=release;
+        const capturedAt=performance.now();
         bitmap = await createImageBitmap(video, { resizeWidth: config.filter.width, resizeHeight: config.filter.height, resizeQuality: 'high' });
         if (worker !== this.worker) throw new Error('Leitura facial cancelada.');
-        return await this.request({ type: 'frame', bitmap, config }, [bitmap]);
+        this.holdUntilComplete=this.identityFirstSupported && config.identityFirst===true;
+        this.workFrameId=this.sequence+1;
+        const result=await this.request({ type: 'frame', bitmap, config }, [bitmap]);
+        return {...result,capturedAt};
+      } catch(error) {
+        this.releaseWork?.();this.releaseWork=null;throw error;
       } finally { bitmap?.close(); this.capturing = false; }
     }
     close(error = new Error('Detector facial encerrado.')) {
+      this.releaseWork?.();this.releaseWork=null;
       this.worker?.terminate(); this.worker = null; this.ready = false;
       this.completedFrameId = null;
       if (this.pending) { clearTimeout(this.pending.timer); this.pending.reject(error); this.pending = null; }

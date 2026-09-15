@@ -30,7 +30,7 @@
         outputFaceBlendshapes:false,outputFacialTransformationMatrixes:false,
       });
     }
-    async detect(bitmap, onIdentity = null) {
+    async detect(bitmap, onIdentity = null, options = {}) {
       const started=performance.now(), {width,height}=bitmap;
       if (!this.surface || this.surface.width!==width || this.surface.height!==height) this.surface=new OffscreenCanvas(width,height);
       const ctx=this.surface.getContext('2d',{willReadFrequently:true}); ctx.drawImage(bitmap,0,0);
@@ -46,13 +46,27 @@
       try { faces=QuantumFaceONNXMath.decode(this.detector.outputNames.map(name=>output[name]),width,height,scale); }
       finally { tensor.dispose(); Object.values(output).forEach(t=>t.dispose()); }
       const detected=performance.now();
+      if(!onIdentity || !options.allowDescriptorReuse || faces.length!==1) this.descriptorCache=null;
       // Keep detections of additional people, but bound expensive descriptions.
       for (const face of faces.slice(0,3)) {
         const aligned=QuantumFaceONNXMath.alignedRGB(pixels,face.keypoints);
-        const sample=new ort.Tensor('float32',aligned,[1,3,112,112]);
-        const result=await this.recognizer.run({[this.recognizer.inputNames[0]]:sample});
-        try { face.embedding=QuantumFaceONNXMath.normalized(result[this.recognizer.outputNames[0]].data) || []; }
-        finally { sample.dispose(); Object.values(result).forEach(t=>t.dispose()); }
+        const cached=this.descriptorCache,age=cached?detected-cached.at:Infinity;
+        const reuse=onIdentity && options.allowDescriptorReuse && faces.length===1 && face.faceScore>=.58
+          && age>=0 && age<=450 && QuantumFaceONNXMath.overlap(face.box,cached.box)>=.65
+          && QuantumFaceONNXMath.sameAlignedFace(aligned,cached.pixels);
+        if(reuse) {
+          face.embedding=cached.embedding.slice();face.embeddingReused=true;face.embeddingAgeMs=age;
+        } else {
+          this.descriptorCache=null;
+          const sample=new ort.Tensor('float32',aligned,[1,3,112,112]);
+          let result;
+          try {
+            result=await this.recognizer.run({[this.recognizer.inputNames[0]]:sample});
+            face.embedding=QuantumFaceONNXMath.normalized(result[this.recognizer.outputNames[0]].data) || [];
+          } finally { sample.dispose();if(result) Object.values(result).forEach(t=>t.dispose()); }
+          if(onIdentity && faces.length===1 && face.embedding.length===128) this.descriptorCache={
+            pixels:aligned,embedding:face.embedding.slice(),box:face.box.slice(),at:started};
+        }
         const [left,right,nose]=face.keypoints;
         const eyeDistance=Math.hypot(right[0]-left[0],right[1]-left[1]);
         face.rotation={angle:{yaw:eyeDistance>1 ? (nose[0]-(left[0]+right[0])/2)/eyeDistance : 1,
@@ -60,7 +74,10 @@
         face.engine=QuantumFaceONNXMath.ENGINE;
       }
       const recognized=performance.now();
-      const meshDue=!onIdentity || this.lastMeshAt == null || recognized-this.lastMeshAt >= 450;
+      // Heavy identity frames have priority over decorative mesh inference.
+      // A fast position frame can refresh the full mesh on the next turn.
+      const meshDue=!onIdentity || recognized-started<=120
+        && (this.lastMeshAt == null || recognized-this.lastMeshAt >= 450);
       // Identity is control evidence; the mesh is display work. Let tracking
       // consume the measured identity before spending time drawing landmarks.
       onIdentity?.({face:faces,gesture:[],engine:QuantumFaceONNXMath.ENGINE,backend:'onnx-wasm',

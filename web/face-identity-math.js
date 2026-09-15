@@ -79,7 +79,8 @@
   class FaceIdentityTracker {
     constructor() { this.reset(); }
     reset() { this.track = null; }
-    update({ candidates, profile, box, capturedAt, now, single, confidence, referenceSimilarity }) {
+    update({ candidates, profile, box, capturedAt, now, single, confidence, referenceSimilarity,
+      descriptorFresh = true, descriptorAgeMs }) {
       const decision = { ...chooseIdentity(candidates, profile), captureReference: false };
       const previous = this.track;
       const valid = single && Number.isFinite(confidence) && confidence >= .58
@@ -95,6 +96,19 @@
       const iou = previous ? intersection / (box.width * box.height + previous.box.width * previous.box.height - intersection || 1) : 0;
       const continuous = previous && previous.engine === profile.engine && capturedAt > previous.at
         && capturedAt - previous.at <= 600 && iou >= .5;
+      if (!descriptorFresh) {
+        const same = continuous && previous.referenceAt != null && Number.isFinite(descriptorAgeMs)
+          && descriptorAgeMs >= 0 && descriptorAgeMs <= 450 && decision.ranked[0]?.identity.id === previous.id
+          && (decision.accepted || decision.reason === 'BELOW_THRESHOLD'
+            && decision.similarity >= profile.continuationThreshold && decision.margin >= profile.ambiguityMargin
+            && Number.isFinite(referenceSimilarity) && referenceSimilarity >= profile.referenceThreshold);
+        if (same) {
+          this.track = { ...previous, box: { ...box }, at: capturedAt };
+          return { ...decision, accepted: true, identity: decision.ranked[0].identity, reason: 'VISUAL_CONTINUITY' };
+        }
+        this.reset();
+        return { ...decision, accepted: false, identity: null, reason: 'RECHECK_REQUIRED' };
+      }
       if (decision.accepted) {
         const same = continuous && previous.id === decision.identity.id;
         const since = same ? previous.since : capturedAt;

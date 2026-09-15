@@ -447,7 +447,7 @@
     const decision = tracking ? identityTracker.update({ candidates: compared, profile: engineProfile,
       box, capturedAt, now: performance.now(), single: true,
       confidence: Number(face.faceScore || face.boxScore || face.score || 0),
-      referenceSimilarity,
+      referenceSimilarity, descriptorFresh: face.embeddingReused !== true, descriptorAgeMs: face.embeddingAgeMs,
     }) : window.QuantumFaceIdentityMath.chooseIdentity(compared, engineProfile);
     if (tracking && decision.captureReference) recognitionReference = face.embedding.slice();
     else if (!tracking || !identityTracker.track || identityTracker.track.referenceAt == null) recognitionReference = null;
@@ -704,7 +704,10 @@
       const processing = window.QuantumFaceProcessing.plan({ width: video.videoWidth, height: video.videoHeight,
         modeTwo: Number(control?.state.mode.id) === 2 && control?.state.mode.phase === 'ACTIVE',
         enrolling: registering || Boolean(personName.value.trim()) });
+      // Only an already confirmed session can use the short visual fast path.
+      processing.config.allowDescriptorReuse = processing.tracking && identityTracker.track?.referenceAt != null;
       const result = await faceInference.detect(video, processing.config);
+      capturedAt = result.capturedAt ?? capturedAt;
       if (generation !== detectionGeneration || !cameraActive || activeView !== "face" || expectedEngine !== desiredEngine()) {
         disposeResult(result);
         return;
@@ -746,7 +749,13 @@
       const keepMesh = processing.config.identityFirst && activeEngine === profiles.ONNX && faces.length === 1
         && previousFace?.identity.id === faces[0].identity.id && performance.now() - lastMeshDrawnAt <= 600
         && window.QuantumFaceONNXMath.overlap(previousFace.face.box, faces[0].face.box) >= .5;
-      if (!keepMesh) drawFaces(faces);
+      if (keepMesh && previousFace.face.mesh?.length) {
+        // Follow current measured landmarks while the full decorative mesh is
+        // computed less often. This geometry never becomes identity evidence.
+        faces[0].face.mesh = window.QuantumFaceONNXMath.projectMesh(previousFace.face.mesh,
+          previousFace.face.keypoints, faces[0].face.keypoints) || faces[0].face.mesh;
+      }
+      drawFaces(faces);
       updatePanel(faces);
       publishPersonTracking(faces);
       control?.patch("vision", { active: true, status: "ONLINE" }, { source: "face-loop" });

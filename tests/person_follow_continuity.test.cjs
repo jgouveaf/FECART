@@ -82,7 +82,7 @@ function poll(follower, now) {
   const output = [];
   const context = { performance: { now: () => now }, enabled: () => true, worker: {}, ready: true,
     enrolling: false, pending: { capturedAt: 1800 }, lastFrameAt: 1400,
-    follower, movingCamera: () => false, publish: r => output.push(r), fail: assert.fail,
+    follower, directFaceReady: () => false, movingCamera: () => false, publish: r => output.push(r), fail: assert.fail,
     control: { state: { robot: { connected: false } } },
     updateCount() {}, updateSensor() {}, setInterval: callback => callback() };
   vm.runInNewContext(watchdog, context);

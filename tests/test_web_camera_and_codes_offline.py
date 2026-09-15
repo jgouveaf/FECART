@@ -43,7 +43,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'id="registeredPeople"',
             'id="codigos"',
             'id="arduinoCode"',
-            'web/arduino-codes.js?v=15',
+            'web/arduino-codes.js?v=',
             'web/user-config.js?v=4',
             'web/control-state.js?v=1',
             'web/camera-controller.js?v=2',
@@ -51,14 +51,14 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
             'web/gesture-math.js?v=8',
             'web/gesture-calibration.js?v=1',
             'id="flashOfficialFirmware"',
-            'web/arduino-flasher.js?v=9',
-            'web/simulator-controller.js?v=2',
-            'web/robot-control.js?v=20',
+            'web/arduino-flasher.js?v=',
+            'web/simulator-controller.js?v=',
+            'web/robot-control.js?v=',
             'web/code-editor-utils.js?v=1',
-            'web/face-inference-client.js?v=3',
-            'web/face-onnx-math.js?v=1',
-            'web/face-identity-profiles.js?v=1',
-            'web/face-identity-math.js?v=4',
+            'web/face-inference-client.js?v=',
+            'web/face-onnx-math.js?v=',
+            'web/face-identity-profiles.js?v=',
+            'web/face-identity-math.js?v=',
             'web/face-identities.js?v=',
             'web/face-mesh-overlay.js?v=',
             'id="toggleGestures"',
@@ -208,7 +208,8 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
         self.assertIn("human.tf.dispose", self.face_js)
         self.assertIn("DETECTION_DELAY_MS", self.face_js)
         self.assertIn("scheduleDetection", self.face_js)
-        self.assertIn("recognitionMemory", self.face_js)
+        self.assertIn("identityTracker.reset()", self.face_js)
+        self.assertIn("recognitionReference = null", self.face_js)
         self.assertIn('quantum:face-observations', self.face_js)
 
     def test_face_inference_has_backoff_circuit_breaker_and_manual_retry(self) -> None:

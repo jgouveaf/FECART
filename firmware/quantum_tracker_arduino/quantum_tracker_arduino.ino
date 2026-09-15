@@ -91,16 +91,22 @@ bool controleUsbAtivo = false;
 char linhaSerial[34];
 byte tamanhoLinha = 0;
 
+// Valor inicial desconhecido obriga setup() a escrever LOW nos quatro pinos.
+byte saidaIn1 = 255, saidaIn2 = 255, saidaIn3 = 255, saidaIn4 = 255;
+
 void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
-  // Evita inverter a ponte H diretamente entre duas escritas.
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, LOW);
-  digitalWrite(IN1, in1);
-  digitalWrite(IN2, in2);
-  digitalWrite(IN3, in3);
-  digitalWrite(IN4, in4);
+  // Desliga primeiro somente as saidas que mudaram. Ao passar de uma curva
+  // para FRENTE, a roda que ja avanca nao recebe um pulso de desligamento.
+  // Na inversao, LOW acontece antes de HIGH; PARAR continua desligando ambas.
+  if (!in1 && saidaIn1 != LOW) digitalWrite(IN1, LOW);
+  if (!in2 && saidaIn2 != LOW) digitalWrite(IN2, LOW);
+  if (!in3 && saidaIn3 != LOW) digitalWrite(IN3, LOW);
+  if (!in4 && saidaIn4 != LOW) digitalWrite(IN4, LOW);
+  if (in1 && saidaIn1 != HIGH) digitalWrite(IN1, HIGH);
+  if (in2 && saidaIn2 != HIGH) digitalWrite(IN2, HIGH);
+  if (in3 && saidaIn3 != HIGH) digitalWrite(IN3, HIGH);
+  if (in4 && saidaIn4 != HIGH) digitalWrite(IN4, HIGH);
+  saidaIn1 = in1; saidaIn2 = in2; saidaIn3 = in3; saidaIn4 = in4;
 }
 
 void pararMotores() {

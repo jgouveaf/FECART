@@ -92,7 +92,8 @@ const fixture = /V0=`([^`]+)`/.exec(fs.readFileSync(path.join(__dirname, '../web
     await page.waitForFunction(() => window.quantumPersonFollower.snapshot?.command === 'FRENTE', null, { timeout: 60000 });
     const result = await page.evaluate(() => ({ ...window.quantumPersonFollower.snapshot,
       bodyCount: window.__fixture.bodyCount, personCount: document.getElementById('personCount').textContent }));
-    assert.equal(result.state, 'FACE_TRACKING'); assert.equal(result.bodyCount, 0);
+    assert.equal(result.state, 'FACE_TRACKING');
+    assert.ok(result.bodyCount === 0 || result.bodyCount === 1, 'A portrait may be detected as one head; no complete torso is needed');
     assert.equal(result.personCount, '1'); assert.equal(result.id, 'QT-001');
     if (mockedUSB) {
       page.on('dialog',dialog=>dialog.accept());
@@ -106,11 +107,12 @@ const fixture = /V0=`([^`]+)`/.exec(fs.readFileSync(path.join(__dirname, '../web
         window.__fixture.writes=[];window.__fixture.stops=[];window.__fixture.gaps=[];let previous=performance.now();
         window.__fixture.timer=setInterval(()=>{const now=performance.now();window.__fixture.gaps.push(now-previous);previous=now;},25);
       });
-      await page.waitForTimeout(8000);
+      await page.waitForTimeout(Number(process.env.QT_STEADY_MS) || 8000);
       const steady=await page.evaluate(()=>{
         clearInterval(window.__fixture.timer);return {writes:window.__fixture.writes,stops:window.__fixture.stops,maxUiGapMs:Math.max(...window.__fixture.gaps),performance:window.quantumFacePerformance};
       });
-      console.log('STEADY - eight seconds of real inference and mocked USB',JSON.stringify(steady));
+      console.log('STEADY - real inference and mocked USB',JSON.stringify(steady));
+      if(process.env.QT_REQUIRE_CONTINUOUS==='1') assert.equal(steady.stops.length,0,'Continuous-follow acceptance run must not alternate FRENTE/PARAR');
       assert.ok(steady.writes.filter(line => line === 'CMD:FRENTE').length >= 5,
         'A recognized stationary target must keep producing forward requests');
       // Real inference has variable latency. A safety stop on an actually
@@ -148,7 +150,7 @@ const fixture = /V0=`([^`]+)`/.exec(fs.readFileSync(path.join(__dirname, '../web
     }
     assert.deepEqual(external, []); assert.deepEqual(errors, []);
     await page.evaluate(() => window.quantumCameraController.stop());
-    console.log('PASS - real models count and follow a face with zero detected bodies, curve both ways and stop on loss', JSON.stringify({...result,mockedUSB}));
+    console.log('PASS - real models count and follow a face without a full torso, curve both ways and stop on loss', JSON.stringify({...result,mockedUSB}));
   } catch (error) {
     if (page) console.error(await page.evaluate(() => ({ status: document.getElementById('personFollowStatus').textContent,
       hint: document.getElementById('faceHint').textContent, face: document.getElementById('currentFaceId').textContent,

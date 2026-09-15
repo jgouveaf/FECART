@@ -26,22 +26,16 @@
   const testEnvironmentValue = document.getElementById("testEnvironmentValue");
   const testCanvasBadge = document.getElementById("testCanvasBadge");
 
-  const world = {
-    width: 960,
-    height: 540,
-    running: true,
-    events: 0,
-    lastTime: performance.now(),
-    robot: { x: 120, y: 280, angle: 0, speed: 80, avoidance: null },
-    obstacles: [
-      { x: 310, y: 180, w: 70, h: 190 },
-      { x: 520, y: 60, w: 85, h: 190 },
-      { x: 555, y: 365, w: 190, h: 65 },
-      { x: 790, y: 170, w: 70, h: 210 }
-    ]
-  };
+  const world = new window.QuantumSimulatorWorld.World();
+  let simulation3D = null, simulationLoading = null;
+  function ensureSimulation3D() {
+    if (simulation3D || simulationLoading || !simulatorVisible) return;
+    simulationLoading = window.QuantumSimulator3D.create(document.getElementById('simulationViewport'), world)
+      .then(view => { simulation3D = view; draw(); })
+      .catch(error => { document.getElementById('simGraphicsStatus').textContent = '3D indisponível · visão superior ativa'; console.warn('Simulador 3D:', error.message); });
+  }
   const simulatorCommands = new window.QuantumSimulatorController.SimulatorCommandController(900);
-  let simulatorVisible = true;
+  let simulatorVisible = !('IntersectionObserver' in window);
   let animationFrame = 0;
   let lastSimulatorUiSignature = "";
   let testTarget = "simulator";
@@ -135,7 +129,8 @@
     simulatorHint.textContent = state.mode === "AUTONOMO"
       ? `${targetLabel}: autônomo ativo · o sensor desvia dos obstáculos. Teclado: 1–5 ou setas.`
       : state.mode === "SEGUIR"
-        ? "Seguir pessoa · recebe a direção da câmera; sem alvo reconhecido, para."
+        ? testTarget === 'simulator' ? 'Segue a pessoa escolhida neste cenário. Se ela sair de vista ou ficar atrás de um obstáculo, para.'
+          : "Seguir pessoa · recebe a direção da câmera; sem alvo reconhecido, para."
       : state.source === "GESTO"
         ? `Gesto recebido · ${state.command}. Sem gesto novo por 0,9 s, o simulador para.`
         : `${state.source === "TECLADO" ? "Teclado" : "Teste manual"} · ${state.command}. Os gestos da câmera também controlam esta arena.`;
@@ -143,6 +138,7 @@
 
   function setSimulatorMode(mode) {
     simulatorCommands.setMode(mode);
+    world.resetControl();
     world.robot.avoidance = null;
     renderSimulatorControls();
     scheduleAnimation();
@@ -167,84 +163,40 @@
   }
 
   function resetWorld() {
-    Object.assign(world.robot, { x: 120, y: 280, angle: 0, speed: 80, avoidance: null });
+    world.reset();
     simulatorCommands.setMode("AUTONOMO");
-    world.events = 0;
-    world.running = true;
     world.lastTime = performance.now();
     toggleButton.textContent = "Pausar";
+    renderPeopleControls();
     renderSimulatorControls();
     scheduleAnimation();
+    draw();
   }
 
-  function rayDistance() {
-    const robot = world.robot;
-    for (let distance = 0; distance <= 150; distance += 3) {
-      const px = robot.x + Math.cos(robot.angle) * distance;
-      const py = robot.y + Math.sin(robot.angle) * distance;
-      if (px < 20 || py < 20 || px > world.width - 20 || py > world.height - 20) return distance;
-      if (world.obstacles.some((o) => px >= o.x && px <= o.x + o.w && py >= o.y && py <= o.y + o.h)) return distance;
-    }
-    return 150;
-  }
+  function rayDistance() { return world.sensor(); }
 
   function update(dt, time) {
-    const robot = world.robot;
-    const distance = rayDistance();
-    const command = simulatorCommands.current(time);
-    if (command === "PARAR") {
-      robot.avoidance = null;
-      stateValue.textContent = "PARADO";
-      commandValue.textContent = "PARAR";
-      safetyValue.textContent = "PARADA SEGURA";
-    } else if (robot.avoidance) {
-      const phase = robot.avoidance.phase;
-      if (time >= robot.avoidance.until) {
-        if (phase === "PAUSA") robot.avoidance = { phase: "RE", until: time + 700, direction: robot.avoidance.direction };
-        else if (phase === "RE") robot.avoidance = { phase: "CURVA", until: time + 900, direction: robot.avoidance.direction };
-        else if (phase === "CURVA") robot.avoidance = { phase: "SAIDA", until: time + 600, direction: robot.avoidance.direction };
-        else robot.avoidance = null;
-      }
-      if (robot.avoidance?.phase === "RE") {
-        robot.x -= Math.cos(robot.angle) * robot.speed * 0.65 * dt;
-        robot.y -= Math.sin(robot.angle) * robot.speed * 0.65 * dt;
-        commandValue.textContent = "TRAS";
-      } else if (robot.avoidance?.phase === "CURVA") {
-        robot.angle += robot.avoidance.direction * 2.15 * dt;
-        commandValue.textContent = robot.avoidance.direction > 0 ? "DIREITA" : "ESQUERDA";
-      } else if (robot.avoidance?.phase === "SAIDA") {
-        robot.x += Math.cos(robot.angle) * robot.speed * dt;
-        robot.y += Math.sin(robot.angle) * robot.speed * dt;
-        commandValue.textContent = "FRENTE";
-      } else commandValue.textContent = "PARAR";
-      stateValue.textContent = "DESVIANDO";
-      safetyValue.textContent = "INTERVENÇÃO ATIVA";
-    } else if (command === "FRENTE" && distance <= 44) {
-      robot.avoidance = { phase: "PAUSA", until: time + 200, direction: world.events % 2 === 0 ? 1 : -1 };
-      world.events += 1;
-    } else if (command === "FRENTE") {
-      robot.x += Math.cos(robot.angle) * robot.speed * dt;
-      robot.y += Math.sin(robot.angle) * robot.speed * dt;
-      stateValue.textContent = "AVANÇANDO";
-      commandValue.textContent = "FRENTE";
-      safetyValue.textContent = "MONITORANDO";
-    } else if (command === "TRAS") {
-      robot.x -= Math.cos(robot.angle) * robot.speed * dt;
-      robot.y -= Math.sin(robot.angle) * robot.speed * dt;
-      stateValue.textContent = "RECUANDO";
-      commandValue.textContent = "TRAS";
-      safetyValue.textContent = "COMANDO VIRTUAL";
-    } else {
-      const direction = command === "ESQUERDA" ? -1 : 1;
-      const turnSpeed = command === "GIRAR" ? 3.2 : 1.8;
-      robot.angle += direction * turnSpeed * dt;
-      stateValue.textContent = command === "GIRAR" ? "GIRANDO" : `VIRANDO ${command}`;
-      commandValue.textContent = command;
-      safetyValue.textContent = "COMANDO VIRTUAL";
-    }
-    distanceValue.textContent = `${Math.round(distance)} px`;
+    const mode = simulatorCommands.snapshot(time).mode;
+    const virtualFollow = mode === 'SEGUIR' && testTarget === 'simulator';
+    const result = world.step(dt, { mode, command: simulatorCommands.current(time), virtualFollow });
+    if (virtualFollow) simulatorCommands.setCommand(result.command, 'PESSOA VIRTUAL', time);
+    stateValue.textContent = result.state;
+    commandValue.textContent = result.command;
+    distanceValue.textContent = `${Math.round(result.distance)} cm`;
+    safetyValue.textContent = result.safety;
     eventValue.textContent = String(world.events);
+    document.getElementById('simWheelLeft').textContent = `${Math.round(result.left)} cm/s`;
+    document.getElementById('simWheelRight').textContent = `${Math.round(result.right)} cm/s`;
     renderSimulatorControls(time);
+  }
+
+  function renderPeopleControls() {
+    const select = document.getElementById('simPersonSelect');
+    select.replaceChildren(...world.people.map(p => { const option = document.createElement('option'); option.value=p.id; option.textContent=p.name; return option; }));
+    select.value = world.targetId;
+    document.getElementById('simPeopleVisibility').textContent = world.peopleVisible ? 'Ocultar pessoas' : 'Mostrar pessoas';
+    document.getElementById('simPeopleMotion').textContent = world.peopleMoving ? 'Pausar pessoas' : 'Mover pessoas';
+    document.getElementById('simAddPerson').disabled = world.people.length >= 5;
   }
 
   function drawGrid() {
@@ -257,6 +209,7 @@
   }
 
   function draw() {
+    ensureSimulation3D();
     drawGrid();
     world.obstacles.forEach((o, index) => {
       const gradient = ctx.createLinearGradient(o.x, o.y, o.x + o.w, o.y + o.h);
@@ -265,6 +218,10 @@
       ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, o.h, 10); ctx.fill(); ctx.stroke();
       ctx.fillStyle = "#59728e"; ctx.font = "700 10px system-ui"; ctx.fillText(`OBSTÁCULO ${index + 1}`, o.x + 10, o.y + 20);
     });
+    if (world.peopleVisible) for (const p of world.people) {
+      ctx.fillStyle = p.id === world.targetId ? '#31e6a1' : '#efb96a';ctx.beginPath();ctx.arc(p.x,p.y,18,0,Math.PI*2);ctx.fill();
+      ctx.font='600 13px system-ui';ctx.fillText(p.name,p.x-15,p.y-24);
+    }
     const robot = world.robot;
     const distance = rayDistance();
     ctx.save(); ctx.translate(robot.x, robot.y); ctx.rotate(robot.angle);
@@ -276,10 +233,12 @@
     ctx.fillStyle = "#31e6a1"; ctx.beginPath(); ctx.arc(-8, 0, 4, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
     ctx.fillStyle = "#9ab0c7"; ctx.font = "600 11px system-ui"; ctx.fillText("ROBÔ VIRTUAL", robot.x - 35, robot.y - 30);
+    simulation3D?.render(performance.now(), !world.running);
   }
 
   function loop(time) {
     animationFrame = 0;
+    if (!world.running || !simulatorVisible || document.hidden) return;
     const dt = Math.min((time - world.lastTime) / 1000, 0.05);
     world.lastTime = time;
     if (world.running) update(dt, time);
@@ -301,10 +260,31 @@
       animationFrame = 0;
       stateValue.textContent = "PAUSADO";
       commandValue.textContent = "PARAR";
+      world.robot.left = 0; world.robot.right = 0;
       draw();
     } else scheduleAnimation();
   });
   resetButton.addEventListener("click", resetWorld);
+  function setSimulationView(view) {
+    ensureSimulation3D();
+    simulationLoading?.then(() => { simulation3D?.setView(view);simulation3D?.render(performance.now(),true); });
+    document.getElementById('simViewFirst').setAttribute('aria-pressed',String(view==='first'));
+    document.getElementById('simViewThird').setAttribute('aria-pressed',String(view==='third'));
+    document.getElementById('simViewFirst').classList.toggle('active',view==='first');
+    document.getElementById('simViewThird').classList.toggle('active',view==='third');
+  }
+  document.getElementById('simViewFirst').addEventListener('click',()=>setSimulationView('first'));
+  document.getElementById('simViewThird').addEventListener('click',()=>setSimulationView('third'));
+  document.getElementById('simFullscreen').addEventListener('click',async()=>{
+    try {if(document.fullscreenElement) await document.exitFullscreen();else {await document.getElementById('simulationViewport').requestFullscreen();document.getElementById('simulationViewport').focus();}}
+    catch {document.getElementById('simGraphicsStatus').textContent='Tela cheia indisponível neste navegador';}
+  });
+  document.getElementById('simPersonSelect').addEventListener('change',e=>{world.selectPerson(e.target.value);world.resetControl();draw();});
+  document.getElementById('simPeopleVisibility').addEventListener('click',()=>{world.peopleVisible=!world.peopleVisible;renderPeopleControls();draw();});
+  document.getElementById('simPeopleMotion').addEventListener('click',()=>{world.peopleMoving=!world.peopleMoving;renderPeopleControls();draw();});
+  document.getElementById('simAddPerson').addEventListener('click',()=>{world.addPerson();renderPeopleControls();draw();});
+  document.getElementById('simulationViewport').addEventListener('viewinput',draw);
+  window.addEventListener('pagehide',()=>simulation3D?.dispose());
   testTargetSimulatorButton.addEventListener("click", () => setTestTarget("simulator"));
   testTargetArduinoButton.addEventListener("click", () => setTestTarget("arduino"));
   testConnectArduinoButton.addEventListener("click", async () => {
@@ -333,9 +313,10 @@
     s: "PARAR", S: "PARAR", " ": "PARAR",
     "5": "GIRAR", g: "GIRAR", G: "GIRAR",
   });
-  simulatorCommandPanel.addEventListener("keydown", (event) => {
+  for (const keyboardArea of [simulatorCommandPanel, document.getElementById('simulationViewport')]) keyboardArea.addEventListener("keydown", (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
-    if (event.target !== simulatorCommandPanel && [" ", "Enter"].includes(event.key)) return;
+    if (event.target.closest?.('select,input,textarea') || event.key === 'Enter'
+      || event.key === ' ' && event.target.closest?.('button')) return;
     const command = simulatorKeyboardCommands[event.key];
     if (!command) return;
     event.preventDefault();
@@ -348,7 +329,7 @@
     setSimulatorCommand(detail.command, "GESTO");
   });
   window.addEventListener("quantum:person-tracking", (event) => {
-    if (simulatorCommands.snapshot().mode !== "SEGUIR") return;
+    if (testTarget !== 'arduino' || simulatorCommands.snapshot().mode !== "SEGUIR") return;
     const detail = event.detail || {};
     simulatorCommands.setCommand(detail.visible ? detail.command : "PARAR", "ROSTO");
     renderSimulatorControls();
@@ -740,16 +721,17 @@
 
   window.addEventListener("resize", () => { resizeCanvas(); if (!world.running) draw(); });
   document.addEventListener("visibilitychange", scheduleAnimation);
-  const simulatorSection = document.getElementById("simulador");
+  const simulatorSection = document.getElementById("simulationViewport");
   if ("IntersectionObserver" in window && simulatorSection) {
     new IntersectionObserver(([entry]) => {
-      simulatorVisible = entry.isIntersecting;
+      simulatorVisible = entry.isIntersecting && entry.intersectionRatio >= .1;
+      if (simulatorVisible) ensureSimulation3D();
       if (!simulatorVisible && animationFrame) {
         cancelAnimationFrame(animationFrame);
         animationFrame = 0;
       }
       scheduleAnimation();
-    }, { rootMargin: "180px" }).observe(simulatorSection);
+    }, { threshold: [0,.1] }).observe(simulatorSection);
   }
   const firstCodeTab = document.querySelector(".code-tab");
   if (firstCodeTab) loadArduinoCode(firstCodeTab);
@@ -761,6 +743,8 @@
     setCommand: setSimulatorCommand,
     setTarget: setTestTarget,
     reset: resetWorld,
-    snapshot: () => ({ ...simulatorCommands.snapshot(), target: testTarget, robot: { ...world.robot }, events: world.events }),
+    snapshot: () => ({ ...simulatorCommands.snapshot(), target: testTarget, robot: { ...world.robot }, events: world.events,
+      scene: { ...world.output }, people: world.people.map(p=>({id:p.id,name:p.name,x:p.x,y:p.y})),
+      view:document.getElementById('simulationViewport').dataset.view, graphicsReady:Boolean(simulation3D?.ready) }),
   });
 })();

@@ -26,7 +26,17 @@ const site=process.env.QT_SITE_URL || 'http://127.0.0.1:9877/';
           row.scores=row.embedding ? Object.entries(refs).map(([id,ref])=>[id,QuantumFaceONNXMath.cosine(row.embedding,ref)]) : [];
           row.embeddingLength=row.embedding?.length || 0;delete row.embedding;
         }
-        return {initMs,rows};
+        const fast=[];
+        for(const id of ['A','B','C']) {
+          const img=new Image();img.src='__eval/'+id+'-reference.png';await img.decode();
+          const cfg={identityFirst:true,allowDescriptorReuse:true,filter:{width:640,height:360}};
+          const changed=await client.detect(img,cfg);
+          if(changed.face[0]?.embeddingReused) throw Error('A different real face reused the preceding descriptor');
+          const repeated=await client.detect(img,cfg);
+          fast.push({id,reused:repeated.face[0]?.embeddingReused===true,
+            self:QuantumFaceONNXMath.cosine(changed.face[0]?.embedding,repeated.face[0]?.embedding)});
+        }
+        return {initMs,rows,fast};
       } finally {client.close();}
     },manifest.cases);
     fs.mkdirSync(path.join(__dirname,'artifacts'),{recursive:true});
@@ -41,6 +51,7 @@ const site=process.env.QT_SITE_URL || 'http://127.0.0.1:9877/';
     assert.equal(report.rows.find(r=>r.condition==='empty').faces,0);
     assert.ok(report.rows.find(r=>r.file==='A-reference.png').meshPoints>=468);
     assert.equal(report.rows.find(r=>r.condition==='multiple').faces,2);
+    assert.ok(report.fast.every(row=>row.self>.99),'Fast path and full inference agree for the same reference');
     console.log('PASS - real SCRFD/SFace in browser: frontal/profile identities, repeat, empty and multiple scenes');
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -28,10 +28,18 @@
   const enabled = () => modeTwo() && cameraActive && activeView === "face" && !paused && !document.hidden && Boolean(follower.id);
   const movingCamera = () => ["DIREITA", "ESQUERDA", "GIRAR"].includes(control?.state.robot.command)
     || control?.state.robot.firmwareState === "DESVIANDO";
-  // Give facial identification CPU time while it sees the selected target.
-  // Body-only continuation keeps the faster cadence; freshness limits stay fixed.
-  const frameInterval = () => faces.some(f => f.id === follower.id && f.registered
+  // Head-only tracking gives identity more CPU time. A full body retains the
+  // 200 ms cadence needed for its 500 ms confidence hysteresis.
+  const frameInterval = () => directFaceReady(performance.now()) ? 300 : faces.some(f => f.id === follower.id && f.registered
     && performance.now() - f.capturedAt >= 0 && performance.now() - f.capturedAt <= 600) ? 200 : 100;
+  const directFaceReady = now => ready && lastFrameAt > 0
+    && faces.length === 1 && faces[0].registered && faces[0].id === follower.id
+    && faces[0].confidence >= .58 && window.QuantumPersonFollowMath.validBox(faces[0].box)
+    && Number.isFinite(faces[0].capturedAt)
+    && now >= faces[0].capturedAt && now - faces[0].capturedAt <= 600
+    && (observedPeople.length === 0 || observedPeople.length === 1 && observedPeople[0].confidence >= .5
+      && window.QuantumPersonFollowMath.validBox(observedPeople[0].box)
+      && window.QuantumPersonFollowMath.headOnlyDetection(observedPeople[0].box,faces[0].box));
 
   function updateCount(now = performance.now()) {
     const viewing = cameraActive && activeView === 'face' && !document.hidden;
@@ -139,7 +147,7 @@
   function stop(state = "OFFLINE") {
     ++generation;
     clearTimeout(schedule);
-    worker?.terminate(); worker = null;
+    worker?.terminate(); worker = null;pending?.release?.();
     ready = false; pending = null; lastVideoTime = -1; lastFrameAt = 0; observedPeople = [];
     follower.reset(); stopped(state);
   }
@@ -154,10 +162,14 @@
     try {
       if (enrolling) { stopped("ENROLLING"); return; }
       if (pending || video.readyState < 2 || video.currentTime === lastVideoTime) return;
+      const release=await window.QuantumVisionScheduler?.acquire?.();
+      if(token!==generation || !enabled()) {release?.();return;}
       lastVideoTime = video.currentTime;
       const capturedAt = performance.now(), id = ++sequence;
-      pending = { id, capturedAt };
-      const bitmap = await createImageBitmap(video);
+      pending = { id, capturedAt, release };
+      const scale=Math.min(1,640/Math.max(video.videoWidth,video.videoHeight));
+      const bitmap = await createImageBitmap(video,{resizeWidth:Math.max(1,Math.round(video.videoWidth*scale)),
+        resizeHeight:Math.max(1,Math.round(video.videoHeight*scale)),resizeQuality:'high'});
       if (token !== generation || !enabled()) { bitmap.close(); return; }
       worker.postMessage({ type: "frame", id, capturedAt, bitmap }, [bitmap]);
     } catch (error) { if (token === generation) fail(error.message); }
@@ -179,7 +191,7 @@
         if (data.type === "ready") { ready = true; pending = null; frame(token); return; }
         if (data.type === "error") { fail(data.message); return; }
         if (data.type !== "result" || !pending || pending.id !== data.id) return;
-        pending = null;
+        pending.release?.();pending = null;
         const now = performance.now();
         if (enrolling) { stopped("ENROLLING"); return; }
         diagnostics.frameAgeMs = Math.round(now - data.capturedAt);
@@ -210,7 +222,7 @@
       window.quantumRobot?.requestTelemetry?.();
     }
     if (pending && now - pending.capturedAt > (ready ? 5000 : 30000)) { fail("Tempo de processamento esgotado"); return; }
-    if (ready && (!lastFrameAt || now - lastFrameAt > 600)) {
+    if (ready && (!lastFrameAt || now - lastFrameAt > 600) && !directFaceReady(now)) {
       // Stop the expired command, but let the next observed frame decide if the
       // track is continuous. A timer firing before an in-flight result must not
       // erase face evidence. update() still rejects stale frames and long gaps.
@@ -230,14 +242,14 @@
     if (detail.failed) { faces = []; follower.reset(); stopped("ERROR"); }
     if (enrolling) { follower.reset(); stopped("ENROLLING"); }
     // Consume identity as soon as it arrives, without waiting another body
-    // inference cycle. An empty, current body result is required: never discard
-    // known competing/uncertain bodies or bypass a failed/stalled detector.
+    // inference cycle. A freshly measured, recognized face is direct evidence;
+    // the body timer must not stop that face just because no torso is visible.
+    // Keep known competing bodies, worker errors and the 5 s failure timeout.
     const now = performance.now(), capturedAt = Math.max(...faces.map(f => f.capturedAt));
-    if (!detail.failed && !enrolling && enabled() && ready && observedPeople.length === 0
-      && lastFrameAt > 0 && now - lastFrameAt >= 0 && now - lastFrameAt <= 600
+    if (!detail.failed && !enrolling && enabled() && directFaceReady(now)
       && Number.isFinite(capturedAt) && capturedAt <= now && now - capturedAt <= 600
       && capturedAt > follower.lastFaceSampleAt) {
-      publish(follower.update({ source: 'face', people: [], faces, now, capturedAt,
+      publish(follower.update({ source: 'face', people: observedPeople, faces, now, capturedAt,
         cameraMoving: movingCamera(), requireSensor: Boolean(control.state.robot.connected),
         distance, sensorAgeMs: now - sensorAt }));
     }

@@ -1,0 +1,37 @@
+#simulador .sim-layout { grid-template-columns:minmax(0,1fr); gap:16px; }
+.simulation-people-controls {display:flex;align-items:end;flex-wrap:wrap;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line);}
+.simulation-people-controls label {display:grid;gap:6px;font-size:12px;font-weight:600;}
+.simulation-people-controls select {min-width:150px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font:inherit;}
+.simulation-viewport {position:relative!important;height:clamp(420px,64vh,730px);min-height:420px!important;isolation:isolate;overflow:hidden;border-radius:16px;background:#d5e1e5;}
+.simulation-viewport:focus-visible {outline:3px solid #45adbc;outline-offset:3px;}
+.simulation-viewport>canvas.simulation-webgl {position:absolute;inset:0;width:100%!important;height:100%!important;min-height:0!important;display:block;touch-action:none;}
+.simulation-viewport:not(.has-3d)>canvas.simulation-webgl {display:none;}
+.simulation-viewport>canvas#robotCanvas {width:100%;height:100%;min-height:0;}
+.simulation-viewport.has-3d>canvas#robotCanvas {position:absolute;right:18px;top:76px;z-index:2;width:176px;height:118px;min-height:0!important;border:1px solid #c7d6d7;border-radius:10px;box-shadow:0 5px 22px #18283330;opacity:.9;pointer-events:none;}
+.simulation-view-toolbar {position:absolute;top:18px;left:18px;right:18px;z-index:3;display:flex;justify-content:space-between;gap:8px;pointer-events:none;}
+.simulation-view-toolbar button {pointer-events:auto;border:1px solid #b9c9ce;background:#f7faf6eb;color:#29414c;border-radius:8px;font:600 12px system-ui;padding:10px 14px;box-shadow:0 2px 12px #15334112;cursor:pointer;}
+.simulation-view-switch {display:flex;gap:5px;}
+.simulation-view-switch button.active {background:#214653;color:white;border-color:#214653;}
+.simulation-viewport .canvas-badge {top:73px;left:18px;bottom:auto;right:auto;font-size:10px;background:#f4f7eeeb;color:#2d4c53;border:1px solid #becdd0;}
+.simulation-scene-caption {position:absolute;left:18px;bottom:21px;z-index:3;display:grid;gap:5px;max-width:calc(100% - 235px);padding:12px 14px;border-radius:10px;background:#f3f6efdd;color:#25434c;backdrop-filter:blur(8px);pointer-events:none;}
+.simulation-scene-caption strong {font-size:13px;letter-spacing:.02em;}
+.simulation-scene-caption span {font-size:10px;line-height:1.5;}
+#simulador .telemetry {padding:16px;display:grid;grid-template-columns:1fr 230px;gap:16px;align-items:center;}
+#simulador .telemetry h3 {display:none;}
+#simulador .telemetry dl {margin:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;}
+#simulador .telemetry dl>div {display:grid;gap:5px;border:0;padding:0;}
+#simulador .telemetry dt {font-size:10px;}
+#simulador .telemetry dd {margin:0;font-size:12px;overflow-wrap:anywhere;}
+#simulador .safety-box {margin:0;}
+.simulation-viewport:fullscreen {height:100vh!important;width:100vw!important;border-radius:0;}
+@media(max-width:760px) {
+  .simulation-viewport {height:470px;}
+  .simulation-view-toolbar {left:10px;right:10px;top:10px;}
+  .simulation-view-toolbar button {padding:9px 10px;font-size:11px;}
+  .simulation-viewport .canvas-badge {left:10px;top:60px;}
+  .simulation-viewport.has-3d>canvas#robotCanvas {width:117px;height:78px;right:10px;top:62px;}
+  .simulation-scene-caption {left:10px;bottom:10px;padding:8px 10px;max-width:calc(100% - 145px);}
+  .simulation-scene-caption span {display:none;}
+  #simulador .telemetry {grid-template-columns:1fr;}
+  #simulador .telemetry dl {grid-template-columns:repeat(2,minmax(0,1fr));}
+}

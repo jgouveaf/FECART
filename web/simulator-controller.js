@@ -23,6 +23,7 @@
     setCommand(command, source = "TESTE", now = performance.now()) {
       const normalized = String(command || "").toUpperCase();
       if (!VALID_COMMANDS.has(normalized)) return false;
+      if (source === 'GESTO' && this.mode !== 'GESTOS') return false;
       this.command = normalized;
       this.source = source;
       this.lastInputAt = now;
@@ -30,7 +31,7 @@
     }
 
     current(now = performance.now()) {
-      if (this.mode === "AUTONOMO") return "FRENTE";
+      if (this.mode === "AUTONOMO") return this.command === 'PARAR' ? 'PARAR' : 'FRENTE';
       if (now - this.lastInputAt > this.timeoutMs) return "PARAR";
       return this.command;
     }

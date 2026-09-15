@@ -113,3 +113,15 @@ test('continuity cannot switch identity and Human uses its own thresholds', () =
   assert.equal(switched.motion.command, 'PARAR');
   assert.equal(other.read(1600,.49).accepted, false);
 });
+
+test('reused descriptors update position only inside an established session', () => {
+  const cached={descriptorFresh:false,descriptorAgeMs:200};
+  const r=rig();assert.equal(r.read(1000,.6,cached).accepted,false);
+  r.read(1200);assert.equal(r.read(1350,.6,cached).accepted,false,'One sample cannot acquire from a cache');
+  r.read(1600);r.read(1800);
+  const result=r.read(2000,.6,cached);
+  assert.equal(result.accepted,true);assert.equal(result.captureReference,false);
+  assert.equal(result.reason,'VISUAL_CONTINUITY');assert.equal(r.tracker.track.referenceAt,1800);
+  assert.equal(r.read(2200,.6,{...cached,descriptorAgeMs:451}).accepted,false);
+  assert.equal(r.read(2400,.6,cached).accepted,false,'Expired cache cannot resurrect a session');
+});

@@ -117,6 +117,10 @@ class FakePort {
   ackFor(line) {
     if (this.options.acks === false) return null;
     if (this.options.noAckFor?.includes(line)) return null;
+    if (this.options.dropFirstAckFor?.includes(line)) {
+      this.droppedAcks ||= new Set();
+      if (!this.droppedAcks.has(line)) { this.droppedAcks.add(line); return null; }
+    }
     if (line === "ESTOP") return "OK:ESTOP";
     if (line === "RESET_ESTOP") return "OK:RESET_ESTOP";
     if (line === "HELLO" && this.options.helloReady) {
@@ -472,6 +476,17 @@ async function testSilentUsbPreservesLocalAutonomousButStopsRemoteMode() {
   assert.equal(remote.control.state.safety.emergency, true, "Modo 3 continua dependente da supervisão do computador");
   assert.equal(remote.port.writes.at(-1), "ESTOP");
   await cleanup(remote);
+}
+
+async function testModeTransitionRetriesOneDroppedAcknowledgement() {
+  const environment = createEnvironment({ dropFirstAckFor: ["MODE:3"] }, { ackTimeoutMs: 25 });
+  await environment.robot.connect();
+  await releaseSafety(environment);
+  environment.robot.requestMode(3, "test");
+  await waitFor(() => environment.control.state.mode.id === 3 && environment.control.state.mode.phase === "ACTIVE");
+  assert.equal(environment.port.writes.filter(line => line === "MODE:3").length, 2);
+  assert.equal(environment.control.state.safety.emergency, false);
+  await cleanup(environment);
 }
 
 async function testRecoverableReadErrorDoesNotDisconnectArduino() {
@@ -895,6 +910,7 @@ async function main() {
     testModeTransitionSurvivesCameraStartupFailureInEstop,
     testWrongModeAndSplitBrainFailClosed,
     testModeAckTimeoutRollsBackAndStaysStopped,
+    testModeTransitionRetriesOneDroppedAcknowledgement,
     testRepeatedMotionAckFailureTriggersEstop,
     testOldTelemetryCannotConfirmANewMotionCommand,
     testSilentUsbPreservesLocalAutonomousButStopsRemoteMode,

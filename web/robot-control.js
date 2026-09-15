@@ -626,6 +626,24 @@
     if (operationToken !== operationGeneration) throw cancelled();
   }
 
+  async function transactModeStep(line, predicate, options = {}) {
+    // MODE, ESTOP, CMD:PARAR and RESET_ESTOP are idempotent in the firmware.
+    // A retry handles one lost USB response without guessing that the Arduino
+    // changed mode; a second missing acknowledgement still fails closed.
+    let failure = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        return await transact(line, predicate, options);
+      } catch (error) {
+        failure = error;
+        if (error?.name === "AbortError" || attempt === 2) throw error;
+        log("WARNING", "ARDUINO", `${line} não foi confirmado; repetindo a etapa de troca de modo.`);
+        await delay(80);
+      }
+    }
+    throw failure;
+  }
+
   async function executeModeTransition(detail) {
     const nextMode = Number(detail?.next?.id);
     const previousMode = Number(detail?.previous?.id) || activeMode;
@@ -649,10 +667,10 @@
           throw new Error("Resolva a falha de segurança antes de trocar o modo.");
         }
         if (!preserveEmergency) {
-          await transact("ESTOP", (line) => line === "OK:ESTOP", { connectionToken, operationToken, label: "parada para troca de modo" });
+          await transactModeStep("ESTOP", (line) => line === "OK:ESTOP", { connectionToken, operationToken, label: "parada para troca de modo" });
           setEmergencyUi(true, "TROCA DE MODO · MOTORES BLOQUEADOS", "transition");
         }
-        await transact("CMD:PARAR", (line) => line === "OK:CMD:PARAR", { connectionToken, operationToken });
+        await transactModeStep("CMD:PARAR", (line) => line === "OK:CMD:PARAR", { connectionToken, operationToken });
       }
 
       try {
@@ -663,7 +681,7 @@
         log("WARNING", "MODO", `${MODE_NAMES[nextMode]} continuará em ESTOP até câmera/visão ficar disponível`, error?.message || String(error));
       }
       if (connected) {
-        await transact(`MODE:${nextMode}`, (line) => line === `OK:MODE:${nextMode}`, { connectionToken, operationToken });
+        await transactModeStep(`MODE:${nextMode}`, (line) => line === `OK:MODE:${nextMode}`, { connectionToken, operationToken });
         confirmedMode = nextMode;
         if (preserveEmergency || dependencyError) {
           const state = dependencyError
@@ -671,7 +689,7 @@
             : `${MODE_NAMES[nextMode]} PRONTO · CONFIRME A LIBERAÇÃO`;
           setEmergencyUi(true, state, dependencyError ? "dependency" : preservedEmergencyOwner || "operator");
         } else {
-          await transact("RESET_ESTOP", (line) => line === "OK:RESET_ESTOP", { connectionToken, operationToken });
+          await transactModeStep("RESET_ESTOP", (line) => line === "OK:RESET_ESTOP", { connectionToken, operationToken });
           setEmergencyUi(false);
         }
       }

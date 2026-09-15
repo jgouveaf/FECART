@@ -240,9 +240,13 @@
               <div><dt>Pessoas na imagem</dt><dd id="personCount">—</dd></div>
               <div><dt>Alvo escolhido</dt><dd id="personTarget">Nenhum · clique em Seguir no cadastro</dd></div>
               <div><dt>Posição do alvo</dt><dd id="personPrediction">Aguardando alvo</dd></div>
+              <div><dt>Estado do alvo</dt><dd id="personTargetLock">TARGET LOST</dd></div>
+              <div><dt>Erro horizontal</dt><dd id="personHorizontalError">—</dd></div>
               <div><dt>Direção calculada pela visão</dt><dd id="personVisualCommand">PARAR</dd></div>
               <div><dt>Comando para o carrinho</dt><dd id="personMotionCommand">Sem envio</dd></div>
+              <div><dt>Faixa de distância</dt><dd id="personDistanceState">SEM ESTIMATIVA · visão</dd></div>
               <div><dt>Leitura do sensor e idade</dt><dd id="personSensorReading">Arduino desconectado</dd></div>
+              <div><dt>Segurança frontal</dt><dd id="personObstacleState">SEM ARDUINO</dd></div>
             </dl>
             <p id="personFollowDelivery">Somente o Modo 2 recebe estas decisões.</p>
             <details class="person-follow-diagnostics">
@@ -571,7 +575,7 @@
   <script src="web/gesture-calibration.js?v=1" defer></script>
   <script src="web/person-appearance.js?v=2" defer></script>
   <script src="web/person-follow-math.js?v=8" defer></script>
-  <script src="web/person-follow.js?v=10" defer></script>
+  <script src="web/person-follow.js?v=11" defer></script>
   <script src="web/face-identities.js?v=26" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>

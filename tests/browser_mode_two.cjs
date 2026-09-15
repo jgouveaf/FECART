@@ -234,10 +234,17 @@ const site = process.env.QT_SITE_URL || "http://127.0.0.1:9876/";
       await page.locator('#downloadPersonDiagnostics').click();
       const download = await pendingDownload;
       const report = JSON.parse(require('node:fs').readFileSync(await download.path(), 'utf8'));
-      assert.equal(report.version, 1);
+      assert.equal(report.version, 2);
       assert.ok(report.transitions.length > 0 && report.transitions.length <= 60);
       assert.ok(report.frameAgeMs >= 0);
       assert.equal(report.lastStop.reason, 'STALE_FRAME');
+      assert.ok(['TARGET_VISIBLE', 'TARGET_TEMPORARILY_LOST', 'TARGET_LOST'].includes(report.currentDecision.targetLock));
+      assert.equal(typeof report.currentDecision.distance.band, 'string');
+      assert.equal(typeof report.currentDecision.obstacle, 'string');
+      assert.ok(report.transitions.some(item => Object.hasOwn(item, 'horizontalErrorPercent')
+        && Object.hasOwn(item, 'distanceState') && Object.hasOwn(item, 'obstacle')));
+      assert.match(await page.locator('#personTargetLock').textContent(), /TARGET/);
+      assert.match(await page.locator('#personDistanceState').textContent(), /HC-SR04|visão/);
       assert.ok(report.recognition && report.recognition.faceCount === 1);
       assert.equal(typeof report.recognition.similarity, 'number');
       assert.doesNotMatch(JSON.stringify(report), /Pessoa de teste|embedding|photo|data:image|QT-001/);

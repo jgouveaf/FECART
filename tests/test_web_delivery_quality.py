@@ -90,7 +90,7 @@ class TestWebDeliveryQuality(unittest.TestCase):
         for marker in ("web/styles.css?v=22", "web/app.js?v=20", "web/simulator-world.js?v=1",
                        "web/simulator-3d.js?v=1", "web/simulator-3d.css?v=1",
                        "web/code-editor-utils.js?v=1", "web/face-identity-math.js?v=7",
-                       "web/face-identities.js?v=26", "web/person-follow.js?v=10"):
+                       "web/face-identities.js?v=26", "web/person-follow.js?v=11"):
             self.assertIn(marker, HTML)
 
 

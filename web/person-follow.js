@@ -58,9 +58,57 @@
           : `${distance.toFixed(1)} cm · ${age > 700 ? 'leitura atrasada · ' : ''}${age} ms`;
   }
 
+  // These values explain the decision already made by PersonFollower.  They
+  // deliberately do not decide movement: the controller and the firmware
+  // remain the only authorities for motors and HC-SR04 safety.
+  function targetLockState(result) {
+    if (result.prediction || result.dropout) return 'TARGET_TEMPORARILY_LOST';
+    return result.visible === true ? 'TARGET_VISIBLE' : 'TARGET_LOST';
+  }
+
+  function distanceState(result, now) {
+    const sensorFresh = control?.state.robot.connected && sensorAt > 0
+      && Number.isFinite(distance) && distance > 0 && now >= sensorAt && now - sensorAt <= 700;
+    if (sensorFresh) {
+      const band = distance <= 30 ? 'MUITO PERTO' : distance < 40 ? 'PERTO'
+        : distance <= 90 ? 'IDEAL' : distance <= 180 ? 'LONGE' : 'MUITO LONGE';
+      return { band, source: 'HC-SR04', value: `${Math.round(distance)} cm` };
+    }
+    // A box is only a relative visual estimate. It must never be presented as
+    // centimetres or bypass the physical sensor when Arduino is connected.
+    const box = result.box || result.faceBox;
+    if (!window.QuantumPersonFollowMath.validBox(box)) return { band: 'SEM ESTIMATIVA', source: 'visão', value: '' };
+    const height = box.height;
+    const band = height >= .70 ? 'MUITO PERTO' : height >= .52 ? 'PERTO'
+      : height >= .24 ? 'IDEAL' : height >= .10 ? 'LONGE' : 'MUITO LONGE';
+    return { band, source: 'visão aproximada', value: '' };
+  }
+
+  function describeDecision(result, now) {
+    const sensorFresh = control?.state.robot.connected && sensorAt > 0
+      && Number.isFinite(distance) && distance > 0 && now >= sensorAt && now - sensorAt <= 700;
+    const horizontalError = Number.isFinite(result.center) ? (result.center - .5) * 100 : null;
+    const obstacle = control?.state.safety.emergency ? 'EMERGÊNCIA'
+      : !control?.state.robot.connected ? 'SEM ARDUINO'
+        : !sensorFresh ? 'SEM LEITURA ATUAL'
+          : distance <= 30 ? 'BLOQUEADO' : 'LIVRE';
+    return {
+      targetLock: targetLockState(result),
+      horizontalErrorPercent: horizontalError == null ? null : Math.round(horizontalError),
+      distance: distanceState(result, now),
+      obstacle,
+      reason: result.reason || result.state,
+    };
+  }
+
   function publish(result, people = []) {
     const now = performance.now();
-    const changed = !lastOutput || lastOutput.state !== result.state || lastOutput.command !== result.command;
+    const decision = describeDecision(result, now);
+    const output = { ...result, decision };
+    const changed = !lastOutput || lastOutput.state !== output.state || lastOutput.command !== output.command
+      || lastOutput.decision?.targetLock !== decision.targetLock
+      || lastOutput.decision?.distance.band !== decision.distance.band
+      || lastOutput.decision?.obstacle !== decision.obstacle;
     const reason = result.reason || result.state;
     if (changed) {
       diagnostics.transitions.push({ atMs: Math.round(now), state: result.state, reason,
@@ -68,13 +116,16 @@
         frameAgeMs: lastFrameAt ? Math.round(now - lastFrameAt) : null,
         bodyConfidence: Number.isFinite(result.confidence) ? result.confidence : null,
         sensorCm: distance, sensorAgeMs: sensorAt ? Math.round(now - sensorAt) : null,
+        targetLock: decision.targetLock, horizontalErrorPercent: decision.horizontalErrorPercent,
+        distanceState: decision.distance.band, distanceSource: decision.distance.source,
+        obstacle: decision.obstacle,
         recognition: window.quantumFaceRecognition || null });
       if (diagnostics.transitions.length > 60) diagnostics.transitions.shift();
     }
     if (result.command === 'PARAR' && !['SELECT_TARGET', 'CONFIRMING', 'LOADING', 'OFFLINE', 'PAUSED', 'ENROLLING'].includes(result.state)) {
       diagnostics.lastStop = { reason, label: labels[reason] || reason, atMs: Math.round(now) };
     }
-    lastOutput = result;
+    lastOutput = output;
     const freshTargetFace = faces.some(f => f.id === follower.id && f.registered
       && now - f.capturedAt >= 0 && now - f.capturedAt <= 800);
     const framingNeeded = freshTargetFace && ['REIDENTIFY', 'TARGET_LOST'].includes(reason);
@@ -98,6 +149,13 @@
       : Number.isFinite(result.center)
         ? `${result.center < .4 ? 'À esquerda' : result.center > .6 ? 'À direita' : 'No centro'} · ${Math.round(result.center * 100)}% da largura`
         : 'Aguardando alvo';
+    if ($('personTargetLock')) $('personTargetLock').textContent = decision.targetLock.replaceAll('_', ' ');
+    if ($('personHorizontalError')) $('personHorizontalError').textContent = decision.horizontalErrorPercent == null
+      ? '—' : `${decision.horizontalErrorPercent > 0 ? '+' : ''}${decision.horizontalErrorPercent}%`;
+    if ($('personDistanceState')) $('personDistanceState').textContent = decision.distance.value
+      ? `${decision.distance.band} · ${decision.distance.value} (${decision.distance.source})`
+      : `${decision.distance.band} · ${decision.distance.source}`;
+    if ($('personObstacleState')) $('personObstacleState').textContent = decision.obstacle;
     $("faceTrackingState").textContent = identityPending ? 'Confirmando a identidade do rosto visível'
       : labels[result.trackingState] || statusLabel || result.state;
     $("faceDirection").textContent = result.visualCommand || 'PARAR';
@@ -138,7 +196,7 @@
     publish.signature = `${result.state}:${result.command}:${follower.id}`;
     lastEmitAt = now;
     window.dispatchEvent(new CustomEvent("quantum:person-tracking", { detail: {
-      ...result, tracking: result.state, emittedAt: now, modeGeneration: window.quantumRobot?.modeGeneration,
+      ...output, tracking: result.state, emittedAt: now, modeGeneration: window.quantumRobot?.modeGeneration,
       // Prediction is NEVER presented as visible to the existing USB controller.
       visible: result.visible === true && !result.prediction, registered: Boolean(follower.id),
     } }));
@@ -287,7 +345,8 @@
   $("pausePersonFollow").addEventListener("click", () => { paused = true; stop("PAUSED"); });
   $("retryPersonDetection").addEventListener("click", () => { stop(); paused = false; start(); });
   function diagnosticSnapshot() {
-    return JSON.parse(JSON.stringify({ version: 1, ...diagnostics, face: window.quantumFacePerformance || null,
+    return JSON.parse(JSON.stringify({ version: 2, ...diagnostics, currentDecision: lastOutput?.decision || null,
+      face: window.quantumFacePerformance || null,
       recognition: window.quantumFaceRecognition || null }));
   }
   $('downloadPersonDiagnostics')?.addEventListener('click', () => {

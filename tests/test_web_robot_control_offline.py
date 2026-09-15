@@ -107,13 +107,14 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn('line === `OK:MODE:${nextMode}`', self.robot_js)
         self.assertIn('control?.commitMode?.(nextMode', self.robot_js)
         mode_transition = self.robot_js.split("async function executeModeTransition", 1)[1].split("function requestMode", 1)[0]
-        estop_index = mode_transition.index('transact("ESTOP"')
-        stop_index = mode_transition.index('transact("CMD:PARAR"')
-        mode_ack_index = mode_transition.index('transact(`MODE:${nextMode}`')
+        estop_index = mode_transition.index('transactModeStep("ESTOP"')
+        stop_index = mode_transition.index('transactModeStep("CMD:PARAR"')
+        mode_ack_index = mode_transition.index('transactModeStep(`MODE:${nextMode}`')
         commit_index = mode_transition.index('control?.commitMode?.(nextMode')
         self.assertLess(estop_index, stop_index)
         self.assertLess(mode_ack_index, commit_index)
         self.assertIn("control?.rejectMode?.(error", mode_transition)
+        self.assertIn("async function transactModeStep", self.robot_js)
 
     def test_boot_keeps_motors_stopped_during_serial_handshake_window(self) -> None:
         self.assertRegex(self.firmware, r"JANELA_COMANDO_INICIAL_MS\s*=\s*750UL")

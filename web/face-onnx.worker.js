@@ -1,4 +1,4 @@
-importScripts('./vendor/onnxruntime/ort.wasm.min.js', './face-onnx-math.js?v=2', './face-onnx-engine.js?v=3');
+importScripts('./vendor/onnxruntime/ort.wasm.min.js', './face-onnx-math.js?v=2', './face-onnx-engine.js?v=4');
 let engine=null,busy=false;
 self.onmessage=async ({data})=>{
   if (busy) { data.bitmap?.close(); self.postMessage({id:data.id,error:'Leitura facial já em andamento.'}); return; }

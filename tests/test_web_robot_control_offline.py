@@ -175,11 +175,12 @@ class TestWebRobotControlOffline(unittest.TestCase):
         self.assertIn('setConnection("FALHA DE SINCRONIZAÇÃO", "ERROR"', fail_closed)
         self.assertIn('enqueueLine("ESTOP"', fail_closed)
 
-    def test_ultrasonic_sensor_remains_above_external_commands(self) -> None:
+    def test_ultrasonic_sensor_remains_above_external_commands_except_mode_two_test(self) -> None:
         self.assertIn("obstaculoConfirmado()", self.firmware)
         self.assertIn("iniciarDesvio(agora)", self.firmware)
         loop = self.firmware.split("void loop()", 1)[1]
-        sensor_guard = loop.index("if (comandoExigeFrenteLivre(desejado) && !sensorPronto())")
+        self.assertIn("const bool usarSensorNoModo = modo != MODO_SEGUIR;", loop)
+        sensor_guard = loop.index("if (usarSensorNoModo && comandoExigeFrenteLivre(desejado) && !sensorPronto())")
         command_application = loop.index("aplicarComando(desejado)")
         self.assertLess(sensor_guard, command_application)
 

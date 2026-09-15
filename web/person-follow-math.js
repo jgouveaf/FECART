@@ -272,7 +272,7 @@
       // Temporary bench-test mode: lock the largest (nearest-looking) body at
       // acquisition, then retain that track. A later larger person never
       // silently replaces it; uncertainty and loss stop the robot.
-      const bodies = observedBodies.filter(p => p.confidence >= .60);
+      const bodies = observedBodies.filter(p => p.confidence >= .50);
       if (!bodies.length) return this.missing(now, observedBodies.length ? 'LOW_BODY_CONFIDENCE' : 'TARGET_LOST', cameraMoving);
       const area = p => p.box.width * p.box.height;
       let chosen = null;
@@ -296,8 +296,13 @@
       this.confirmedFrames++; if (this.confirmedSince == null) this.confirmedSince = capturedAt;
       const info = { box: this.box, confidence: chosen.confidence, center: this.smoothed, capturedAt,
         identityAgeMs: null, appearanceReady: false, anonymous: true };
-      if (this.confirmedFrames < 2 || capturedAt - this.confirmedSince < 120) return this.stop('CONFIRMING', info);
-      return this.decideMotion(info, chosen.box.height, safety, 'NEAREST_TRACKING');
+      // This is an operator-selected bench test, not identity following. The
+      // first valid human detection must exercise the real USB path at once.
+      // It intentionally drives straight; target centering and FaceID remain
+      // part of the registered-person flow.
+      this.steering = 'FRENTE'; this.command = 'FRENTE'; this.turnCycleAt = null;
+      return { ...info, trackingState: 'NEAREST_TRACKING', visualCommand: 'FRENTE', steering: 'FRENTE',
+        visible: true, command: 'FRENTE', state: 'NEAREST_TRACKING', id: this.id, prediction: null };
     }
     proximityStop(info, height, { requireSensor, distance, sensorAgeMs }, faceOnly) {
       if (requireSensor && (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(sensorAgeMs) || sensorAgeMs < 0 || sensorAgeMs > 700)) {

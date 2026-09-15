@@ -341,7 +341,7 @@
     if (values.CMD && commandStatus) commandStatus.textContent = values.CMD;
     if (stateStatus) stateStatus.textContent = firmwareState;
     if (values.STATE === "ESTOP") setEmergencyUi(true, "ESTOP", emergencyOwner || "firmware");
-    else if (values.STATE === "SENSOR_FAIL" && !["operator", "fault", "transition"].includes(emergencyOwner)) {
+    else if (values.STATE === "SENSOR_FAIL" && firmwareMode !== 2 && !["operator", "fault", "transition"].includes(emergencyOwner)) {
       setEmergencyUi(true, "SENSOR SEM RESPOSTA · MOTORES BLOQUEADOS", "sensor");
     } else if (emergencyActive && ["firmware", "sensor"].includes(emergencyOwner) && !modeTransitioning) {
       setEmergencyUi(false);
@@ -354,14 +354,14 @@
         : "SEM LEITURA";
     patch("robot", {
       connected,
-      status: splitBrainHandling || values.STATE === "SENSOR_FAIL" ? "ERROR" : connected ? "ONLINE" : "CONNECTING",
+      status: splitBrainHandling || values.STATE === "SENSOR_FAIL" && firmwareMode !== 2 ? "ERROR" : connected ? "ONLINE" : "CONNECTING",
       command: values.CMD || "PARAR",
       firmwareState,
       distance,
     }, { source: "arduino-telemetry" });
     patch("safety", {
       emergency: emergencyActive || values.STATE === "ESTOP",
-      status: values.STATE === "SENSOR_FAIL" ? "SENSOR_FAIL" : emergencyActive || values.STATE === "ESTOP" ? "EMERGENCY" : "MONITORING",
+      status: values.STATE === "SENSOR_FAIL" && firmwareMode !== 2 ? "SENSOR_FAIL" : emergencyActive || values.STATE === "ESTOP" ? "EMERGENCY" : "MONITORING",
       obstacle,
     }, { source: "arduino-telemetry" });
   }

@@ -76,8 +76,9 @@
       const recognized=performance.now();
       // Heavy identity frames have priority over decorative mesh inference.
       // A fast position frame can refresh the full mesh on the next turn.
+      const meshIntervalMs=Number.isFinite(options.meshIntervalMs) ? options.meshIntervalMs : 450;
       const meshDue=!onIdentity || recognized-started<=120
-        && (this.lastMeshAt == null || recognized-this.lastMeshAt >= 450);
+        && (this.lastMeshAt == null || recognized-this.lastMeshAt >= meshIntervalMs);
       // Identity is control evidence; the mesh is display work. Let tracking
       // consume the measured identity before spending time drawing landmarks.
       onIdentity?.({face:faces,gesture:[],engine:QuantumFaceONNXMath.ENGINE,backend:'onnx-wasm',

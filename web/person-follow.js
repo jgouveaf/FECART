@@ -53,6 +53,7 @@
   function updateSensor(now = performance.now()) {
     const element = $('personSensorReading');
     if (!element) return;
+    if (modeTwo()) { element.textContent = 'Não usado no Modo 2'; return; }
     const age = Math.max(0, Math.round(now - sensorAt));
     element.textContent = !control.state.robot.connected ? 'Arduino desconectado'
       : !sensorAt ? 'Ainda sem telemetria'
@@ -69,6 +70,7 @@
   }
 
   function distanceState(result, now) {
+    if (modeTwo()) return { band: 'NÃO USADO', source: 'Modo 2', value: '' };
     const sensorFresh = control?.state.robot.connected && sensorAt > 0
       && Number.isFinite(distance) && distance > 0 && now >= sensorAt && now - sensorAt <= 700;
     if (sensorFresh) {
@@ -92,6 +94,7 @@
     const horizontalError = Number.isFinite(result.center) ? (result.center - .5) * 100 : null;
     const obstacle = control?.state.safety.emergency ? 'EMERGÊNCIA'
       : !control?.state.robot.connected ? 'SEM ARDUINO'
+        : modeTwo() ? 'NÃO USADO NO MODO 2'
         : !sensorFresh ? 'SEM LEITURA ATUAL'
           : distance <= 30 ? 'BLOQUEADO' : 'LIVRE';
     return {
@@ -259,7 +262,7 @@
         lastFrameAt = data.capturedAt;
         observedPeople = data.people;
         const result = follower.update({ people: data.people, faces, now, capturedAt: data.capturedAt,
-          cameraMoving: movingCamera(), requireSensor: Boolean(control.state.robot.connected),
+          cameraMoving: movingCamera(), requireSensor: false,
           distance, sensorAgeMs: now - sensorAt });
         publish(result, data.people);
         if (token !== generation || !enabled()) return;
@@ -276,11 +279,6 @@
     updateSensor();
     if (!enabled() || !worker || enrolling) return;
     const now = performance.now();
-    // Ask for a new sample before the existing 700 ms expiry. No response
-    // means STOP; a cached number or a command ACK never renews the sensor.
-    if (control.state.robot.connected && (!sensorAt || now - sensorAt >= 400)) {
-      window.quantumRobot?.requestTelemetry?.();
-    }
     if (pending && now - pending.capturedAt > (ready ? 5000 : 30000)) { fail("Tempo de processamento esgotado"); return; }
     if (ready && (!lastFrameAt || now - lastFrameAt > 600) && !directFaceReady(now)) {
       // Stop the expired command, but let the next observed frame decide if the
@@ -313,7 +311,7 @@
       && Number.isFinite(capturedAt) && capturedAt <= now && now - capturedAt <= 600
       && capturedAt > follower.lastFaceSampleAt) {
       publish(follower.update({ source: 'face', people: observedPeople, faces, now, capturedAt,
-        cameraMoving: movingCamera(), requireSensor: Boolean(control.state.robot.connected),
+        cameraMoving: movingCamera(), requireSensor: false,
         distance, sensorAgeMs: now - sensorAt }));
     }
   });
@@ -327,7 +325,11 @@
   window.addEventListener("quantum:mode-will-change", () => { stop("PAUSED"); });
   window.addEventListener("quantum:mode-changed", () => {
     paused = false;
-    if (modeTwo() && !follower.id) stopped('SELECT_TARGET');
+    if (modeTwo() && !follower.id) {
+      follower.selectNearest();
+      selectedName = 'Pessoa visível · teste sem cadastro';
+      stopped('CONFIRMING');
+    }
     start();
   });
   document.addEventListener("visibilitychange", () => { if (document.hidden) stop("PAUSED"); else start(); });
@@ -340,6 +342,12 @@
   });
   async function prepare() {
     paused = false;
+    // No profile selected means the operator asked for the direct body test.
+    // It uses the first visible person and never sends FaceID data to control.
+    if (!follower.id) {
+      follower.selectNearest();
+      selectedName = 'Pessoa visível · teste sem cadastro';
+    }
     if (!modeTwo()) window.quantumRobot?.requestMode(2, "person-follow");
     else {
       try { await window.quantumGestureController?.selectView("face"); await window.quantumCameraController?.start(); start(); }

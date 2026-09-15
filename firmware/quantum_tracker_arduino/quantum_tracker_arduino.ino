@@ -4,7 +4,7 @@
 
   MODOS:
   1 - AUTONOMO: anda sempre e desvia com o HC-SR04.
-  2 - SEGUIR: recebe direcao da camera e desvia quando houver leitura valida.
+  2 - SEGUIR: recebe direcao da camera; nesta revisão de teste não usa HC-SR04.
   3 - GESTOS: recebe os gestos e desvia quando houver leitura valida.
 
   PROTOCOLO SERIAL (9600 baud, uma linha por comando):
@@ -20,7 +20,7 @@
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
   - Modo 1 usa a sequencia aprovada em bancada: parar, re e curva suave;
   - curvas de desvio mantem uma roda para frente e a outra parada;
-  - falha do sensor para o movimento que exige caminho frontal e aguarda duas
+  - nos Modos 1 e 3, falha do sensor para o movimento que exige caminho frontal e aguarda duas
     leituras validas; ausencia de eco nunca e tratada como caminho livre;
   - a primeira leitura proxima para; duas novas leituras confirmam o desvio;
   - apos a curva, duas leituras livres confirmam a nova direcao antes de avancar;
@@ -342,7 +342,7 @@ void enviarStatus(unsigned long agora, bool forcar = false) {
   Serial.print(nomeComando(comandoAplicado));
   Serial.print(F("|STATE:"));
   if (paradaEmergencia) Serial.print(F("ESTOP"));
-  else if (!sensorPronto()) Serial.print(F("SENSOR_FAIL"));
+  else if (modo != MODO_SEGUIR && !sensorPronto()) Serial.print(F("SENSOR_FAIL"));
   else if (modo != MODO_AUTONOMO && !controleUsbAtivo) Serial.print(F("LINK_WAIT"));
   else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
   else Serial.print(nomeModo());
@@ -498,27 +498,29 @@ void loop() {
 
   const ComandoMovimento desejado = comandoDesejadoPeloModo();
 
-  // Qualquer perda de eco durante uma manobra interrompe os motores. A
-  // sequencia so podera recomecar depois que o sensor recuperar duas leituras.
-  if (estadoDesvio != DESVIO_INATIVO && !sensorPronto()) {
+  // O HC-SR04 continua sendo obrigatório no Modo 1 e no Modo 3. No Modo 2,
+  // o operador pediu um teste direto de visão: CMD:FRENTE não é bloqueado por
+  // telemetria ou falha do sensor.
+  const bool usarSensorNoModo = modo != MODO_SEGUIR;
+  if (usarSensorNoModo && estadoDesvio != DESVIO_INATIVO && !sensorPronto()) {
     cancelarDesvio();
     enviarStatus(agora);
     return;
   }
 
-  if (comandoExigeFrenteLivre(desejado) && !sensorPronto()) {
+  if (usarSensorNoModo && comandoExigeFrenteLivre(desejado) && !sensorPronto()) {
     pararMotores();
     enviarStatus(agora);
     return;
   }
 
-  if (estadoDesvio != DESVIO_INATIVO) {
+  if (usarSensorNoModo && estadoDesvio != DESVIO_INATIVO) {
     atualizarDesvio(agora);
     enviarStatus(agora);
     return;
   }
 
-  if (comandoExigeFrenteLivre(desejado)) {
+  if (usarSensorNoModo && comandoExigeFrenteLivre(desejado)) {
     if (confirmandoObstaculo) {
       pararMotores();
       if (obstaculoConfirmado()) {

@@ -10,7 +10,7 @@
     async initialize(config) {
       if (this.ready) return;
       this.close();
-      const path = config.identityEngine === 'scrfd-sface-2021dec-v1' ? 'web/face-onnx.worker.js?v=3' : 'web/face-detector.worker.js?v=1';
+      const path = config.identityEngine === 'scrfd-sface-2021dec-v1' ? 'web/face-onnx.worker.js?v=4' : 'web/face-detector.worker.js?v=1';
       this.identityFirstSupported=config.identityEngine==='scrfd-sface-2021dec-v1';
       const worker = this.worker = new Worker(new URL(path, document.baseURI));
       worker.onmessage = ({ data }) => {
@@ -25,7 +25,10 @@
         }
         if (data.id !== this.pending?.id) return;
         const task = this.pending; this.pending = null; clearTimeout(task.timer);
-        if (data.error || !this.holdUntilComplete) { this.releaseWork?.();this.releaseWork=null; }
+        // Identity/position is ready now. The optional mesh may continue in
+        // the worker, but it must not hold the shared vision slot and delay
+        // the body detector that drives Mode 2.
+        this.releaseWork?.();this.releaseWork=null;
         if (data.error) task.reject(new Error(data.error));
         else {
           if (data.result) { this.completedFrameId = data.id; data.result.frameId = data.id; }

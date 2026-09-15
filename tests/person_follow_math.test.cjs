@@ -14,6 +14,18 @@ test("unselected/unknown identity never authorizes motion", () => {
   const { f, step } = rig(); f.select(null); assert.equal(step(1000).state, "SELECT_TARGET");
   f.select("other"); assert.equal(step(1200).command, "PARAR");
 });
+test('nearest-person test locks the initial largest body without a face profile', () => {
+  const f = new PersonFollower(); f.selectNearest();
+  const step = (t, people, extra = {}) => f.update({ people, faces: [], now: t, capturedAt: t, ...extra });
+  const target = body(.12, .55), laterLarger = body(.62, .82);
+  assert.equal(step(1000, [target]).state, 'CONFIRMING');
+  const running = step(1200, [target]);
+  assert.equal(running.state, 'NEAREST_TRACKING'); assert.equal(running.command, 'ESQUERDA');
+  const retained = step(1400, [target, laterLarger]);
+  assert.equal(retained.state, 'NEAREST_TRACKING'); assert.ok(retained.box.x < .3);
+  const lost = step(1600, [laterLarger]);
+  assert.equal(lost.command, 'PARAR'); assert.ok(['PREDICTED_STOP', 'TARGET_LOST'].includes(lost.state));
+});
 test("two fresh observations spanning 120 ms are required", () => {
   const { step } = rig(); assert.equal(step(1000).state, "CONFIRMING");
   assert.equal(step(1100).command, "PARAR"); assert.equal(step(1120).command, "FRENTE");

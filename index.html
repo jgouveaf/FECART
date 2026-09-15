@@ -232,6 +232,7 @@
             <div class="person-follow-actions">
               <a class="secondary-button" href="#registeredPeople">Escolher pessoa cadastrada</a>
               <button class="primary-button" id="preparePersonFollow" type="button">Preparar Modo 2 e câmera</button>
+              <button class="secondary-button" id="followNearestPerson" type="button">Testar pessoa mais próxima</button>
               <button class="secondary-button" id="pausePersonFollow" type="button">Pausar seguimento</button>
               <button class="secondary-button" id="retryPersonDetection" type="button" hidden>Tentar detector novamente</button>
             </div>
@@ -260,7 +261,7 @@
               <button class="secondary-button" id="downloadPersonDiagnostics" type="button">Baixar diagnóstico</button>
               <p class="privacy-note">Guarda os últimos 60 estados desta sessão, sem imagens, nomes ou cadastros faciais.</p>
             </details>
-            <p class="privacy-note">O alvo só muda quando você escolhe outro cadastro. Depois da identificação, o corpo e a roupa podem manter o acompanhamento quando o rosto sai de vista. Perda da associação, pessoas confundíveis ou imagem atrasada fazem o carrinho parar. A leitura do sensor libera os motores; ela não escolhe a pessoa.</p>
+            <p class="privacy-note">Em “Testar pessoa mais próxima”, o sistema escolhe o maior corpo visível uma vez, sem salvar nem reconhecer um rosto. Outra pessoa não troca o alvo; perda da associação, pessoas confundíveis ou imagem atrasada fazem o carrinho parar. A leitura do sensor libera os motores; ela não escolhe a pessoa.</p>
           </section>
           <div class="identity-register-card">
             <div class="identity-heading">
@@ -574,8 +575,8 @@
   <script src="web/gesture-math.js?v=8" defer></script>
   <script src="web/gesture-calibration.js?v=1" defer></script>
   <script src="web/person-appearance.js?v=2" defer></script>
-  <script src="web/person-follow-math.js?v=8" defer></script>
-  <script src="web/person-follow.js?v=11" defer></script>
+  <script src="web/person-follow-math.js?v=9" defer></script>
+  <script src="web/person-follow.js?v=12" defer></script>
   <script src="web/face-identities.js?v=26" defer></script>
   <script src="web/camera-gestures.js?v=18" defer></script>
 </body>

@@ -8,6 +8,7 @@
   const labels = { SELECT_TARGET: "Clique em Seguir no cadastro da pessoa", CONFIRMING: "Confirmando o alvo",
     FACE_TRACKING: "Seguindo pelo rosto do alvo",
     FOLLOWING: "Pessoa identificada", BODY_TRACKING: "Acompanhando o corpo · ID temporariamente mantido",
+    NEAREST_TRACKING: "Teste ativo · seguindo a pessoa mais próxima sem FaceID",
     APPEARANCE_TRACKING: "Alvo mantido pelo corpo e roupa · rosto fora de vista",
     AMBIGUOUS: "Pessoas sobrepostas · confirme o rosto", REIDENTIFY: "Mostre o rosto para confirmar o alvo",
     TARGET_LOST: "Alvo perdido · parado", PREDICTED_STOP: "Posição estimada · robô parado",
@@ -33,6 +34,7 @@
   const frameInterval = () => directFaceReady(performance.now()) ? 300 : faces.some(f => f.id === follower.id && f.registered
     && performance.now() - f.capturedAt >= 0 && performance.now() - f.capturedAt <= 600) ? 200 : 100;
   const directFaceReady = now => ready && lastFrameAt > 0
+    && !follower.anonymous
     && faces.length === 1 && faces[0].registered && faces[0].id === follower.id
     && faces[0].confidence >= .58 && window.QuantumPersonFollowMath.validBox(faces[0].box)
     && Number.isFinite(faces[0].capturedAt)
@@ -198,7 +200,7 @@
     window.dispatchEvent(new CustomEvent("quantum:person-tracking", { detail: {
       ...output, tracking: result.state, emittedAt: now, modeGeneration: window.quantumRobot?.modeGeneration,
       // Prediction is NEVER presented as visible to the existing USB controller.
-      visible: result.visible === true && !result.prediction, registered: Boolean(follower.id),
+      visible: result.visible === true && !result.prediction, registered: Boolean(follower.id) && !follower.anonymous,
     } }));
   }
   function stopped(state) { publish(follower.stop(state)); }
@@ -292,7 +294,10 @@
     faces = detail.faces || [];
     enrolling = Boolean(detail.registering);
     updateCount();
-    if (follower.id !== detail.selectedId) {
+    // The nearest-person test owns its temporary target until the operator
+    // explicitly selects a registered person. Ordinary face frames with no
+    // selected profile must not cancel the body-only test.
+    if ((!follower.anonymous || detail.selectedId) && follower.id !== detail.selectedId) {
       follower.select(detail.selectedId); selectedName = detail.selectedName || "";
       if (!follower.id) stop('SELECT_TARGET');
       else { stopped('CONFIRMING'); start(); }
@@ -342,6 +347,14 @@
     }
   }
   $("preparePersonFollow").addEventListener("click", prepare);
+  function prepareNearest() {
+    paused = false;
+    follower.selectNearest();
+    selectedName = 'Pessoa mais próxima · teste sem cadastro';
+    stopped('CONFIRMING');
+    prepare();
+  }
+  $('followNearestPerson')?.addEventListener('click', prepareNearest);
   $("pausePersonFollow").addEventListener("click", () => { paused = true; stop("PAUSED"); });
   $("retryPersonDetection").addEventListener("click", () => { stop(); paused = false; start(); });
   function diagnosticSnapshot() {
@@ -355,7 +368,7 @@
     link.href = url; link.download = 'quantum-modo2-diagnostico.json'; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
-  window.quantumPersonFollower = Object.freeze({ prepare, get snapshot() { return lastOutput; },
+  window.quantumPersonFollower = Object.freeze({ prepare, prepareNearest, get snapshot() { return lastOutput; },
     get diagnostics() { return diagnosticSnapshot(); } });
   stopped("OFFLINE");
 })();

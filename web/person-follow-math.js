@@ -47,7 +47,8 @@
 
   class PersonFollower {
     constructor() { this.select(null); }
-    select(id) { this.id = id || null; this.reset(); }
+    select(id) { this.id = id || null; this.anonymous = false; this.reset(); }
+    selectNearest() { this.id = 'TESTE-PROXIMO'; this.anonymous = true; this.reset(); }
     reset() {
       this.box = null;
       this.seenAt = null;
@@ -131,6 +132,8 @@
         return this.stop('STALE_FRAME', { capturedAt: faces[0].capturedAt, trackingSource: 'face' });
       }
       const observedBodies = people.filter(p => validBox(p.box) && Number.isFinite(p.confidence) && p.confidence >= 0.50);
+      if (this.anonymous) return this.updateNearest(observedBodies, now, capturedAt, cameraMoving,
+        { requireSensor, distance, sensorAgeMs });
       const observedFaces = faces.filter(f => validBox(f.box) && Number.isFinite(f.confidence) && f.confidence >= 0.58
         && Number.isFinite(f.capturedAt) && now - f.capturedAt >= 0 && now - f.capturedAt <= 800
         && (people.length === 0 || Math.abs(capturedAt - f.capturedAt) <= 500) && f.capturedAt > this.reidentifyAfter);
@@ -264,6 +267,37 @@
       if (this.confirmedFrames < 2 || this.confirmedFaceSamples < 2 || capturedAt - this.confirmedSince < 120) return this.stop("CONFIRMING", info);
       return this.decideMotion(info, chosen.box.height, { requireSensor, distance, sensorAgeMs },
         targets.length ? 'FOLLOWING' : appearanceTracking ? 'APPEARANCE_TRACKING' : 'BODY_TRACKING');
+    }
+    updateNearest(observedBodies, now, capturedAt, cameraMoving, safety) {
+      // Temporary bench-test mode: lock the largest (nearest-looking) body at
+      // acquisition, then retain that track. A later larger person never
+      // silently replaces it; uncertainty and loss stop the robot.
+      const bodies = observedBodies.filter(p => p.confidence >= .60);
+      if (!bodies.length) return this.missing(now, observedBodies.length ? 'LOW_BODY_CONFIDENCE' : 'TARGET_LOST', cameraMoving);
+      const area = p => p.box.width * p.box.height;
+      let chosen = null;
+      if (!this.box || this.seenAt == null || capturedAt - this.seenAt > MAX_FRAME_AGE_MS) {
+        chosen = [...bodies].sort((a, b) => area(b) - area(a))[0];
+      } else {
+        const matches = bodies.map(p => ({ p, score: overlap(p.box, this.box) }))
+          .filter(item => item.score >= .35 && Math.abs(center(item.p.box) - center(this.box)) < .18)
+          .sort((a, b) => b.score - a.score);
+        if (matches.length > 1 && matches[0].score - matches[1].score < .18) return this.invalidate(now, 'AMBIGUOUS');
+        chosen = matches[0]?.p || null;
+      }
+      if (!chosen) return this.missing(now, 'TARGET_LOST', cameraMoving);
+      if (bodies.some(p => p !== chosen && overlap(p.box, chosen.box) > .4)) return this.invalidate(now, 'AMBIGUOUS');
+      const x = center(chosen.box), dt = this.seenAt == null ? 0 : (capturedAt - this.seenAt) / 1000;
+      if (this.box && dt > .02 && dt < .5 && !cameraMoving) {
+        this.velocity = clamp(.6 * this.velocity + .4 * (x - center(this.box)) / dt, -.6, .6);
+      } else this.velocity = 0;
+      this.smoothed = this.smoothed == null ? x : .55 * this.smoothed + .45 * x;
+      this.box = { ...chosen.box }; this.seenAt = capturedAt; this.strongBodyAt = capturedAt;
+      this.confirmedFrames++; if (this.confirmedSince == null) this.confirmedSince = capturedAt;
+      const info = { box: this.box, confidence: chosen.confidence, center: this.smoothed, capturedAt,
+        identityAgeMs: null, appearanceReady: false, anonymous: true };
+      if (this.confirmedFrames < 2 || capturedAt - this.confirmedSince < 120) return this.stop('CONFIRMING', info);
+      return this.decideMotion(info, chosen.box.height, safety, 'NEAREST_TRACKING');
     }
     proximityStop(info, height, { requireSensor, distance, sensorAgeMs }, faceOnly) {
       if (requireSensor && (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(sensorAgeMs) || sensorAgeMs < 0 || sensorAgeMs > 700)) {

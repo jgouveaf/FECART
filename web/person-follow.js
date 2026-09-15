@@ -7,7 +7,7 @@
   const follower = new window.QuantumPersonFollowMath.PersonFollower();
   const labels = { SELECT_TARGET: "Clique em Seguir no cadastro da pessoa", CONFIRMING: "Confirmando o alvo",
     FACE_TRACKING: "Seguindo pelo rosto do alvo",
-    FOLLOWING: "Pessoa identificada", BODY_TRACKING: "Acompanhando o corpo · ID temporariamente mantido",
+    FOLLOWING: "Pessoa identificada", BODY_TRACKING: "Acompanhando o corpo · FaceID sendo atualizado",
     NEAREST_TRACKING: "Teste ativo · seguindo a pessoa mais próxima sem FaceID",
     APPEARANCE_TRACKING: "Alvo mantido pelo corpo e roupa · rosto fora de vista",
     AMBIGUOUS: "Pessoas sobrepostas · confirme o rosto", REIDENTIFY: "Mostre o rosto para confirmar o alvo",

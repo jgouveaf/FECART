@@ -8,7 +8,7 @@ const progress = document.getElementById("firmwareFlashProgress");
 const status = document.getElementById("firmwareFlashStatus");
 const FIRMWARE_URL = new URL("../firmware/compiled/quantum_tracker_arduino.ino.hex", import.meta.url);
 // Hash do conteúdo servido pelo GitHub Pages (Git normaliza o Intel HEX para LF).
-const FIRMWARE_SHA256 = "99df517dc85638967e05288924691af7e88f1e75d368cf74b7cc725ddac2ce04";
+const FIRMWARE_SHA256 = "ce1655d122651d3d83de6bef4d9d020d76e617e9e63efd9b847e71bb9bdf8f89";
 let busy = false;
 
 function setStatus(state, title, detail, percentage = progress.value) {

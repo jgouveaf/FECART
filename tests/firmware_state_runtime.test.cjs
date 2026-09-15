@@ -205,6 +205,15 @@ function testFollowModeMovesWithoutAnUltrasonicReading() {
   assert.equal(env.estadoDesvio, env.DESVIO_INATIVO);
 }
 
+function testGestureModeMovesWithoutAnUltrasonicReading() {
+  const env = runningEnvironment();
+  env.processarLinha('MODE:3', env.now);
+  env.processarLinha('CMD:FRENTE', env.now);
+  env.tick(-1, 160);
+  assert.equal(env.comandoAplicado, env.CMD_FRENTE);
+  assert.equal(env.estadoDesvio, env.DESVIO_INATIVO);
+}
+
 function testPersistentObstacleCurvesWithoutSecondReverseOrBlindAdvance() {
   const env = runningEnvironment();
   env.tick(4, 320);
@@ -320,7 +329,7 @@ const tests = [testContinuousAutonomousHasNoMissionTimeout,
   testMissingEchoStopsAndRequiresTwoValidReadings,
   testSensorFailureInterruptsEveryManeuverPhase,
   testEstopDominatesEveryManeuverPhase, testRemoteTimeoutStopsModesTwoAndThree,
-  testFollowModeMovesWithoutAnUltrasonicReading,
+  testFollowModeMovesWithoutAnUltrasonicReading, testGestureModeMovesWithoutAnUltrasonicReading,
   testPersistentObstacleCurvesWithoutSecondReverseOrBlindAdvance,
   testApprovedMotorPolarityAndSoftTurns, testBootAndResetRequireExplicitRelease,
   testAutonomousStopCommandIsLatched,

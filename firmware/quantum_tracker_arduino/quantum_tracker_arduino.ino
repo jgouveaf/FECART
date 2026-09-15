@@ -5,7 +5,7 @@
   MODOS:
   1 - AUTONOMO: anda sempre e desvia com o HC-SR04.
   2 - SEGUIR: recebe direcao da camera; nesta revisão de teste não usa HC-SR04.
-  3 - GESTOS: recebe os gestos e desvia quando houver leitura valida.
+  3 - GESTOS: recebe os gestos; nesta revisão de teste não usa HC-SR04.
 
   PROTOCOLO SERIAL (9600 baud, uma linha por comando):
   MODE:1 | MODE:2 | MODE:3
@@ -342,7 +342,7 @@ void enviarStatus(unsigned long agora, bool forcar = false) {
   Serial.print(nomeComando(comandoAplicado));
   Serial.print(F("|STATE:"));
   if (paradaEmergencia) Serial.print(F("ESTOP"));
-  else if (modo != MODO_SEGUIR && !sensorPronto()) Serial.print(F("SENSOR_FAIL"));
+  else if (modo == MODO_AUTONOMO && !sensorPronto()) Serial.print(F("SENSOR_FAIL"));
   else if (modo != MODO_AUTONOMO && !controleUsbAtivo) Serial.print(F("LINK_WAIT"));
   else if (estadoDesvio != DESVIO_INATIVO) Serial.print(F("DESVIANDO"));
   else Serial.print(nomeModo());
@@ -479,7 +479,10 @@ void setup() {
 void loop() {
   const unsigned long agora = millis();
   lerSerial(agora);
-  atualizarSensor(agora);
+  // A leitura pode aguardar até 30 ms por eco. Ela é necessária somente para
+  // o Modo 1; nos modos remotos não pode atrasar nem bloquear um comando
+  // confirmado da câmera.
+  if (modo == MODO_AUTONOMO) atualizarSensor(agora);
 
   if (paradaEmergencia) {
     pararMotores();
@@ -498,10 +501,9 @@ void loop() {
 
   const ComandoMovimento desejado = comandoDesejadoPeloModo();
 
-  // O HC-SR04 continua sendo obrigatório no Modo 1 e no Modo 3. No Modo 2,
-  // o operador pediu um teste direto de visão: CMD:FRENTE não é bloqueado por
-  // telemetria ou falha do sensor.
-  const bool usarSensorNoModo = modo != MODO_SEGUIR;
+  // Nos Modos 2 e 3, a câmera é a origem do comando. O HC-SR04 só protege o
+  // Modo 1 autônomo e não pode bloquear nem atrasar a condução remota.
+  const bool usarSensorNoModo = modo == MODO_AUTONOMO;
   if (usarSensorNoModo && estadoDesvio != DESVIO_INATIVO && !sensorPronto()) {
     cancelarDesvio();
     enviarStatus(agora);

@@ -540,16 +540,21 @@ async function testRemoteDisconnectStopsButAutonomousPageHideKeepsRunning() {
   await cleanup(pageEnvironment);
 }
 
-async function testModeTwoDoesNotTreatSensorFailureAsAnEmergency() {
-  const environment = createEnvironment();
-  await environment.robot.connect();
-  await releaseSafety(environment);
-  environment.robot.requestMode(2, 'test');
-  await waitFor(() => environment.robot.mode === 2 && environment.robot.confirmedMode === 2);
-  environment.robot._test.parseTelemetry("QT|MODE:2|DIST:ERR|CMD:FRENTE|STATE:SENSOR_FAIL");
-  assert.equal(environment.control.state.robot.status, "ONLINE");
-  assert.equal(environment.control.state.safety.emergency, false);
-  await cleanup(environment);
+async function testRemoteModesDoNotTreatSensorFailureAsAnEmergency() {
+  for (const mode of [2, 3]) {
+    const environment = createEnvironment();
+    try {
+      await environment.robot.connect();
+      await releaseSafety(environment);
+      environment.robot.requestMode(mode, 'test');
+      await waitFor(() => environment.robot.mode === mode && environment.robot.confirmedMode === mode);
+      environment.robot._test.parseTelemetry(`QT|MODE:${mode}|DIST:ERR|CMD:FRENTE|STATE:SENSOR_FAIL`);
+      assert.equal(environment.control.state.robot.status, "ONLINE");
+      assert.equal(environment.control.state.safety.emergency, false);
+    } finally {
+      await cleanup(environment);
+    }
+  }
 }
 
 async function testRunPrincipalStartsLocalModeWithoutMotionHeartbeat() {
@@ -896,7 +901,7 @@ async function main() {
     testRecoverableReadErrorDoesNotDisconnectArduino,
     testOversizedSerialLineIsDiscardedUntilNewline,
     testSensorFailureRemainsBlockedUntilRecovery,
-    testModeTwoDoesNotTreatSensorFailureAsAnEmergency,
+    testRemoteModesDoNotTreatSensorFailureAsAnEmergency,
     testRemoteDisconnectStopsButAutonomousPageHideKeepsRunning,
     testRunPrincipalStartsLocalModeWithoutMotionHeartbeat,
     testKeyboardTransitionAndScopedSerialDisconnect,

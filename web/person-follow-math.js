@@ -222,7 +222,12 @@
             appearanceTracking = true;
           }
         }
-        if (!appearanceTracking && capturedAt - this.identifiedAt > 3000) chosen = null;
+        // FaceID can be slower than the person detector. Once the target was
+        // confirmed, keep a geometrically continuous, unambiguous body track
+        // moving while a new face result is being computed. A real loss,
+        // discontinuity, conflicting person or ambiguity still reaches one of
+        // the stop paths above; FaceID refreshes identity evidence in the
+        // background instead of interrupting the robot every few seconds.
       }
       if (!chosen) return this.missing(now, observedBodies.length && !bodies.length ? "LOW_BODY_CONFIDENCE"
         : bodies.length ? "REIDENTIFY" : "TARGET_LOST", cameraMoving);

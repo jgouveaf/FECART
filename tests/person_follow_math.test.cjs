@@ -46,9 +46,13 @@ test("short body-only continuity retains selected identity", () => {
   const { step } = running(); const s = step(1400, { faces: [] });
   assert.equal(s.state, "BODY_TRACKING"); assert.equal(s.id, "QT-001");
 });
-test("body continuity expires after three seconds without face evidence", () => {
-  const { step } = running(); for (let t = 1400; t <= 4200; t += 200) assert.equal(step(t, { faces: [] }).command, "FRENTE");
-  assert.equal(step(4400, { faces: [] }).command, "PARAR");
+test("continuous body tracking keeps moving while FaceID refreshes in the background", () => {
+  const { step } = running();
+  for (let t = 1400; t <= 10000; t += 200) {
+    const result = step(t, { faces: [] });
+    assert.equal(result.state, "BODY_TRACKING");
+    assert.equal(result.command, "FRENTE");
+  }
 });
 test("cached face cannot renew identity evidence time", () => {
   const { f, step } = running(); step(1400, { faces: [face(1200)] }); assert.equal(f.identifiedAt, 1200);

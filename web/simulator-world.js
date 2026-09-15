@@ -31,7 +31,7 @@
         {id:'p2',name:'Lucas',x:970,y:240,angle:Math.PI/2,speed:29,color:0x45859b,
           route:[[970,240],[970,635],[1040,635],[1040,240]],leg:1}];
       this.targetId='p1'; this.peopleVisible=true;this.peopleMoving=true;
-      this.running=true;this.events=0;this.collisions=0;this.time=0;this.lastTime=0;
+      this.running=true;this.events=0;this.collisions=0;this.lastCollision=null;this.time=0;this.lastTime=0;
       this.resetControl();
       this.output={command:'PARAR',state:'PRONTO',distance:400,safety:'MONITORANDO',targetVisible:false};
     }
@@ -46,13 +46,21 @@
         color:[0x758b61,0x806fa9,0xd2b567][i-2],route:[[1040-i*65,400],[1040-i*65,710]],leg:1});
       return true;
     }
+    personBlocked(x,y,radius=19) {
+      if(x<radius||y<radius||x>this.width-radius||y>this.height-radius) return true;
+      return this.obstacles.some(o=>Math.hypot(x-clamp(x,o.x,o.x+o.w),y-clamp(y,o.y,o.y+o.h))<radius);
+    }
     advancePeople(dt) {
       if(!this.peopleVisible||!this.peopleMoving) return;
       for(const p of this.people) {
         const to=p.route[p.leg],dx=to[0]-p.x,dy=to[1]-p.y,length=Math.hypot(dx,dy),travel=p.speed*dt;
         p.angle=Math.atan2(dy,dx);
-        if(length<=travel) { p.x=to[0];p.y=to[1];p.leg=(p.leg+1)%p.route.length; }
-        else {p.x+=dx/length*travel;p.y+=dy/length*travel;}
+        const next=length<=travel?{x:to[0],y:to[1]}:{x:p.x+dx/length*travel,y:p.y+dy/length*travel};
+        // People belong to the same fixed laboratory as the robot: their
+        // route advances rather than letting an avatar walk through furniture.
+        if(this.personBlocked(next.x,next.y)) { p.leg=(p.leg+1)%p.route.length; continue; }
+        p.x=next.x;p.y=next.y;
+        if(length<=travel) p.leg=(p.leg+1)%p.route.length;
       }
     }
     ray(angle,ignorePerson=null,max=400,origin=this.robot) {
@@ -82,19 +90,30 @@
       if(distance>500||Math.abs(bearing)>Math.PI/3||this.ray(angle,p.id,distance)<distance-20) return null;
       return {person:p,distance,bearing};
     }
-    collides(x,y) {
+    collisionAt(x,y) {
       const radius=this.robot.radius;
-      if(x<radius||y<radius||x>this.width-radius||y>this.height-radius) return true;
-      if(this.obstacles.some(o=>Math.hypot(x-clamp(x,o.x,o.x+o.w),y-clamp(y,o.y,o.y+o.h))<radius)) return true;
-      return this.peopleVisible&&this.people.some(p=>Math.hypot(x-p.x,y-p.y)<radius+18);
+      if(x<radius||y<radius||x>this.width-radius||y>this.height-radius) return {type:'PAREDE'};
+      const obstacle=this.obstacles.find(o=>Math.hypot(x-clamp(x,o.x,o.x+o.w),y-clamp(y,o.y,o.y+o.h))<radius);
+      if(obstacle) return {type:'OBSTÁCULO',id:obstacle.kind};
+      const person=this.peopleVisible&&this.people.find(p=>Math.hypot(x-p.x,y-p.y)<radius+19);
+      return person?{type:'PESSOA',id:person.id}:null;
     }
+    collides(x,y) { return Boolean(this.collisionAt(x,y)); }
     move(command,dt) {
       const r=this.robot,v=r.speed;
       [r.left,r.right]=({FRENTE:[v,v],TRAS:[-v,-v],DIREITA:[v,0],ESQUERDA:[0,v],GIRAR:[v,-v]})[command]||[0,0];
       const linear=(r.left+r.right)/2,omega=(r.left-r.right)/28;
-      const angle=r.angle+omega*dt/2,x=r.x+Math.cos(angle)*linear*dt,y=r.y+Math.sin(angle)*linear*dt;
-      if(this.collides(x,y)) { r.left=0;r.right=0;this.collisions++;return false; }
-      r.x=x;r.y=y;r.angle=wrap(r.angle+omega*dt);return true;
+      // Sweep the chassis rather than testing just its final point. It avoids
+      // visible tunnelling and leaves the robot outside the colliding object.
+      const steps=Math.max(1,Math.ceil(Math.abs(linear*dt)/(r.radius*.28)));
+      const slice=dt/steps;
+      for(let index=0;index<steps;index++) {
+        const angle=r.angle+omega*slice/2,x=r.x+Math.cos(angle)*linear*slice,y=r.y+Math.sin(angle)*linear*slice;
+        const hit=this.collisionAt(x,y);
+        if(hit) { r.left=0;r.right=0;this.collisions++;this.lastCollision={...hit,x:r.x,y:r.y,at:this.time};return false; }
+        r.x=x;r.y=y;r.angle=wrap(r.angle+omega*slice);
+      }
+      this.lastCollision=null;return true;
     }
     avoid() {
       const r=this.robot,t=this.time,phase=r.avoidance;
@@ -140,6 +159,7 @@
       if(!this.move(applied,dt)) {applied='PARAR';state='ESPAÇO INSUFICIENTE';safety='COLISÃO EVITADA';}
       this.output={command:applied,state:state||NAMES[applied]||'PARADO',distance:this.distance,safety,
         targetVisible:Boolean(target),targetName:target?.person.name||'',left:this.robot.left,right:this.robot.right};
+      if(this.lastCollision) this.output.collision={...this.lastCollision};
       return this.output;
     }
   }

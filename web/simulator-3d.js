@@ -11,16 +11,17 @@
     const canvas=renderer.domElement;canvas.className='simulation-webgl';
     canvas.setAttribute('aria-label','Mundo tridimensional do Quantum Tracker');
     container.prepend(canvas);
-    const scene=new T.Scene();scene.background=new T.Color(0xd5e1e5);scene.fog=new T.Fog(0xd5e1e5,17,33);
+    const scene=new T.Scene();scene.background=new T.Color(0xc9dde3);scene.fog=new T.Fog(0xc9dde3,18,35);
     const camera=new T.PerspectiveCamera(68,1,.035,60);
-    const hemi=new T.HemisphereLight(0xd4efff,0x7b766c,2.25);scene.add(hemi);
+    const hemi=new T.HemisphereLight(0xdff5ff,0x5c6265,2.45);scene.add(hemi);
     const sun=new T.DirectionalLight(0xffedd5,3.2);sun.position.set(4,8,5);sun.castShadow=true;
     sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-9,right:9,top:9,bottom:-9,near:.5,far:22});
     sun.shadow.bias=-.0003;sun.shadow.normalBias=.015;sun.target.position.set(6,0,4);scene.add(sun,sun.target);
-    const fill=new T.DirectionalLight(0xc3dfff,.8);fill.position.set(-3,3,-4);scene.add(fill);
+    const fill=new T.DirectionalLight(0xc3dfff,1.05);fill.position.set(-3,3,-4);scene.add(fill);
+    const practical=new T.PointLight(0x86d9ff,5.5,8,2);practical.position.set(5.8,2.8,3.8);scene.add(practical);
     const mat=(color,roughness=.65,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
-    const materials={wall:mat(0xe5e5dd),metal:mat(0x5d6a71,.3,.7),dark:mat(0x25343d,.45,.3),wood:mat(0xb68a54,.65),
-      black:mat(0x171d20,.9),orange:mat(0xe89d42,.5),white:mat(0xf1eee5,.4),blue:mat(0x237295,.4,.2),green:mat(0x346b50,.9)};
+    const materials={wall:mat(0xe9ede8,.78),metal:mat(0x64727a,.27,.74),dark:mat(0x203039,.38,.42),wood:mat(0xb98550,.58,.05),
+      black:mat(0x12191d,.82,.08),orange:mat(0xf0a44a,.38,.08),white:mat(0xf7f4e9,.28,.06),blue:mat(0x267b9a,.34,.25),green:mat(0x2e7254,.78)};
     const mesh=(geometry,material,parent=scene)=>{const m=new T.Mesh(geometry,material);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;};
     const box=(x,y,z,w,h,d,material,parent=scene)=>{const m=mesh(new T.BoxGeometry(w,h,d),material,parent);m.position.set(x,y,z);return m;};
     const sphere=(x,y,z,sx,sy,sz,material,parent=scene)=>{const m=mesh(new T.SphereGeometry(1,16,12),material,parent);m.scale.set(sx,sy,sz);m.position.set(x,y,z);return m;};
@@ -30,12 +31,13 @@
       ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(text,width/2,height/2,width*.93);
       const texture=new T.CanvasTexture(c);texture.colorSpace=T.SRGBColorSpace;return texture;
     }
-    // Deterministic concrete texture: no download or random scenario generation.
+    // Deterministic floor texture: no download or random scenario generation.
     const tile=document.createElement('canvas');tile.width=512;tile.height=512;const tx=tile.getContext('2d');
-    tx.fillStyle='#b9b9b0';tx.fillRect(0,0,512,512);
+    const floorGradient=tx.createLinearGradient(0,0,512,512);floorGradient.addColorStop(0,'#d2d0c5');floorGradient.addColorStop(1,'#a9afa9');tx.fillStyle=floorGradient;tx.fillRect(0,0,512,512);
     for(let i=0;i<11000;i++) {const x=(i*137)%512,y=(i*79+Math.floor(i/512)*37)%512;
       tx.fillStyle=i%2?'rgba(255,255,255,.08)':'rgba(48,57,55,.06)';tx.fillRect(x,y,2,2);}
-    tx.strokeStyle='#939a94';tx.lineWidth=3;tx.strokeRect(1,1,510,510);
+    tx.strokeStyle='rgba(74,83,83,.35)';tx.lineWidth=3;tx.strokeRect(1,1,510,510);
+    tx.strokeStyle='rgba(255,255,255,.18)';tx.lineWidth=1;for(let i=0;i<=512;i+=64){tx.beginPath();tx.moveTo(i,0);tx.lineTo(i,512);tx.moveTo(0,i);tx.lineTo(512,i);tx.stroke();}
     const floorTexture=new T.CanvasTexture(tile);floorTexture.wrapS=floorTexture.wrapT=T.RepeatWrapping;
     floorTexture.repeat.set(10,7);floorTexture.colorSpace=T.SRGBColorSpace;
     const floor=mesh(new T.PlaneGeometry(12,8),new T.MeshStandardMaterial({map:floorTexture,roughness:.72,metalness:.05}));
@@ -54,6 +56,11 @@
     const smallSign=mesh(new T.PlaneGeometry(1.4,.28),new T.MeshBasicMaterial({map:label('ÁREA DE ROBÓTICA','#283e45','#e9d1a0')}));smallSign.position.set(1.5,1.9,.016);
     for(const z of [3.6,4.65]) box(6,.004,z,10,.006,.025,materials.orange).castShadow=false;
     for(let x=.8;x<11.5;x+=.7) box(x,.004,7.35,.36,.006,.04,materials.white).castShadow=false;
+    // Lab details add depth without changing the fixed collision geometry.
+    const accent=new T.MeshStandardMaterial({color:0x68cbe0,emissive:0x174b5b,emissiveIntensity:.45,roughness:.3,metalness:.28});
+    for(let z=.9;z<3.5;z+=.78) {box(.2,.9,z,.22,1.5,.56,materials.dark);box(.32,1.35,z,.035,.018,.43,accent);}
+    box(10.75,1.05,6.95,.85,1.9,.22,materials.dark);for(let y=.42;y<1.82;y+=.42) box(10.75,y,6.82,.7,.018,.05,materials.metal);
+    const door=box(9.45,1.2,.025,1.05,2.35,.035,materials.dark);door.castShadow=false;box(9.82,1.2,.048,.02,2.2,.025,materials.metal).castShadow=false;
     // Fixed obstacles use exactly the same bounds as collision and sensor logic.
     for(const o of world.obstacles) {
       const x=(o.x+o.w/2)/100,z=(o.y+o.h/2)/100,w=o.w/100,d=o.h/100,h=o.height/100;
@@ -73,6 +80,9 @@
       }
       for(const dz of [-d/2-.04,d/2+.04]) box(x,.005,z+dz,w+.08,.006,.035,materials.orange).castShadow=false;
     }
+    const collisionMarker=new T.Group();scene.add(collisionMarker);collisionMarker.visible=false;
+    const collisionRing=mesh(new T.RingGeometry(.18,.25,40),new T.MeshBasicMaterial({color:0xff4f63,side:T.DoubleSide,transparent:true,opacity:.9}),collisionMarker);collisionRing.rotation.x=-Math.PI/2;collisionRing.castShadow=false;
+    const collisionLight=new T.PointLight(0xff5267,0,2);collisionMarker.add(collisionLight);
     // Detailed two-wheel chassis, board, battery and forward ultrasonic sensor.
     const robot=new T.Group();scene.add(robot);
     box(0,.095,0,.32,.035,.265,materials.orange,robot);
@@ -94,7 +104,9 @@
     }
     sphere(-.12,.034,0,.03,.03,.03,materials.metal,robot);
     function makePerson(p) {
-      const group=new T.Group(),shirt=mat(p.color,.88),pants=mat(0x33424c,.95),skin=mat(0xc69575,.82);scene.add(group);
+      const skinTone=p.id==='p2'?0x8a5b45:p.id==='p3'?0xc58d69:0xe1b18d;
+      const hairTone=p.id==='p2'?0x17110f:p.id==='p3'?0x633d27:0x30241f;
+      const group=new T.Group(),shirt=mat(p.color,.7,.04),pants=mat(0x293945,.86,.05),skin=mat(skinTone,.78),hair=mat(hairTone,.9);scene.add(group);
       const torso=mesh(new T.CylinderGeometry(.205,.15,.44,20),shirt,group);torso.scale.z=.6;torso.position.y=1.15;
       sphere(0,.87,0,.17,.13,.12,pants,group);
       const limbs=[];
@@ -109,11 +121,11 @@
         sphere(side*.015,-.49,.018,.045,.07,.035,skin,arm);
       }
       sphere(0,1.48,0,.058,.08,.057,skin,group);sphere(0,1.64,0,.106,.143,.1,skin,group);
-      sphere(0,1.72,-.015,.109,.079,.098,materials.dark,group);
+      sphere(0,1.72,-.015,.109,.079,.098,hair,group);
       sphere(0,1.64,.101,.023,.031,.027,skin,group);
       for(const side of [-1,1]) sphere(side*.041,1.675,.089,.012,.009,.009,materials.dark,group);
       const badge=new T.Sprite(new T.SpriteMaterial({map:label(p.name,'#fff','#29474c',256,80),depthTest:true}));badge.position.set(0,1.99,0);badge.scale.set(.65,.2,1);group.add(badge);
-      const ring=mesh(new T.RingGeometry(.24,.27,40),new T.MeshBasicMaterial({color:0x1dc69b,side:T.DoubleSide,transparent:true,opacity:.85}),group);
+      const ring=mesh(new T.RingGeometry(.24,.27,40),new T.MeshBasicMaterial({color:0x32e4b0,side:T.DoubleSide,transparent:true,opacity:.9}),group);
       ring.rotation.x=-Math.PI/2;ring.position.y=.006;ring.castShadow=false;
       return {group,limbs,ring};
     }
@@ -145,6 +157,9 @@
           const stride=world.peopleMoving?Math.sin(world.time*p.speed/9)*.28:0;
           avatar.limbs[0].rotation.x=stride;avatar.limbs[2].rotation.x=-stride;avatar.limbs[1].rotation.x=-stride*.7;avatar.limbs[3].rotation.x=stride*.7;
         }
+        const impact=world.lastCollision;
+        collisionMarker.visible=Boolean(impact);
+        if(impact) {collisionMarker.position.set(impact.x/100,.012,impact.y/100);const pulse=.92+.12*Math.sin(time*.018);collisionRing.scale.setScalar(pulse);collisionRing.material.opacity=.55+.3*Math.sin(time*.018);collisionLight.intensity=1.5;}
         const a=r.angle+orbit,x=r.x/100,z=r.y/100;
         if(view==='first') {desired.set(x+Math.cos(r.angle)*.12,.28,z+Math.sin(r.angle)*.12);look.set(desired.x+Math.cos(a)*3,1.45+(elevation-.5),desired.z+Math.sin(a)*3);}
         else {desired.set(x-Math.cos(a)*zoom,zoom*elevation+.6,z-Math.sin(a)*zoom);look.set(x+.3*Math.cos(r.angle),.85,z+.3*Math.sin(r.angle));}

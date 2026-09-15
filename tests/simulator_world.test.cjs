@@ -30,6 +30,20 @@ test('a delayed render cannot jump through obstacles or outside the room',()=>{
   assert.ok(w.robot.x>=w.robot.radius);assert.ok(w.robot.x<=w.width-w.robot.radius);
 });
 
+test('swept chassis collision stops before a furnishing instead of entering it',()=>{
+  const w=new World();w.peopleVisible=false;w.robot.x=305;w.robot.y=220;w.robot.angle=0;
+  let output;for(let i=0;i<100;i++) output=w.step(.05,{mode:'GESTOS',command:'FRENTE'});
+  assert.equal(w.collides(w.robot.x,w.robot.y),false);assert.equal(output.command,'PARAR');
+  assert.equal(output.safety,'COLISÃO EVITADA');assert.equal(output.collision.type,'OBSTÁCULO');
+  assert.ok(w.robot.x<350-w.robot.radius);
+});
+
+test('people never advance through laboratory furniture',()=>{
+  const w=new World();const p=w.people[0];p.x=330;p.y=220;p.route=[[330,220],[470,220]];p.leg=1;p.speed=90;
+  for(let i=0;i<80;i++) w.advancePeople(.05);
+  assert.equal(w.personBlocked(p.x,p.y),false);
+});
+
 test('following distance has hysteresis instead of alternating at one threshold',()=>{
   const w=new World();w.peopleMoving=false;
   for(const [distance,command] of [[150,'FRENTE'],[94,'PARAR'],[96,'PARAR'],[115,'PARAR'],[125,'FRENTE']]) {

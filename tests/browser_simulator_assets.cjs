@@ -42,6 +42,16 @@ const base=process.env.QT_SITE_URL||'http://127.0.0.1:9878/';
     if(w.people.some(p=>w.personBlocked(p.x,p.y))){errors.push('pedestrian inside furniture');break;}
    }
    w.reset();w.running=false;
+   const stopped=new Map();
+   for(let i=0;i<9000;i++) {
+    const before=w.people.map(p=>({x:p.x,y:p.y}));w.advancePeople(.02);
+    for(let j=0;j<w.people.length;j++) {
+     const p=w.people[j],still=Math.hypot(p.x-before[j].x,p.y-before[j].y)<.001;
+     stopped.set(p.id,still?(stopped.get(p.id)||0)+.02:0);
+     if(stopped.get(p.id)>5){errors.push(p.name+' stuck on route for 5 seconds');i=9000;break;}
+    }
+   }
+   w.reset();w.running=false;
    return {count:kinds.length,kinds,missing,errors,usb:window.__usbRequests};
   });
   assert.ok(result.count>=2);assert.ok(result.kinds.some(name=>name.includes('reception-desk')));

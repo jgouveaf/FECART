@@ -13,7 +13,7 @@
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));
     renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
     renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;
-    renderer.toneMappingExposure=1.15;
+    renderer.toneMappingExposure=1;
     const canvas=renderer.domElement;canvas.className='simulation-webgl';
     canvas.setAttribute('aria-label','Mundo tridimensional do Quantum Tracker');
     container.prepend(canvas);
@@ -32,7 +32,7 @@
     const camera=new T.PerspectiveCamera(68,1,.035,60);
     const roomWidth=world.width/100,roomDepth=world.height/100;
     const hemi=new T.HemisphereLight(0xdff5ff,0x5c6265,1.3);scene.add(hemi);
-    const sun=new T.DirectionalLight(0xffedd5,2.3);sun.position.set(4,8,5);sun.castShadow=true;
+    const sun=new T.DirectionalLight(0xfff5e5,1.8);sun.position.set(4,8,5);sun.castShadow=true;
     sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-9,right:9,top:9,bottom:-9,near:.5,far:22});
     sun.shadow.bias=-.0003;sun.shadow.normalBias=.015;sun.target.position.set(6,0,4);scene.add(sun,sun.target);
     const fill=new T.DirectionalLight(0xc3dfff,1.05);fill.position.set(-3,3,-4);scene.add(fill);
@@ -51,11 +51,11 @@
     }
     // Deterministic floor texture: no download or random scenario generation.
     const tile=document.createElement('canvas');tile.width=512;tile.height=512;const tx=tile.getContext('2d');
-    const floorGradient=tx.createLinearGradient(0,0,512,512);floorGradient.addColorStop(0,'#d2d0c5');floorGradient.addColorStop(1,'#a9afa9');tx.fillStyle=floorGradient;tx.fillRect(0,0,512,512);
+    const floorGradient=tx.createLinearGradient(0,0,512,512);floorGradient.addColorStop(0,'#7f929f');floorGradient.addColorStop(1,'#71848f');tx.fillStyle=floorGradient;tx.fillRect(0,0,512,512);
     for(let i=0;i<11000;i++) {const x=(i*137)%512,y=(i*79+Math.floor(i/512)*37)%512;
       tx.fillStyle=i%2?'rgba(255,255,255,.08)':'rgba(48,57,55,.06)';tx.fillRect(x,y,2,2);}
     tx.strokeStyle='rgba(74,83,83,.35)';tx.lineWidth=3;tx.strokeRect(1,1,510,510);
-    tx.strokeStyle='rgba(255,255,255,.18)';tx.lineWidth=1;for(let i=0;i<=512;i+=64){tx.beginPath();tx.moveTo(i,0);tx.lineTo(i,512);tx.moveTo(0,i);tx.lineTo(512,i);tx.stroke();}
+    tx.strokeStyle='rgba(255,255,255,.06)';tx.lineWidth=1;for(let i=0;i<=512;i+=128){tx.beginPath();tx.moveTo(i,0);tx.lineTo(i,512);tx.moveTo(0,i);tx.lineTo(512,i);tx.stroke();}
     const floorTexture=new T.CanvasTexture(tile);floorTexture.wrapS=floorTexture.wrapT=T.RepeatWrapping;
     floorTexture.repeat.set(roomWidth/1.2,roomDepth/1.14);floorTexture.colorSpace=T.SRGBColorSpace;
     const floor=mesh(new T.PlaneGeometry(roomWidth,roomDepth),new T.MeshStandardMaterial({map:floorTexture,roughness:.72,metalness:.05}));
@@ -67,8 +67,8 @@
     // All four walls and the ceiling match the world boundaries. Both camera
     // views remain inside this shell, including at maximum zoom/elevation.
     box(roomWidth+.06,.45,roomDepth/2,.12,.9,roomDepth,materials.wall);
-    const glass=new T.MeshPhysicalMaterial({color:0xadcdd4,roughness:.1,metalness:.1,transparent:true,opacity:.18,depthWrite:false});
-    for(let z=.65;z<roomDepth-.6;z+=1.3) {box(roomWidth,2,z,.035,2.2,1.2,glass).castShadow=false;box(roomWidth,2,z-.64,.1,2.6,.06,materials.dark);}
+    // Continuous wall finish replaces the window frames over an opaque wall.
+    box(roomWidth-.01,.37,roomDepth/2,.04,.74,roomDepth,materials.dark).castShadow=false;
     box(roomWidth,3.25,roomDepth/2,.15,.16,roomDepth,materials.dark);
     for(let x=1;x<roomWidth;x+=2.5) {box(x,3.4,roomDepth/2,.08,.13,roomDepth,materials.metal);box(x,3.3,roomDepth/2,.12,.03,1.2,new T.MeshStandardMaterial({color:0xffffff,emissive:0xf1f7ff,emissiveIntensity:2}));}
     const rightWall=box(roomWidth+.08,1.7,roomDepth/2,.16,3.4,roomDepth+.2,materials.wall,scene);rightWall.castShadow=false;
@@ -123,6 +123,13 @@
     const lab=new T.Group();lab.name='technology-lab';scene.add(lab);
     const cyan=new T.MeshStandardMaterial({color:0x52d9ee,emissive:0x159ab8,emissiveIntensity:1.2,roughness:.35});
     const violet=new T.MeshStandardMaterial({color:0x9983ff,emissive:0x5845b8,emissiveIntensity:.8});
+    function floorZone(x,z,w,d,color) {
+      const zone=mesh(new T.PlaneGeometry(w,d),mat(color,.94),lab);
+      zone.rotation.x=-Math.PI/2;zone.position.set(x,.003,z);zone.castShadow=false;
+    }
+    floorZone(12,1.45,7,2.3,0x314a59);
+    floorZone(13,7.4,7.4,2.7,0x294757);
+    floorZone(3.8,1.7,5.1,2.85,0xa4acae);
     for(const o of world.labObstacles) {
       const x=(o.x+o.w/2)/100,z=(o.y+o.h/2)/100,w=o.w/100,d=o.h/100;
       if(o.kind==='workstation') {
@@ -257,10 +264,10 @@
       sphere(0,1.72,-.015,.109,.079,.098,hair,legacy);
       sphere(0,1.64,.101,.023,.031,.027,skin,legacy);
       for(const side of [-1,1]) sphere(side*.041,1.675,.089,.012,.009,.009,materials.dark,legacy);
-      const badge=new T.Sprite(new T.SpriteMaterial({map:label(p.name,'#fff','#29474c',256,80),depthTest:true}));badge.position.set(0,1.99,0);badge.scale.set(.65,.2,1);group.add(badge);
+      const badge=new T.Sprite(new T.SpriteMaterial({map:label(p.name,'#fff','#'+p.color.toString(16).padStart(6,'0'),256,80),depthTest:true}));badge.position.set(0,1.99,0);badge.scale.set(.65,.2,1);group.add(badge);
       const ring=mesh(new T.RingGeometry(.24,.27,40),new T.MeshBasicMaterial({color:0x32e4b0,side:T.DoubleSide,transparent:true,opacity:.9}),group);
       ring.rotation.x=-Math.PI/2;ring.position.y=.006;ring.castShadow=false;
-      const avatar={group,legacy,limbs,ring,mixer:null,actions:null,motion:'',x:p.x,y:p.y};
+      const avatar={group,legacy,limbs,ring,mixer:null,actions:null,motion:'',x:p.x,y:p.y,heading:Math.PI/2-p.angle};
       // Each person gets its own armature; therefore the independent walk and
       // idle animations never share bones or state.
       const gender=p.gender==='male'?'male':'female';
@@ -277,7 +284,20 @@
         const scale=1.75/(bounds.max.y-bounds.min.y);
         character.scale.multiplyScalar(scale);character.position.y=-bounds.min.y*scale;
         if(gender==='male') character.rotation.y=Math.PI;
-        character.traverse(object=>{if(object.isMesh){object.castShadow=true;object.receiveShadow=true;}});
+        // Each character owns the material settings; keep skin and clothes
+        // matte while sharing the original texture maps and geometry.
+        const characterMaterials=new Map();
+        character.traverse(object=>{if(object.isMesh){
+          object.castShadow=true;object.receiveShadow=true;
+          const adapt=material=>{
+            if(!characterMaterials.has(material)) {
+              const copy=material.clone();copy.metalness=0;copy.roughness=Math.max(.75,copy.roughness);
+              characterMaterials.set(material,copy);
+            }
+            return characterMaterials.get(material);
+          };
+          object.material=Array.isArray(object.material)?object.material.map(adapt):adapt(object.material);
+        }});
         character.name='person-model-'+gender;
         group.add(character);legacy.visible=false;
         avatar.mixer=mixer;
@@ -316,14 +336,16 @@
         for(const avatar of avatars.values()) avatar.group.visible=false;
         for(const p of world.people) {
           if(!avatars.has(p.id)) avatars.set(p.id,makePerson(p));
-          const avatar=avatars.get(p.id);avatar.group.visible=world.peopleVisible;avatar.group.position.set(p.x/100,world.groundHeight(p.x,p.y)/100,p.y/100);avatar.group.rotation.y=Math.PI/2-p.angle;
+          const avatar=avatars.get(p.id);avatar.group.visible=world.peopleVisible;avatar.group.position.set(p.x/100,world.groundHeight(p.x,p.y)/100,p.y/100);
+          const headingDelta=Math.atan2(Math.sin(Math.PI/2-p.angle-avatar.heading),Math.cos(Math.PI/2-p.angle-avatar.heading));
+          avatar.heading+=clamp(headingDelta,-dt*4,dt*4);avatar.group.rotation.y=avatar.heading;
           avatar.ring.visible=p.id===world.targetId;
           const stride=world.peopleMoving?Math.sin(world.time*p.speed/9)*.28:0;
           avatar.limbs[0].rotation.x=stride;avatar.limbs[2].rotation.x=-stride;avatar.limbs[1].rotation.x=-stride*.7;avatar.limbs[3].rotation.x=stride*.7;
           if(avatar.mixer) {
             const motion=Math.hypot(p.x-avatar.x,p.y-avatar.y)>.001?'walk':'idle';
             if(avatar.motion!==motion) {avatar.actions[avatar.motion].fadeOut(.16);avatar.actions[motion].reset().fadeIn(.16).play();avatar.motion=motion;}
-            avatar.mixer.update(dt*(motion==='walk'?Math.max(.2,p.speed/140):1));
+            avatar.mixer.update(dt*(motion==='walk'?Math.min(1.5,Math.hypot(p.x-avatar.x,p.y-avatar.y)/Math.max(dt,.001)/140):1));
           }
           avatar.x=p.x;avatar.y=p.y;
         }

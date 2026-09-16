@@ -39,13 +39,14 @@
           route:[[970,240],[970,635],[1040,635],[1040,240]],leg:1}];
       if(this.environmentId==='office') {
         this.people[0].route=[[280,410],[870,410],[870,960],[445,960],[445,410]];
-        Object.assign(this.people[1],{x:1640,y:430,route:[[1640,430],[1640,1035],[1710,1035],[1710,550]]});
+        Object.assign(this.people[1],{x:1640,y:430,route:[[1640,430],[1640,1035],[1730,1035],[1730,560],[1640,560]]});
         for(const [name,gender,x,y,route] of [
           ['Sofia','female',600,1060,[[600,1060],[900,1060]]],
           ['Pedro','male',1080,320,[[1080,320],[1450,320]]],
-          ['Marina','female',450,550,[[450,550],[450,850]]],
+          ['Marina','female',650,550,[[650,550],[650,850]]],
           ['Rafael','male',1200,1000,[[1200,1000],[1500,1000]]]
-        ]) this.people.push({id:`p${this.people.length+1}`,name,gender,x,y,route,leg:1,angle:0,speed:23,color:0x428ca0});
+        ]) this.people.push({id:`p${this.people.length+1}`,name,gender,x,y,route,leg:1,angle:0,speed:23,
+          color:[0x8e76b5,0x397da4,0x438b75,0xb77842][this.people.length-2]});
       }
       this.targetId='p1'; this.peopleVisible=true;this.peopleMoving=true;
       this.running=true;this.events=0;this.collisions=0;this.lastCollision=null;this.time=0;this.lastTime=0;

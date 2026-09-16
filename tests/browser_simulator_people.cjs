@@ -27,12 +27,14 @@ const fs=require('node:fs'),path=require('node:path');
    window.__scene.traverse(object=>{
     if(!object.name.startsWith('person-model-'))return;
     let visible=true,ancestor=object;while(ancestor){visible=visible&&ancestor.visible;ancestor=ancestor.parent;}
-    let skinned=0;object.traverse(child=>{if(child.isSkinnedMesh)skinned++;});
-    output.push({name:object.name,visible,skinned,scale:object.scale.y});
+    let skinned=0,metallic=false;object.traverse(child=>{if(child.isSkinnedMesh)skinned++;
+     if(child.isMesh)for(const m of Array.isArray(child.material)?child.material:[child.material])if(m.metalness>0)metallic=true;
+    });
+    output.push({name:object.name,visible,skinned,scale:object.scale.y,metallic});
    });return output;
   });
   assert.equal(models.length,6);assert.deepEqual([...new Set(models.map(m=>m.name))].sort(),['person-model-female','person-model-male']);
-  for(const model of models){assert.equal(model.visible,true);assert.ok(model.skinned>0);assert.ok(Number.isFinite(model.scale)&&model.scale>0);}
+  for(const model of models){assert.equal(model.visible,true);assert.ok(model.skinned>0);assert.ok(Number.isFinite(model.scale)&&model.scale>0);assert.equal(model.metallic,false);}
   for(const name of ['person-mixamo.glb','person-male-mixamo.glb','person-motion.json'])assert.ok(attempts[name]>=2,name+' retried');
   await page.locator('#toggleSimulation').click();
   await page.locator('#simulationViewport').screenshot({path:'tests/artifacts/simulator-people-recovered.png'});

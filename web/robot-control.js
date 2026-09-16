@@ -145,6 +145,8 @@
     if (activeMode !== 3) gestureDeliveryStatus.textContent = "Gestos detectados, mas só são enviados no Modo 3.";
     else if (!connected) gestureDeliveryStatus.textContent = "Gesto reconhecido. Conecte o Arduino por USB para aplicá-lo ao robô.";
     else if (modeTransitioning) gestureDeliveryStatus.textContent = "Aguarde a confirmação do modo pelo Arduino.";
+    else if (emergencyActive) gestureDeliveryStatus.textContent = "Envio bloqueado: parada de emergência ativa. A liberação precisa ser confirmada pelo Arduino.";
+    else if (programRunning) gestureDeliveryStatus.textContent = "Envio bloqueado: teste de motores em execução.";
     else gestureDeliveryStatus.textContent = `Modo 3 ativo · último comando confirmado: ${lastAcknowledgedCommand}.`;
   }
 
@@ -744,16 +746,24 @@
     return age >= -1000 && age <= MAX_EVENT_AGE_MS && stamp >= activation;
   }
 
+  let lastInputBlock = "";
   function mayAcceptInput(expectedMode, detail) {
     const centralMode = control?.state?.mode;
-    return connected
-      && !programRunning
-      && !modeTransitioning
-      && !emergencyActive
-      && activeMode === expectedMode
-      && confirmedMode === expectedMode
-      && (!centralMode || (centralMode.phase === "ACTIVE" && Number(centralMode.id) === expectedMode))
-      && eventIsFresh(detail);
+    const reason = !connected ? "Arduino desconectado"
+      : programRunning ? "teste de motores em execução"
+      : modeTransitioning ? "troca de modo em andamento"
+      : emergencyActive ? "parada de emergência ainda ativa"
+      : activeMode !== expectedMode ? `selecione o Modo ${expectedMode}`
+      : confirmedMode !== expectedMode ? "modo não confirmado pelo Arduino"
+      : centralMode && (centralMode.phase !== "ACTIVE" || Number(centralMode.id) !== expectedMode) ? "modo do painel não sincronizado"
+      : !eventIsFresh(detail) ? "leitura da câmera antiga ou de uma operação anterior" : "";
+    if (reason && detail?.command && detail.command !== "PARAR") {
+      const key = `${expectedMode}:${reason}`;
+      if (lastInputBlock !== key) log("WARNING", "ENVIO", `${detail.command} reconhecido, mas não enviado: ${reason}`);
+      lastInputBlock = key;
+      if (expectedMode === 3 && gestureDeliveryStatus) gestureDeliveryStatus.textContent = `Não enviado: ${reason}.`;
+    } else if (!reason) lastInputBlock = "";
+    return !reason;
   }
 
   function sendMotion(command, options = {}) {
@@ -777,6 +787,7 @@
     }).then(() => {
       if (connectionToken !== connectionGeneration || modeToken !== modeGeneration) return false;
       consecutiveMotionFailures = 0;
+      if (lastAcknowledgedCommand !== command) log("INFO", "ENVIO", `Arduino confirmou recebimento de CMD:${command}; movimento físico não medido`);
       lastAcknowledgedCommand = command;
       if (commandStatus) commandStatus.textContent = command;
       if (activeMode === 3) updateDeliveryHint();

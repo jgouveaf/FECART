@@ -774,6 +774,22 @@ async function testModeTransitionSurvivesCameraStartupFailureInEstop() {
 
 async function main() {
   const tests = [
+    async function testGestureAfterMotorTestRequiresReleaseThenSends() {
+      const e = createEnvironment({}, { ackTimeoutMs: 500 });
+      await e.robot.connect();
+      await e.robot.runProgram("motores", "FRENTE");
+      const before = e.port.writes.length;
+      const gesture = () => e.window.dispatchEvent(new TestCustomEvent("quantum:gesture-command", {
+        detail: { command: "FRENTE", stable: true, confidence: 1, emittedAt: performance.now(), modeGeneration: e.robot.modeGeneration }
+      }));
+      gesture(); await wait(10);
+      assert.equal(e.port.writes.slice(before).includes("CMD:FRENTE"), false);
+      assert.ok(e.control.logs.some(entry => /não enviado: parada de emergência/.test(entry.message)));
+      await releaseSafety(e);
+      gesture();
+      await waitFor(() => e.port.writes.slice(before).includes("CMD:FRENTE"));
+      await cleanup(e);
+    },
     async function testFirmwareUploadMustStopEvenInLocalAutonomousMode() {
       const e = createEnvironment({}, { ackTimeoutMs: 500 });
       await e.robot.connect();

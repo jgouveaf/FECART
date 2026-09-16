@@ -1,6 +1,8 @@
 /*
   Quantum Tracker - controle integrado
   Arduino UNO + L298N + HC-SR04 + USB Serial
+  TESTE TEMPORARIO: PWM por Timer1 nos pinos existentes, sem mudar a ligacao.
+  Potencia esquerda 200/255; direita 170/255. ENA/ENB continuam com jumpers.
 
   MODOS:
   1 - AUTONOMO: anda sempre e desvia com o HC-SR04.
@@ -20,7 +22,7 @@
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
   - Modo 1 usa a sequencia aprovada em bancada: parar, re e curva suave;
   - curvas de desvio mantem uma roda para frente e a outra parada;
-  - nos Modos 1 e 3, falha do sensor para o movimento que exige caminho frontal e aguarda duas
+  - no Modo 1, falha do sensor para o movimento que exige caminho frontal e aguarda duas
     leituras validas; ausencia de eco nunca e tratada como caminho livre;
   - a primeira leitura proxima para; duas novas leituras confirmam o desvio;
   - apos a curva, duas leituras livres confirmam a nova direcao antes de avancar;
@@ -33,6 +35,19 @@ const byte IN1 = 7;
 const byte IN2 = 6;
 const byte IN3 = 5;
 const byte IN4 = 4;
+
+// Somente Arduino UNO/ATmega328P: D4..D7 pertencem ao PORTD.
+// Timer1 gera PWM nesses pinos por interrupcoes; nao usa D9/D10 nem altera ENA/ENB.
+// Nao combinar este teste com Servo ou outra biblioteca que use o Timer1.
+#if !defined(__AVR_ATmega328P__)
+#error "Este teste PWM requer Arduino UNO com ATmega328P."
+#endif
+const byte POTENCIA_MOTOR_ESQUERDO = 200;
+const byte POTENCIA_MOTOR_DIREITO = 170;
+const byte MASCARA_ESQUERDA = _BV(IN1) | _BV(IN2);
+const byte MASCARA_DIREITA = _BV(IN3) | _BV(IN4);
+volatile byte direcaoPwmEsquerda = 0;
+volatile byte direcaoPwmDireita = 0;
 
 // HC-SR04: VCC -> 5V, TRIG -> D3, ECHO -> D2, GND -> GND.
 const byte TRIG = 3;
@@ -94,7 +109,52 @@ byte tamanhoLinha = 0;
 // Valor inicial desconhecido obriga setup() a escrever LOW nos quatro pinos.
 byte saidaIn1 = 255, saidaIn2 = 255, saidaIn3 = 255, saidaIn4 = 255;
 
+// Fast PWM de 8 bits: 16 MHz / 64 / 256 = aproximadamente 977 Hz.
+// Somente os quatro bits dos motores sao escritos. Sensor e Serial preservados.
+ISR(TIMER1_OVF_vect) {
+  PORTD = (PORTD & ~(MASCARA_ESQUERDA | MASCARA_DIREITA))
+      | (POTENCIA_MOTOR_ESQUERDO ? direcaoPwmEsquerda : 0)
+      | (POTENCIA_MOTOR_DIREITO ? direcaoPwmDireita : 0);
+}
+
+ISR(TIMER1_COMPA_vect) {
+  if (POTENCIA_MOTOR_ESQUERDO < 255) PORTD &= ~MASCARA_ESQUERDA;
+}
+
+ISR(TIMER1_COMPB_vect) {
+  if (POTENCIA_MOTOR_DIREITO < 255) PORTD &= ~MASCARA_DIREITA;
+}
+
+void iniciarControlePotencia() {
+  const byte interrupcoes = SREG;
+  cli();
+  TCCR1A = 0;
+  TCCR1B = 0;
+  TIMSK1 = 0;
+  TCNT1 = 0;
+  OCR1A = POTENCIA_MOTOR_ESQUERDO;
+  OCR1B = POTENCIA_MOTOR_DIREITO;
+  TIFR1 = _BV(TOV1) | _BV(OCF1A) | _BV(OCF1B);
+  TCCR1A = _BV(WGM10);
+  TCCR1B = _BV(WGM12) | _BV(CS11) | _BV(CS10);
+  TIMSK1 = _BV(TOIE1) | _BV(OCIE1A) | _BV(OCIE1B);
+  SREG = interrupcoes;
+}
+
+void atualizarPotenciasMotores() {
+  // Chamada com interrupcoes suspensas ao mudar a direcao: inicia na fase
+  // corrente sem reiniciar o PWM da roda que ja estava andando.
+  const byte fase = TCNT1;
+  byte ativos = 0;
+  if (POTENCIA_MOTOR_ESQUERDO == 255 || fase < POTENCIA_MOTOR_ESQUERDO) ativos |= direcaoPwmEsquerda;
+  if (POTENCIA_MOTOR_DIREITO == 255 || fase < POTENCIA_MOTOR_DIREITO) ativos |= direcaoPwmDireita;
+  PORTD = (PORTD & ~(MASCARA_ESQUERDA | MASCARA_DIREITA)) | ativos;
+}
+
 void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
+  if (saidaIn1 == in1 && saidaIn2 == in2 && saidaIn3 == in3 && saidaIn4 == in4) return;
+  const byte interrupcoes = SREG;
+  cli();
   // Desliga primeiro somente as saidas que mudaram. Ao passar de uma curva
   // para FRENTE, a roda que ja avanca nao recebe um pulso de desligamento.
   // Na inversao, LOW acontece antes de HIGH; PARAR continua desligando ambas.
@@ -107,6 +167,10 @@ void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
   if (in3 && saidaIn3 != HIGH) digitalWrite(IN3, HIGH);
   if (in4 && saidaIn4 != HIGH) digitalWrite(IN4, HIGH);
   saidaIn1 = in1; saidaIn2 = in2; saidaIn3 = in3; saidaIn4 = in4;
+  direcaoPwmEsquerda = (in1 ? _BV(IN1) : 0) | (in2 ? _BV(IN2) : 0);
+  direcaoPwmDireita = (in3 ? _BV(IN3) : 0) | (in4 ? _BV(IN4) : 0);
+  atualizarPotenciasMotores();
+  SREG = interrupcoes;
 }
 
 void pararMotores() {
@@ -467,6 +531,7 @@ void setup() {
   pinMode(ECHO, INPUT);
   digitalWrite(TRIG, LOW);
   pararMotores();
+  iniciarControlePotencia();
 
   Serial.begin(9600);
   delay(2000);

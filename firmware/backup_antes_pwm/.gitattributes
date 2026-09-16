@@ -1,0 +1,3 @@
+# Preserve the exact original bytes for rollback and hash verification.
+*.ino -text
+*.hex -text

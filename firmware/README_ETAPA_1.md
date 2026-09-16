@@ -1,5 +1,11 @@
 # Quantum Tracker — Arduino UNO e controle USB
 
+**Teste temporário ativo:** o firmware principal usa potência esquerda 200 e
+direita 170, sem alteração de fios ou jumpers ENA/ENB. Leia
+[as instruções do teste e da restauração](TESTE_POTENCIA_PWM.md).
+O restante deste documento descreve a base V7; os números antigos de compilação
+abaixo se referem àquela base. O teste usa 7.694 bytes de flash e 407 bytes de RAM.
+
 Firmware integrado V7 para Arduino UNO, L298N, dois motores DC e HC-SR04. Ele
 mantém a segurança no próprio Arduino e aceita comandos do site pelo cabo USB.
 Câmera e visão executam no computador; o Arduino não depende delas para

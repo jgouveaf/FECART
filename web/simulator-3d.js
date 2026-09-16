@@ -72,6 +72,7 @@
     box(12,3.25,4,.15,.16,8,materials.dark);
     for(let x=1;x<12;x+=2.5) {box(x,3.4,4,.08,.13,8,materials.metal);box(x,3.3,3.5,.12,.03,1.2,new T.MeshStandardMaterial({color:0xffffff,emissive:0xf1f7ff,emissiveIntensity:2}));}
     const rightWall=box(12.08,1.7,4,.16,3.4,8.2,materials.wall,scene);rightWall.castShadow=false;
+    const frontWall=box(6,1.7,8.08,12.3,3.4,.16,materials.wall,scene);frontWall.castShadow=false;
     const ceiling=box(6,3.48,4,12.3,.08,8.3,materials.ceiling,scene);ceiling.castShadow=false;ceiling.receiveShadow=false;
     // The downloaded lobby supplies furniture; retain the room shell and floor.
     for(const object of [...builtInEnvironment.children]) scene.add(object);

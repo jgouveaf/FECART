@@ -30,6 +30,7 @@
     const humanPromises=new Map();
     const humanResources=new T.Group();humanResources.visible=false;scene.add(humanResources);
     const camera=new T.PerspectiveCamera(68,1,.035,60);
+    const roomWidth=world.width/100,roomDepth=world.height/100;
     const hemi=new T.HemisphereLight(0xdff5ff,0x5c6265,1.3);scene.add(hemi);
     const sun=new T.DirectionalLight(0xffedd5,2.3);sun.position.set(4,8,5);sun.castShadow=true;
     sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-9,right:9,top:9,bottom:-9,near:.5,far:22});
@@ -37,7 +38,7 @@
     const fill=new T.DirectionalLight(0xc3dfff,1.05);fill.position.set(-3,3,-4);scene.add(fill);
     const practical=new T.PointLight(0x86d9ff,5.5,8,2);practical.position.set(5.8,2.8,3.8);scene.add(practical);
     const mat=(color,roughness=.65,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
-    const materials={wall:new T.MeshStandardMaterial({color:0xe9ede8,roughness:.78,side:T.DoubleSide}),ceiling:new T.MeshStandardMaterial({color:0xf4f2eb,roughness:.84,side:T.BackSide}),metal:mat(0x64727a,.27,.74),dark:mat(0x203039,.38,.42),wood:mat(0xb98550,.58,.05),
+    const materials={wall:new T.MeshStandardMaterial({color:0xe9ede8,roughness:.78,side:T.DoubleSide}),ceiling:mat(0xf4f2eb,.84),metal:mat(0x64727a,.27,.74),dark:mat(0x203039,.38,.42),wood:mat(0xb98550,.58,.05),
       black:mat(0x12191d,.82,.08),orange:mat(0xf0a44a,.38,.08),white:mat(0xf7f4e9,.28,.06),blue:mat(0x267b9a,.34,.25),green:mat(0x2e7254,.78)};
     const mesh=(geometry,material,parent=builtInEnvironment)=>{const m=new T.Mesh(geometry,material);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;};
     const box=(x,y,z,w,h,d,material,parent=builtInEnvironment)=>{const m=mesh(new T.BoxGeometry(w,h,d),material,parent);m.position.set(x,y,z);return m;};
@@ -56,24 +57,23 @@
     tx.strokeStyle='rgba(74,83,83,.35)';tx.lineWidth=3;tx.strokeRect(1,1,510,510);
     tx.strokeStyle='rgba(255,255,255,.18)';tx.lineWidth=1;for(let i=0;i<=512;i+=64){tx.beginPath();tx.moveTo(i,0);tx.lineTo(i,512);tx.moveTo(0,i);tx.lineTo(512,i);tx.stroke();}
     const floorTexture=new T.CanvasTexture(tile);floorTexture.wrapS=floorTexture.wrapT=T.RepeatWrapping;
-    floorTexture.repeat.set(10,7);floorTexture.colorSpace=T.SRGBColorSpace;
-    const floor=mesh(new T.PlaneGeometry(12,8),new T.MeshStandardMaterial({map:floorTexture,roughness:.72,metalness:.05}));
-    floor.rotation.x=-Math.PI/2;floor.position.set(6,-.005,4);floor.castShadow=false;
-    box(6,-.11,4,12.3,.2,8.3,materials.dark);
-    box(6,1.7,-.08,12.2,3.4,.16,materials.wall);
-    box(-.08,1.7,4,.16,3.4,8,materials.wall);
-    box(6,.13,.04,12,.26,.06,materials.dark);box(.04,.13,4,.06,.26,8,materials.dark);
-    // Close the office shell. Double-sided walls stay visible from either
-    // camera view; the ceiling is visible from inside without blocking a
-    // third-person camera that is above the room.
-    box(12.06,.45,4,.12,.9,8,materials.wall);
+    floorTexture.repeat.set(roomWidth/1.2,roomDepth/1.14);floorTexture.colorSpace=T.SRGBColorSpace;
+    const floor=mesh(new T.PlaneGeometry(roomWidth,roomDepth),new T.MeshStandardMaterial({map:floorTexture,roughness:.72,metalness:.05}));
+    floor.rotation.x=-Math.PI/2;floor.position.set(roomWidth/2,-.005,roomDepth/2);floor.castShadow=false;floor.name='office-floor';
+    box(roomWidth/2,-.11,roomDepth/2,roomWidth+.3,.2,roomDepth+.3,materials.dark);
+    box(roomWidth/2,1.7,-.08,roomWidth+.2,3.4,.16,materials.wall);
+    box(-.08,1.7,roomDepth/2,.16,3.4,roomDepth,materials.wall);
+    box(roomWidth/2,.13,.04,roomWidth,.26,.06,materials.dark);box(.04,.13,roomDepth/2,.06,.26,roomDepth,materials.dark);
+    // All four walls and the ceiling match the world boundaries. Both camera
+    // views remain inside this shell, including at maximum zoom/elevation.
+    box(roomWidth+.06,.45,roomDepth/2,.12,.9,roomDepth,materials.wall);
     const glass=new T.MeshPhysicalMaterial({color:0xadcdd4,roughness:.1,metalness:.1,transparent:true,opacity:.18,depthWrite:false});
-    for(let z=.65;z<8;z+=1.3) {box(12,2,z,.035,2.2,1.2,glass).castShadow=false;box(12,2,z-.64,.1,2.6,.06,materials.dark);}
-    box(12,3.25,4,.15,.16,8,materials.dark);
-    for(let x=1;x<12;x+=2.5) {box(x,3.4,4,.08,.13,8,materials.metal);box(x,3.3,3.5,.12,.03,1.2,new T.MeshStandardMaterial({color:0xffffff,emissive:0xf1f7ff,emissiveIntensity:2}));}
-    const rightWall=box(12.08,1.7,4,.16,3.4,8.2,materials.wall,scene);rightWall.castShadow=false;
-    const frontWall=box(6,1.7,8.08,12.3,3.4,.16,materials.wall,scene);frontWall.castShadow=false;
-    const ceiling=box(6,3.48,4,12.3,.08,8.3,materials.ceiling,scene);ceiling.castShadow=false;ceiling.receiveShadow=false;
+    for(let z=.65;z<roomDepth-.6;z+=1.3) {box(roomWidth,2,z,.035,2.2,1.2,glass).castShadow=false;box(roomWidth,2,z-.64,.1,2.6,.06,materials.dark);}
+    box(roomWidth,3.25,roomDepth/2,.15,.16,roomDepth,materials.dark);
+    for(let x=1;x<roomWidth;x+=2.5) {box(x,3.4,roomDepth/2,.08,.13,roomDepth,materials.metal);box(x,3.3,roomDepth/2,.12,.03,1.2,new T.MeshStandardMaterial({color:0xffffff,emissive:0xf1f7ff,emissiveIntensity:2}));}
+    const rightWall=box(roomWidth+.08,1.7,roomDepth/2,.16,3.4,roomDepth+.2,materials.wall,scene);rightWall.castShadow=false;
+    const frontWall=box(roomWidth/2,1.7,roomDepth+.08,roomWidth+.3,3.4,.16,materials.wall,scene);frontWall.castShadow=false;
+    const ceiling=box(roomWidth/2,3.48,roomDepth/2,roomWidth+.3,.08,roomDepth+.3,materials.ceiling,scene);ceiling.castShadow=false;ceiling.receiveShadow=false;ceiling.name='office-ceiling';
     // The downloaded lobby supplies furniture; retain the room shell and floor.
     for(const object of [...builtInEnvironment.children]) scene.add(object);
     const sign=mesh(new T.PlaneGeometry(3.3,.75),new T.MeshBasicMaterial({map:label('QUANTUM  /  LAB 01')}));sign.position.set(5.7,2.5,.015);sign.castShadow=false;
@@ -283,8 +283,8 @@
         const a=r.angle+orbit,x=r.x/100,z=r.y/100;
         if(view==='first') {desired.set(x+Math.cos(r.angle)*.12,.28,z+Math.sin(r.angle)*.12);look.set(desired.x+Math.cos(a)*3,1.45+(elevation-.5),desired.z+Math.sin(a)*3);}
         else {desired.set(x-Math.cos(a)*zoom,zoom*elevation+.6,z-Math.sin(a)*zoom);look.set(x+.3*Math.cos(r.angle),.85,z+.3*Math.sin(r.angle));}
-        desired.x=clamp(desired.x,.12,11.88);desired.z=clamp(desired.z,.12,7.88);
-        if(view==='third') desired.y=Math.hypot(desired.x-x,desired.z-z)*elevation+.6;
+        desired.x=clamp(desired.x,.12,roomWidth-.12);desired.z=clamp(desired.z,.12,roomDepth-.12);
+        if(view==='third') desired.y=Math.min(3.05,Math.hypot(desired.x-x,desired.z-z)*elevation+.6);
         if(!cameraReady||view==='first') {camera.position.copy(desired);lastLook.copy(look);cameraReady=true;}
         else {const ease=1-Math.exp(-dt*9);camera.position.lerp(desired,ease);lastLook.lerp(look,ease);}
         camera.lookAt(lastLook);renderer.render(scene,camera);

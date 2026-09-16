@@ -17,7 +17,7 @@
   }
   class World {
     constructor() {
-      this.width=1200; this.height=800;
+      this.width=1800; this.height=1200;
       this.obstacles=[{x:350,y:130,w:95,h:195,height:92,kind:'bench'},
         {x:640,y:80,w:230,h:80,height:125,kind:'cabinet'},
         {x:730,y:520,w:100,h:170,height:95,kind:'bench'},
@@ -31,8 +31,8 @@
         {id:'p2',name:'Lucas',gender:'male',x:970,y:240,angle:Math.PI/2,speed:29,color:0x45859b,
           route:[[970,240],[970,635],[1040,635],[1040,240]],leg:1}];
       if(this.environmentId==='office') {
-        this.people[0].route=[[280,410],[570,410],[570,460],[445,460],[445,410]];
-        Object.assign(this.people[1],{x:970,y:430,route:[[970,430],[970,635],[1040,635],[1040,430]]});
+        this.people[0].route=[[280,410],[870,410],[870,960],[445,960],[445,410]];
+        Object.assign(this.people[1],{x:1370,y:430,route:[[1370,430],[1370,1035],[1640,1035],[1640,430]]});
       }
       this.targetId='p1'; this.peopleVisible=true;this.peopleMoving=true;
       this.running=true;this.events=0;this.collisions=0;this.lastCollision=null;this.time=0;this.lastTime=0;
@@ -52,9 +52,11 @@
     addPerson() {
       this.peopleVisible=true;
       if(this.people.length>=5) return false;
-      const i=this.people.length,y=this.environmentId==='office'?430:400;
-      this.people.push({id:`p${i+1}`,name:`Visitante ${i-1}`,gender:'male',x:1040-i*65,y,angle:0,speed:20+i,
-        color:[0x758b61,0x806fa9,0xd2b567][i-2],route:[[1040-i*65,y],[1040-i*65,710]],leg:1});
+      const i=this.people.length,y=this.environmentId==='office'?430:400,x=this.environmentId==='office'?1250-(i-2)*100:1040-i*65;
+      if(this.personBlocked(x,y)||Math.hypot(x-this.robot.x,y-this.robot.y)<this.robot.radius+19||
+        this.people.some(p=>Math.hypot(x-p.x,y-p.y)<38)) return false;
+      this.people.push({id:`p${i+1}`,name:`Visitante ${i-1}`,gender:'male',x,y,angle:0,speed:20+i,
+        color:[0x758b61,0x806fa9,0xd2b567][i-2],route:[[x,y],[x,this.environmentId==='office'?1035:710]],leg:1});
       return true;
     }
     personBlocked(x,y,radius=19) {
@@ -63,6 +65,8 @@
     }
     advancePeople(dt) {
       if(!this.peopleVisible||!this.peopleMoving) return;
+      if(!Number.isFinite(dt)||dt<=0)return;
+      dt=Math.min(dt,.05);
       for(const p of this.people) {
         const to=p.route[p.leg],dx=to[0]-p.x,dy=to[1]-p.y,length=Math.hypot(dx,dy),travel=p.speed*dt;
         p.angle=Math.atan2(dy,dx);
@@ -71,6 +75,14 @@
         // route advances rather than letting an avatar walk through furniture.
         if(this.personBlocked(next.x,next.y)) { p.leg=(p.leg+1)%p.route.length; continue; }
         if(Math.hypot(next.x-this.robot.x,next.y-this.robot.y)<this.robot.radius+19) continue;
+        // Test the whole step against each person's occupied space, so even a
+        // fast walker cannot cross another person between rendered frames.
+        const sx=next.x-p.x,sy=next.y-p.y,stepLength2=sx*sx+sy*sy;
+        if(this.people.some(other=>{
+          if(other===p)return false;
+          const t=stepLength2?clamp(((other.x-p.x)*sx+(other.y-p.y)*sy)/stepLength2,0,1):0;
+          return Math.hypot(p.x+t*sx-other.x,p.y+t*sy-other.y)<38;
+        })) continue;
         p.x=next.x;p.y=next.y;
         if(length<=travel) p.leg=(p.leg+1)%p.route.length;
       }

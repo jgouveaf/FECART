@@ -82,3 +82,24 @@ test('a pedestrian waits rather than walking into a stopped robot',()=>{
   for(let i=0;i<200;i++)w.advancePeople(.05);
   assert.ok(Math.hypot(w.people[0].x-w.robot.x,w.people[0].y-w.robot.y)>=w.robot.radius+19);
 });
+
+test('opposing pedestrians cannot pass through one another',()=>{
+  const w=new World();w.people[0].x=500;w.people[0].y=410;w.people[0].route=[[560,410]];w.people[0].leg=0;
+  w.people[1].x=560;w.people[1].y=410;w.people[1].route=[[500,410]];w.people[1].leg=0;
+  for(let i=0;i<400;i++) {
+    w.advancePeople(.02);
+    assert.ok(Math.hypot(w.people[0].x-w.people[1].x,w.people[0].y-w.people[1].y)>=38);
+  }
+});
+test('a fast pedestrian cannot tunnel through a stationary person',()=>{
+  const w=new World();Object.assign(w.people[0],{x:500,y:410,speed:4000,route:[[800,410]],leg:0});
+  Object.assign(w.people[1],{x:560,y:410,speed:0,route:[[560,410]],leg:0});
+  w.advancePeople(1);assert.ok(w.people[0].x<=522);
+});
+test('expanded world remains traversable beyond the former walls',()=>{
+  const w=new World();w.peopleVisible=false;
+  w.robot.x=1250;w.robot.y=900;
+  assert.equal(w.collides(w.robot.x,w.robot.y),false);
+  assert.equal(w.collides(w.width-10,w.robot.y),true);
+  const x=w.robot.x;w.step(.05,{mode:'GESTOS',command:'FRENTE'});assert.ok(w.robot.x>x);
+});

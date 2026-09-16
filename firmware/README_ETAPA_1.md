@@ -1,7 +1,7 @@
 # Quantum Tracker — Arduino UNO e controle USB
 
-**Teste temporário ativo:** o firmware principal usa potência esquerda 240 e
-direita 204, sem alteração de fios ou jumpers ENA/ENB. Leia
+**Teste temporário ativo:** os modos 1 e 3 usam potência 200/200; o Modo 2
+usa 170/170 com correções suaves, sem alterar fios ou jumpers ENA/ENB. Leia
 [as instruções do teste e da restauração](TESTE_POTENCIA_PWM.md).
 O restante deste documento descreve a base V7; os números antigos de compilação
 abaixo se referem àquela base. O teste usa 7.694 bytes de flash e 407 bytes de RAM.

@@ -1,10 +1,14 @@
 # Teste temporário de potência, sem mudar fios
 
-O firmware principal usa potência aumentada: esquerda **240**, direita **204**,
+O firmware principal usa potências iguais: esquerda **200**, direita **200**,
 em uma escala de 0 a 255. Eles ajustam o tempo de acionamento, não garantem uma
 velocidade específica nem que o carrinho ande reto sob qualquer carga.
 
-O PWM aumentou 20% em relação a 200/170, mantendo a proporção entre rodas.
+No Modo 2, ambas usam **170** para seguir mais devagar. Nas correções,
+a roda interna usa **136**, mantendo ambas para frente. O site inicia correções
+nos 25% externos da imagem e libera ao retornar à faixa 35–65%, com pulsos
+de 140 ms a cada 800 ms, dependentes de observações novas da câmera.
+Os modos 1 e 3 preservam suas direções anteriores, com PWM igual 200/200.
 A versão 200/170 observada em teste pelo usuário está guardada em
 `backup_pwm_200_170/backup_pwm_200_170.ino` e no HEX correspondente.
 O novo ajuste ainda precisa de teste físico, primeiro com rodas suspensas.

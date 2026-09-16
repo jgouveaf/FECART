@@ -2,7 +2,7 @@
   Quantum Tracker - controle integrado
   Arduino UNO + L298N + HC-SR04 + USB Serial
   TESTE TEMPORARIO: PWM por Timer1 nos pinos existentes, sem mudar a ligacao.
-  Potencia esquerda 240/255; direita 204/255. ENA/ENB continuam com jumpers.
+  Potencia 200/200; seguimento lento 170/170. ENA/ENB continuam com jumpers.
 
   MODOS:
   1 - AUTONOMO: anda sempre e desvia com o HC-SR04.
@@ -42,8 +42,8 @@ const byte IN4 = 4;
 #if !defined(__AVR_ATmega328P__)
 #error "Este teste PWM requer Arduino UNO com ATmega328P."
 #endif
-const byte POTENCIA_MOTOR_ESQUERDO = 240;
-const byte POTENCIA_MOTOR_DIREITO = 204;
+const byte POTENCIA_MOTOR_ESQUERDO = 200;
+const byte POTENCIA_MOTOR_DIREITO = 200;
 const byte MASCARA_ESQUERDA = _BV(IN1) | _BV(IN2);
 const byte MASCARA_DIREITA = _BV(IN3) | _BV(IN4);
 volatile byte direcaoPwmEsquerda = 0;
@@ -146,13 +146,23 @@ void atualizarPotenciasMotores() {
   // corrente sem reiniciar o PWM da roda que ja estava andando.
   const byte fase = TCNT1;
   byte ativos = 0;
-  if (POTENCIA_MOTOR_ESQUERDO == 255 || fase < POTENCIA_MOTOR_ESQUERDO) ativos |= direcaoPwmEsquerda;
-  if (POTENCIA_MOTOR_DIREITO == 255 || fase < POTENCIA_MOTOR_DIREITO) ativos |= direcaoPwmDireita;
+  if (fase < OCR1A) ativos |= direcaoPwmEsquerda;
+  if (fase < OCR1B) ativos |= direcaoPwmDireita;
   PORTD = (PORTD & ~(MASCARA_ESQUERDA | MASCARA_DIREITA)) | ativos;
 }
 
 void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
-  if (saidaIn1 == in1 && saidaIn2 == in2 && saidaIn3 == in3 && saidaIn4 == in4) return;
+  byte potenciaEsquerda = POTENCIA_MOTOR_ESQUERDO;
+  byte potenciaDireita = POTENCIA_MOTOR_DIREITO;
+  if (modo == MODO_SEGUIR) {
+    potenciaEsquerda = 170;
+    potenciaDireita = 170;
+    // Curvas do seguimento mantem ambas as rodas para frente.
+    if (!in1 && in2 && !in3 && !in4) { in4 = HIGH; potenciaDireita = 136; }
+    else if (!in1 && !in2 && !in3 && in4) { in2 = HIGH; potenciaEsquerda = 136; }
+  }
+  if (saidaIn1 == in1 && saidaIn2 == in2 && saidaIn3 == in3 && saidaIn4 == in4
+      && OCR1A == potenciaEsquerda && OCR1B == potenciaDireita) return;
   const byte interrupcoes = SREG;
   cli();
   // Desliga primeiro somente as saidas que mudaram. Ao passar de uma curva
@@ -167,6 +177,8 @@ void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
   if (in3 && saidaIn3 != HIGH) digitalWrite(IN3, HIGH);
   if (in4 && saidaIn4 != HIGH) digitalWrite(IN4, HIGH);
   saidaIn1 = in1; saidaIn2 = in2; saidaIn3 = in3; saidaIn4 = in4;
+  OCR1A = potenciaEsquerda;
+  OCR1B = potenciaDireita;
   direcaoPwmEsquerda = (in1 ? _BV(IN1) : 0) | (in2 ? _BV(IN2) : 0);
   direcaoPwmDireita = (in3 ? _BV(IN3) : 0) | (in4 ? _BV(IN4) : 0);
   atualizarPotenciasMotores();

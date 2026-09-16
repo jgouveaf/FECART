@@ -301,13 +301,7 @@
       this.confirmedFrames++; if (this.confirmedSince == null) this.confirmedSince = capturedAt;
       const info = { box: this.box, confidence: chosen.confidence, center: this.smoothed, capturedAt,
         identityAgeMs: null, appearanceReady: false, anonymous: true };
-      // This is an operator-selected bench test, not identity following. The
-      // first valid human detection must exercise the real USB path at once.
-      // It intentionally drives straight; target centering and FaceID remain
-      // part of the registered-person flow.
-      this.steering = 'FRENTE'; this.command = 'FRENTE'; this.turnCycleAt = null;
-      return { ...info, trackingState: 'NEAREST_TRACKING', visualCommand: 'FRENTE', steering: 'FRENTE',
-        visible: true, command: 'FRENTE', state: 'NEAREST_TRACKING', id: this.id, prediction: null };
+      return this.decideMotion(info, chosen.box.height, { requireSensor: false }, 'NEAREST_TRACKING');
     }
     proximityStop(info, height, { requireSensor, distance, sensorAgeMs }, faceOnly) {
       if (requireSensor && (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(sensorAgeMs) || sensorAgeMs < 0 || sensorAgeMs > 700)) {
@@ -327,25 +321,23 @@
     }
     decideMotion(info, height, safety, state) {
       const previous = this.steering;
-      if (info.center < (previous === "ESQUERDA" ? 0.46 : 0.40)) this.steering = "ESQUERDA";
-      else if (info.center > (previous === "DIREITA" ? 0.54 : 0.60)) this.steering = "DIREITA";
+      if (info.center <= (previous === "ESQUERDA" ? 0.35 : 0.25)) this.steering = "ESQUERDA";
+      else if (info.center >= (previous === "DIREITA" ? 0.65 : 0.75)) this.steering = "DIREITA";
       else this.steering = "FRENTE";
       if (this.steering === 'FRENTE') {
         this.command = 'FRENTE'; this.turnCycleAt = null;
       } else {
         if (previous !== this.steering || this.turnCycleAt == null) this.turnCycleAt = info.capturedAt;
-        const offset = Math.abs(info.center - .5);
-        // Existing firmware curves forward with one wheel stopped. Short
-        // corrections separated by forward motion reduce prolonged turning.
-        // Only current observations schedule movement; there is no blind timer.
-        const turnMs = clamp(120 + (offset - .1) * 800, 120, 320);
+        // Pequenas correcoes nas bordas, sem exigir alinhamento perfeito.
+        // O firmware do Modo 2 reduz a roda interna e mantem ambas para frente.
+        const turnMs = 140;
         const phase = Math.max(0, info.capturedAt - this.turnCycleAt) % 800;
-        this.command = offset >= .35 || phase < turnMs ? this.steering : 'FRENTE';
+        this.command = phase < turnMs ? this.steering : 'FRENTE';
       }
       // Preserve what current vision calculated, then apply motor protection.
       // Only command/visible authorize delivery; visualCommand is diagnostic.
       const visual = { ...info, trackingState: state, visualCommand: this.command };
-      const blocked = this.proximityStop(visual, height, safety, state === 'FACE_TRACKING');
+      const blocked = state === 'NEAREST_TRACKING' ? null : this.proximityStop(visual, height, safety, state === 'FACE_TRACKING');
       if (blocked) return blocked;
       return { ...visual, steering: this.steering, visible: true, command: this.command, state,
         id: this.id, prediction: null };

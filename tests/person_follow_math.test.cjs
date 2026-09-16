@@ -25,6 +25,22 @@ test('nearest-person test locks the initial largest body without a face profile'
   const lost = step(1400, [laterLarger]);
   assert.equal(lost.command, 'PARAR'); assert.ok(['PREDICTED_STOP', 'TARGET_LOST'].includes(lost.state));
 });
+test('nearest person only steers at the edges and returns to forward between corrections', () => {
+  for (const [x, turn] of [[.05,'ESQUERDA'],[.65,'DIREITA']]) {
+    const f = new PersonFollower(); f.selectNearest();
+    const step = t => f.update({people:[body(x)],faces:[],now:t,capturedAt:t});
+    assert.equal(step(1000).command,turn);
+    assert.equal(step(1200).command,'FRENTE');
+    assert.equal(step(1600).command,'FRENTE');
+    assert.equal(step(1800).command,turn);
+    assert.equal(f.update({people:[],faces:[],now:2500,capturedAt:2500}).command,'PARAR');
+  }
+  for (const x of [.12,.25,.35,.5,.58]) {
+    const f = new PersonFollower(); f.selectNearest();
+    assert.equal(f.update({people:[body(x)],faces:[],now:1000,capturedAt:1000}).command,'FRENTE');
+  }
+});
+
 test("two fresh observations spanning 120 ms are required", () => {
   const { step } = rig(); assert.equal(step(1000).state, "CONFIRMING");
   assert.equal(step(1100).command, "PARAR"); assert.equal(step(1120).command, "FRENTE");

@@ -200,11 +200,11 @@ test('an off-center target receives short curves separated by forward motion', (
   }
 });
 test('steering hysteresis survives the forward part of a correction', () => {
-  const { step } = running(.39);
+  const { step } = running(.24);
   assert.equal(step(1400).command, 'FRENTE');
-  assert.equal(step(1500, { faces: [face(1500, .42)] }).steering, 'ESQUERDA');
+  assert.equal(step(1500, { faces: [face(1500, .30)] }).steering, 'ESQUERDA');
 });
-test('larger deviations get more curve time, while centered jitter stays straight', () => {
+test('edge corrections stay short while the wide central band stays straight', () => {
   const curves = x => {
     const { step } = running(x); let count = 0;
     for (let t = 1201; t < 2000; t += 50) if (step(t).command === 'ESQUERDA') count++;

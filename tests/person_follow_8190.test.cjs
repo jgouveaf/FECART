@@ -30,14 +30,15 @@ const cases = [
 let count = 0;
 for (const [family, mutate] of cases) test(`630 variants: ${family}`, () => {
   for (let n = 0; n < 630; n++) {
-    const position = n % 3, x = [.25, .5, .75][position] + (random() - .5) * .015;
+    const position = n % 3, x = [.2, .5, .8][position] + (random() - .5) * .015;
     const f = new PersonFollower(); f.select('QT-001');
     f.update(input(1000, x)); f.update(input(1200, x));
     const sample = input(1400, x); mutate(f, sample, n);
     const result = f.update(sample);
     const safe = family === 'valid target and clear sensor';
     const isolatedForwardDropout = family === 'missing person' && position === 1;
-    assert.equal(result.command, safe ? ['ESQUERDA', 'FRENTE', 'DIREITA'][position]
+    // At 1400 ms the short initial correction (1200–1340) has ended.
+    assert.equal(result.command, safe ? 'FRENTE'
       : isolatedForwardDropout ? 'FRENTE' : 'PARAR', `${family} #${n}`);
     if (isolatedForwardDropout) assert.equal(result.dropout, true);
     if (safe) assert.equal(result.visible, true);

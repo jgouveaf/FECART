@@ -26,11 +26,15 @@ Arquivo fonte: `https://cdn.jsdelivr.net/gh/mrdoob/three.js@r180/examples/models
 
 `web/assets/models/person-motion.json` contém Idle e Walk adaptados do
 [Soldier do Three.js r180](https://github.com/mrdoob/three.js/blob/r180/examples/models/gltf/Soldier.glb)
-para o esqueleto de Michelle. O Soldier original é usado somente na preparação
-offline, sem ser incluído na entrega. O script reprodutível é
+para o esqueleto de Michelle. O script reprodutível é
 `tools/prepare_simulator_motion.mjs`; argumentos: GLB Soldier, GLB Michelle e JSON
 de saída. A adaptação preserva os comprimentos dos ossos e remove a translação
 horizontal, pois o deslocamento pertence ao mundo virtual.
+
+`web/assets/models/person-male-mixamo.glb` é o mesmo modelo Soldier, com as
+animações nativas Idle e Walk. Ele é usado para nomes masculinos; Michelle é
+usada para nomes femininos. Ambos vêm do exemplo oficial do Three.js e são
+conteúdo Adobe Mixamo.
 
 Personagens e animações são conteúdo **Adobe Mixamo**, não CC0. A
 [FAQ oficial da Adobe](https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html)
@@ -41,7 +45,7 @@ do código Three.js não substitui os termos do conteúdo Mixamo.
 
 Cada pessoa usa uma cópia independente do esqueleto. Geometria e texturas são
 compartilhadas para limitar uso de memória; caminhada depende de deslocamento
-real no mundo virtual. A aparência das pessoas vem do mesmo personagem-base.
+real no mundo virtual.
 
 ## Biblioteca e integridade
 

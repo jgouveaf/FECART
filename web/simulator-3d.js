@@ -27,7 +27,7 @@
     const builtInEnvironment=new T.Group(),officeEnvironment=new T.Group();
     scene.add(builtInEnvironment,officeEnvironment);
     const assetLoader=new GLTFLoader();
-    let humanPromise=null;
+    const humanPromises=new Map();
     const humanResources=new T.Group();humanResources.visible=false;scene.add(humanResources);
     const camera=new T.PerspectiveCamera(68,1,.035,60);
     const hemi=new T.HemisphereLight(0xdff5ff,0x5c6265,1.3);scene.add(hemi);
@@ -37,7 +37,7 @@
     const fill=new T.DirectionalLight(0xc3dfff,1.05);fill.position.set(-3,3,-4);scene.add(fill);
     const practical=new T.PointLight(0x86d9ff,5.5,8,2);practical.position.set(5.8,2.8,3.8);scene.add(practical);
     const mat=(color,roughness=.65,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
-    const materials={wall:mat(0xe9ede8,.78),metal:mat(0x64727a,.27,.74),dark:mat(0x203039,.38,.42),wood:mat(0xb98550,.58,.05),
+    const materials={wall:new T.MeshStandardMaterial({color:0xe9ede8,roughness:.78,side:T.DoubleSide}),ceiling:new T.MeshStandardMaterial({color:0xf4f2eb,roughness:.84,side:T.BackSide}),metal:mat(0x64727a,.27,.74),dark:mat(0x203039,.38,.42),wood:mat(0xb98550,.58,.05),
       black:mat(0x12191d,.82,.08),orange:mat(0xf0a44a,.38,.08),white:mat(0xf7f4e9,.28,.06),blue:mat(0x267b9a,.34,.25),green:mat(0x2e7254,.78)};
     const mesh=(geometry,material,parent=builtInEnvironment)=>{const m=new T.Mesh(geometry,material);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;};
     const box=(x,y,z,w,h,d,material,parent=builtInEnvironment)=>{const m=mesh(new T.BoxGeometry(w,h,d),material,parent);m.position.set(x,y,z);return m;};
@@ -63,12 +63,16 @@
     box(6,1.7,-.08,12.2,3.4,.16,materials.wall);
     box(-.08,1.7,4,.16,3.4,8,materials.wall);
     box(6,.13,.04,12,.26,.06,materials.dark);box(.04,.13,4,.06,.26,8,materials.dark);
-    // Windowed east wall keeps a clear view in third person.
+    // Close the office shell. Double-sided walls stay visible from either
+    // camera view; the ceiling is visible from inside without blocking a
+    // third-person camera that is above the room.
     box(12.06,.45,4,.12,.9,8,materials.wall);
     const glass=new T.MeshPhysicalMaterial({color:0xadcdd4,roughness:.1,metalness:.1,transparent:true,opacity:.18,depthWrite:false});
     for(let z=.65;z<8;z+=1.3) {box(12,2,z,.035,2.2,1.2,glass).castShadow=false;box(12,2,z-.64,.1,2.6,.06,materials.dark);}
     box(12,3.25,4,.15,.16,8,materials.dark);
     for(let x=1;x<12;x+=2.5) {box(x,3.4,4,.08,.13,8,materials.metal);box(x,3.3,3.5,.12,.03,1.2,new T.MeshStandardMaterial({color:0xffffff,emissive:0xf1f7ff,emissiveIntensity:2}));}
+    const rightWall=box(12.08,1.7,4,.16,3.4,8.2,materials.wall,scene);rightWall.castShadow=false;
+    const ceiling=box(6,3.48,4,12.3,.08,8.3,materials.ceiling,scene);ceiling.castShadow=false;ceiling.receiveShadow=false;
     // The downloaded lobby supplies furniture; retain the room shell and floor.
     for(const object of [...builtInEnvironment.children]) scene.add(object);
     const sign=mesh(new T.PlaneGeometry(3.3,.75),new T.MeshBasicMaterial({map:label('QUANTUM  /  LAB 01')}));sign.position.set(5.7,2.5,.015);sign.castShadow=false;
@@ -84,7 +88,9 @@
       const office=gltf.scene;
       if(disposed){disposeTree(office);return;}
       office.scale.setScalar(.9);office.position.set(6.075,0,4.32);
+      const retainedFurniture=/^(000|001|002)-/;
       office.traverse(object=>{
+        if(/^\d{3}-/.test(object.name)&&!retainedFurniture.test(object.name)) object.visible=false;
         if(!object.isMesh)return;
         object.castShadow=true;object.receiveShadow=true;
         const mats=Array.isArray(object.material)?object.material:[object.material];
@@ -95,7 +101,7 @@
       // Furniture group footprints are conservative, including chair/table
       // overhangs. Rugs and ceiling fixtures do not obstruct the flat floor.
       office.traverse(object=>{
-        if(!/^\d{3}-/.test(object.name)||object.isMesh)return;
+        if(!object.visible||!/^\d{3}-/.test(object.name)||object.isMesh)return;
         const bounds=new T.Box3().setFromObject(object);
         if(bounds.min.y>.1||bounds.max.y<.05)return;
         obstacles.push({x:bounds.min.x*100,y:bounds.min.z*100,w:(bounds.max.x-bounds.min.x)*100,
@@ -105,7 +111,7 @@
       officeEnvironment.add(office);
       builtInEnvironment.visible=false;
       container.dataset.environment='office';
-      const status=document.getElementById('simGraphicsStatus');if(status)status.textContent='Recepção 3D · cenário realista';
+      const status=document.getElementById('simGraphicsStatus');if(status)status.textContent='Escritório 3D · sala principal';
     },undefined,()=>{
       if(disposed)return;
       // Keep the existing procedural room as an offline/failure fallback.
@@ -153,6 +159,21 @@
       wheels.push(wheel);
     }
     sphere(-.12,.034,0,.03,.03,.03,materials.metal,robot);
+    function loadHuman(gender) {
+      const kind=gender==='male'?'male':'female';
+      if(humanPromises.has(kind))return humanPromises.get(kind);
+      const modelUrl=new URL(kind==='male'?'person-male-mixamo.glb':'person-mixamo.glb',assetBase).href;
+      const promise=(kind==='male'?assetLoader.loadAsync(modelUrl):Promise.all([
+        assetLoader.loadAsync(modelUrl),
+        fetch(new URL('person-motion.json',assetBase)).then(response=>{if(!response.ok)throw Error('Animações indisponíveis');return response.json();})
+      ]).then(([gltf,motion])=>{gltf.animations=motion.clips.map(clip=>T.AnimationClip.parse(clip));return gltf;}))
+        .then(gltf=>{
+          if(disposed){disposeTree(gltf.scene);return null;}
+          if(!['Idle','Walk'].every(name=>gltf.animations.some(clip=>clip.name===name))) {disposeTree(gltf.scene);throw Error('Animações incompletas');}
+          humanResources.add(gltf.scene);return gltf;
+        });
+      humanPromises.set(kind,promise);return promise;
+    }
     function makePerson(p) {
       const skinTone=p.id==='p2'?0x8a5b45:p.id==='p3'?0xc58d69:0xe1b18d;
       const hairTone=p.id==='p2'?0x17110f:p.id==='p3'?0x633d27:0x30241f;
@@ -180,16 +201,8 @@
       const avatar={group,legacy,limbs,ring,mixer:null,actions:null,motion:'',x:p.x,y:p.y};
       // Each person gets its own armature; therefore the independent walk and
       // idle animations never share bones or state.
-      if(!humanPromise) humanPromise=Promise.all([
-        assetLoader.loadAsync(new URL('person-mixamo.glb',assetBase).href),
-        fetch(new URL('person-motion.json',assetBase)).then(response=>{if(!response.ok)throw Error('Animações indisponíveis');return response.json();})
-      ]).then(([gltf,motion])=>{
-        if(disposed){disposeTree(gltf.scene);return null;}
-        gltf.animations=motion.clips.map(clip=>T.AnimationClip.parse(clip));
-        if(!['Idle','Walk'].every(name=>gltf.animations.some(clip=>clip.name===name))) {disposeTree(gltf.scene);throw Error('Animações incompletas');}
-        humanResources.add(gltf.scene);return gltf;
-      });
-      humanPromise.then(gltf=>{
+      const gender=p.gender==='male'?'male':'female';
+      loadHuman(gender).then(gltf=>{
         if(disposed||!gltf)return;
         const character=cloneSkeleton(gltf.scene);
         const mixer=new T.AnimationMixer(character);
@@ -201,6 +214,7 @@
         const bounds=new T.Box3().setFromObject(character);
         const scale=1.75/(bounds.max.y-bounds.min.y);
         character.scale.multiplyScalar(scale);character.position.y=-bounds.min.y*scale;
+        if(gender==='male') character.rotation.y=Math.PI;
         character.traverse(object=>{if(object.isMesh){object.castShadow=true;object.receiveShadow=true;}});
         group.add(character);legacy.visible=false;
         avatar.mixer=mixer;
@@ -210,7 +224,9 @@
         };
         avatar.actions.idle.play();avatar.motion='idle';
         container.dataset.peopleModel='mixamo';
+        if([...avatars.values()].some(item=>item.gender==='male')&&[...avatars.values()].some(item=>item.gender==='female')) container.dataset.peopleGenders='female,male';
       }).catch(()=>{if(!disposed)group.userData.assetFailed=true;});
+      avatar.gender=gender;
       return avatar;
     }
     const avatars=new Map();let view='third',orbit=0,elevation=.5,zoom=2.8,drag=null,healthy=true,lastFrame=0;

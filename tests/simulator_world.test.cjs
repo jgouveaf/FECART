@@ -24,6 +24,12 @@ test('reset produces the same fixed scene and removes added people',()=>{
   const a=new World(),b=new World();a.addPerson();a.addPerson();a.reset();assert.deepEqual(a.people,b.people);
   for(let i=0;i<100;i++){a.step(.01,{command:'FRENTE'});b.step(.01,{command:'FRENTE'});}assert.deepEqual(a.robot,b.robot);
 });
+test('virtual people select the model category that matches their name',()=>{
+  const w=new World();
+  assert.equal(w.people.find(person=>person.name==='Ana').gender,'female');
+  assert.equal(w.people.find(person=>person.name==='Lucas').gender,'male');
+  w.addPerson();assert.equal(w.people.at(-1).gender,'male');
+});
 test('a delayed render cannot jump through obstacles or outside the room',()=>{
   const w=new World();w.peopleVisible=false;const x=w.robot.x;w.step(50,{command:'FRENTE'});assert.ok(w.robot.x-x<2);
   w.robot.x=18;w.robot.angle=Math.PI;for(let i=0;i<100;i++)w.step(.01,{mode:'GESTOS',command:'TRAS'});

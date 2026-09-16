@@ -95,10 +95,11 @@ class TestWebDeliveryQuality(unittest.TestCase):
 
     def test_simulator_models_are_local_and_have_traceable_licenses(self) -> None:
         renderer = (ROOT / "web" / "simulator-3d.js").read_text(encoding="utf-8")
-        for path in ("office-lobby.glb", "person-mixamo.glb", "GLTFLoader.js"):
+        for path in ("office-lobby.glb", "person-mixamo.glb", "person-male-mixamo.glb", "GLTFLoader.js"):
             self.assertIn(path, renderer)
         self.assertTrue((ROOT / "web" / "assets" / "models" / "office-lobby.glb").is_file())
         self.assertTrue((ROOT / "web" / "assets" / "models" / "person-mixamo.glb").is_file())
+        self.assertTrue((ROOT / "web" / "assets" / "models" / "person-male-mixamo.glb").is_file())
         self.assertIn("CC0", (ROOT / "docs" / "ASSET_LICENSES_3D.md").read_text(encoding="utf-8"))
 
 

@@ -26,9 +26,9 @@
     }
     reset() {
       this.robot={x:130,y:410,angle:0,speed:38,radius:17,left:0,right:0,avoidance:null};
-      this.people=[{id:'p1',name:'Ana',x:280,y:410,angle:0,speed:25,color:0xe8864c,
+      this.people=[{id:'p1',name:'Ana',gender:'female',x:280,y:410,angle:0,speed:25,color:0xe8864c,
         route:[[280,410],[570,410],[570,625],[445,625],[445,410]],leg:1},
-        {id:'p2',name:'Lucas',x:970,y:240,angle:Math.PI/2,speed:29,color:0x45859b,
+        {id:'p2',name:'Lucas',gender:'male',x:970,y:240,angle:Math.PI/2,speed:29,color:0x45859b,
           route:[[970,240],[970,635],[1040,635],[1040,240]],leg:1}];
       if(this.environmentId==='office') {
         this.people[0].route=[[280,410],[570,410],[570,460],[445,460],[445,410]];
@@ -53,7 +53,7 @@
       this.peopleVisible=true;
       if(this.people.length>=5) return false;
       const i=this.people.length,y=this.environmentId==='office'?430:400;
-      this.people.push({id:`p${i+1}`,name:`Visitante ${i-1}`,x:1040-i*65,y,angle:0,speed:20+i,
+      this.people.push({id:`p${i+1}`,name:`Visitante ${i-1}`,gender:'male',x:1040-i*65,y,angle:0,speed:20+i,
         color:[0x758b61,0x806fa9,0xd2b567][i-2],route:[[1040-i*65,y],[1040-i*65,710]],leg:1});
       return true;
     }

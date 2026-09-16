@@ -232,7 +232,7 @@ class TestWebCameraAndCodesOffline(unittest.TestCase):
     def test_camera_controller_uses_compatible_classic_bootstrap(self) -> None:
         self.assertIn('id="startCamera">Ativar câmera', self.html)
         self.assertIn('src="web/camera-controller.js?v=2" defer', self.html)
-        self.assertIn('src="web/camera-gestures.js?v=18" defer', self.html)
+        self.assertIn('src="web/camera-gestures.js?v=19" defer', self.html)
         self.assertNotIn('type="module" src="web/camera-gestures.js', self.html)
         self.assertIn("window.quantumCameraController", self.camera_controller_js)
         self.assertIn('startButton.textContent = "Ativar câmera"', self.camera_controller_js)

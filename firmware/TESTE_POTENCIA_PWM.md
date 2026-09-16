@@ -1,8 +1,13 @@
 # Teste temporário de potência, sem mudar fios
 
-O firmware principal usa os valores pedidos: esquerda **200**, direita **170**,
+O firmware principal usa potência aumentada: esquerda **240**, direita **204**,
 em uma escala de 0 a 255. Eles ajustam o tempo de acionamento, não garantem uma
 velocidade específica nem que o carrinho ande reto sob qualquer carga.
+
+O PWM aumentou 20% em relação a 200/170, mantendo a proporção entre rodas.
+A versão 200/170 observada em teste pelo usuário está guardada em
+`backup_pwm_200_170/backup_pwm_200_170.ino` e no HEX correspondente.
+O novo ajuste ainda precisa de teste físico, primeiro com rodas suspensas.
 
 Mantenha os jumpers ENA/ENB e todas as ligações atuais. Não conecte D9/D10.
 O arquivo enviado propunha esses pinos, mas o pedido posterior foi manter a

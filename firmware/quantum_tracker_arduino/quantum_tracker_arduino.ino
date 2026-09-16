@@ -2,7 +2,7 @@
   Quantum Tracker - controle integrado
   Arduino UNO + L298N + HC-SR04 + USB Serial
   TESTE TEMPORARIO: PWM por Timer1 nos pinos existentes, sem mudar a ligacao.
-  Potencia esquerda 200/255; direita 170/255. ENA/ENB continuam com jumpers.
+  Potencia esquerda 240/255; direita 204/255. ENA/ENB continuam com jumpers.
 
   MODOS:
   1 - AUTONOMO: anda sempre e desvia com o HC-SR04.
@@ -42,8 +42,8 @@ const byte IN4 = 4;
 #if !defined(__AVR_ATmega328P__)
 #error "Este teste PWM requer Arduino UNO com ATmega328P."
 #endif
-const byte POTENCIA_MOTOR_ESQUERDO = 200;
-const byte POTENCIA_MOTOR_DIREITO = 170;
+const byte POTENCIA_MOTOR_ESQUERDO = 240;
+const byte POTENCIA_MOTOR_DIREITO = 204;
 const byte MASCARA_ESQUERDA = _BV(IN1) | _BV(IN2);
 const byte MASCARA_DIREITA = _BV(IN3) | _BV(IN4);
 volatile byte direcaoPwmEsquerda = 0;

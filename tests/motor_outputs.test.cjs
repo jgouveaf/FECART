@@ -40,7 +40,7 @@ test('FRENTE drives both bridges continuously through repeated commands',()=>{
 });
 
 test('PWM uses the existing direction pins, separate power and no ENA/ENB rewiring',()=>{
-  const r=rig();assert.equal(r.OCR1A,200);assert.equal(r.OCR1B,170);
+  const r=rig();assert.equal(r.OCR1A,240);assert.equal(r.OCR1B,204);
   assert.equal(r.TCCR1A,1);assert.equal(r.TCCR1B,11);assert.equal(r.TIMSK1,7);
   assert.equal(r.SREG,128);assert.ok(!/const byte EN[AB]\s*=/.test(source));
   r.andarParaFrente();r.TIMER1_OVF_vect();assert.equal(r.pins[6],1);assert.equal(r.pins[4],1);
@@ -63,8 +63,8 @@ test('direction transitions at each PWM phase preserve UART and sensor bits',()=
     r.TCNT1=phase;r[from]();r.atualizarPotenciasMotores();r.writes=[];r.portWrites=[];r[to]();
     assert.ok(r.writes.every(p=>!(p[7]&&p[6])&&!(p[5]&&p[4])),`${from} -> ${to}, phase ${phase}`);
     assert.ok(r.portWrites.every(bits=>(bits&0xc0)!==0xc0&&(bits&0x30)!==0x30));
-    assert.equal(r.PORTD&0xc0,phase<200?r.direcaoPwmEsquerda:0);
-    assert.equal(r.PORTD&0x30,phase<170?r.direcaoPwmDireita:0);
+    assert.equal(r.PORTD&0xc0,phase<240?r.direcaoPwmEsquerda:0);
+    assert.equal(r.PORTD&0x30,phase<204?r.direcaoPwmDireita:0);
     assert.equal(r.otherPins,10);assert.equal(r.SREG,128);
   }
 });

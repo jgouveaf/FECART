@@ -8,7 +8,7 @@ const progress = document.getElementById("firmwareFlashProgress");
 const status = document.getElementById("firmwareFlashStatus");
 const FIRMWARE_URL = new URL("../firmware/compiled/quantum_tracker_arduino.ino.hex", import.meta.url);
 // Hash do conteúdo servido pelo GitHub Pages (Git normaliza o Intel HEX para LF).
-const FIRMWARE_SHA256 = "8239907a846932fd8c853882dcb3220aa3d578dfa1d935e3dd8f053f6912344c";
+const FIRMWARE_SHA256 = "f98df382e6664a9b0bb86308c02c1768d1c0ceb2cebcc551d3f299a578bafa4a";
 let busy = false;
 
 function setStatus(state, title, detail, percentage = progress.value) {
@@ -58,7 +58,7 @@ async function flashOfficialFirmware() {
     setStatus("error", "ABRA O SITE HTTPS", "A gravação USB exige o endereço HTTPS oficial do site.", 0);
     return;
   }
-  if (!window.confirm("A alimentação dos motores está desligada e as rodas estão suspensas? Será gravado o TESTE DE POTÊNCIA: esquerda 200, direita 170. Mantenha os fios atuais e os jumpers ENA/ENB instalados.")) return;
+  if (!window.confirm("A alimentação dos motores está desligada e as rodas estão suspensas? Será gravado o TESTE DE POTÊNCIA: esquerda 240, direita 204. Mantenha os fios atuais e os jumpers ENA/ENB instalados.")) return;
 
   busy = true;
   button.disabled = true;

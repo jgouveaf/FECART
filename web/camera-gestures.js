@@ -45,6 +45,7 @@
 
   let model = null;
   let modelPromise = null;
+  let moduleImportAttempt = 0;
   let modelState = "NOT_LOADED";
   let modelReleaseTimer = 0;
   let enabled = false;
@@ -280,6 +281,26 @@
     }
   }
 
+  async function importGestureModule() {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const url = new URL("web/vendor/mediapipe/vision_bundle.js", document.baseURI);
+      // A nova URL permite recuperar uma importação que falhou nesta página.
+      if (moduleImportAttempt > 0) url.searchParams.set("gesture-retry", `${Date.now()}-${moduleImportAttempt}`);
+      moduleImportAttempt += 1;
+      const moduleUrl = url.href;
+      try {
+        return await import(moduleUrl);
+      } catch (error) {
+        const message = String(error?.message || error);
+        const downloadFailed = /failed to fetch|dynamically imported module|loading.*module|networkerror|load failed/i.test(message);
+        if (!downloadFailed) throw error;
+        if (attempt === 1) throw new Error(`Não foi possível baixar a biblioteca de gestos. Confira a conexão e clique em Tentar novamente. Detalhe: ${message}`);
+        control?.log("WARNING", "GESTOS", "Download da biblioteca falhou; tentando novamente sem reutilizar a URL anterior");
+        setDetectorStatus("LOADING", "Tentando baixar a biblioteca de gestos novamente…");
+      }
+    }
+  }
+
   async function loadModel() {
     if (model) return model;
     if (modelPromise) return modelPromise;
@@ -296,10 +317,9 @@
 
     modelPromise = (async () => {
       try {
-        const moduleUrl = new URL("web/vendor/mediapipe/vision_bundle.js", document.baseURI).href;
         const wasmUrl = new URL("web/vendor/mediapipe/wasm", document.baseURI).href.replace(/\/$/, "");
         const modelUrl = new URL("web/vendor/mediapipe/hand_landmarker.task", document.baseURI).href;
-        const { FilesetResolver, HandLandmarker } = await import(moduleUrl);
+        const { FilesetResolver, HandLandmarker } = await importGestureModule();
         const vision = await FilesetResolver.forVisionTasks(wasmUrl);
         const options = {
           baseOptions: { modelAssetPath: modelUrl, delegate: "GPU" },

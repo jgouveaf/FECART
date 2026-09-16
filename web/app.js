@@ -196,7 +196,7 @@
     select.value = world.targetId;
     document.getElementById('simPeopleVisibility').textContent = world.peopleVisible ? 'Ocultar pessoas' : 'Mostrar pessoas';
     document.getElementById('simPeopleMotion').textContent = world.peopleMoving ? 'Pausar pessoas' : 'Mover pessoas';
-    document.getElementById('simAddPerson').disabled = world.people.length >= 5;
+    document.getElementById('simAddPerson').disabled = world.people.length >= world.maxPeople;
   }
 
   function drawGrid() {
@@ -211,6 +211,11 @@
   function draw() {
     ensureSimulation3D();
     drawGrid();
+    for(const r of world.ramps) {
+      ctx.fillStyle='#143d50';ctx.fillRect(r.x,r.y,r.w,r.h);
+      ctx.strokeStyle='#53d9ef';ctx.lineWidth=3;ctx.strokeRect(r.x,r.y,r.w,r.h);
+      ctx.fillStyle='#a1eeff';ctx.font='600 14px system-ui';ctx.fillText('RAMPA / PLATAFORMA',r.x+20,r.y+r.h/2);
+    }
     world.obstacles.forEach((o, index) => {
       const gradient = ctx.createLinearGradient(o.x, o.y, o.x + o.w, o.y + o.h);
       gradient.addColorStop(0, "#15263c"); gradient.addColorStop(1, "#0a1422");
@@ -745,6 +750,6 @@
     reset: resetWorld,
     snapshot: () => ({ ...simulatorCommands.snapshot(), target: testTarget, robot: { ...world.robot }, events: world.events,
       scene: { ...world.output }, people: world.people.map(p=>({id:p.id,name:p.name,x:p.x,y:p.y})),
-      view:document.getElementById('simulationViewport').dataset.view, graphicsReady:Boolean(simulation3D?.ready) }),
+      view:document.getElementById('simulationViewport').dataset.view, visible:simulatorVisible, graphicsReady:Boolean(simulation3D?.ready) }),
   });
 })();

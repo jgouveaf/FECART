@@ -27,6 +27,15 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   assert.ok(result.camera[1]<=3.05&&result.camera[1]<result.bottom-.3);
   assert.ok(result.camera[0]>0&&result.camera[0]<18&&result.camera[2]>0&&result.camera[2]<12);
   await page.locator('#simulationViewport').screenshot({path:'tests/artifacts/simulator-expanded-room.png'});
+  await page.evaluate(()=>Object.assign(window.__room.world.robot,{x:1100,y:740,angle:0}));
+  await page.locator('#simViewFirst').click();await page.waitForTimeout(100);
+  const onRamp=await page.evaluate(()=>{
+    const {scene,camera}=window.__room,robot=scene.getObjectByName('virtual-robot');
+    return {height:robot.position.y,pitch:robot.rotation.z,camera:camera.position.y,ramp:Boolean(scene.getObjectByName('traversable-ramp'))};
+  });
+  assert.ok(onRamp.ramp);assert.ok(Math.abs(onRamp.height-.15)<.001);assert.ok(onRamp.pitch>0);assert.ok(Math.abs(onRamp.camera-.43)<.001);
+  await page.locator('#simViewThird').click();await page.waitForTimeout(500);
+  await page.locator('#simulationViewport').screenshot({path:'tests/artifacts/simulator-technology-ramp.png'});
   console.log('PASS - larger floor matches world; third-person camera stays below ceiling at maximum elevation/zoom');
  } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

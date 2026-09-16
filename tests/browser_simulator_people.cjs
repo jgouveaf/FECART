@@ -21,6 +21,7 @@ const fs=require('node:fs'),path=require('node:path');
   await page.goto((process.env.QT_SITE_URL||'http://127.0.0.1:9878/')+'#simulador');
   await page.locator('#simulationViewport').scrollIntoViewIfNeeded();
   await page.waitForFunction(()=>document.getElementById('simulationViewport').dataset.peopleGenders==='female,male',null,{timeout:60000});
+  await page.waitForFunction(()=>{let loaded=0;window.__scene?.traverse(o=>{if(o.name.startsWith('person-model-'))loaded++;});return loaded===6;},null,{timeout:60000});
   const models=await page.evaluate(()=>{
    const output=[];
    window.__scene.traverse(object=>{
@@ -30,7 +31,7 @@ const fs=require('node:fs'),path=require('node:path');
     output.push({name:object.name,visible,skinned,scale:object.scale.y});
    });return output;
   });
-  assert.equal(models.length,2);assert.deepEqual(models.map(m=>m.name).sort(),['person-model-female','person-model-male']);
+  assert.equal(models.length,6);assert.deepEqual([...new Set(models.map(m=>m.name))].sort(),['person-model-female','person-model-male']);
   for(const model of models){assert.equal(model.visible,true);assert.ok(model.skinned>0);assert.ok(Number.isFinite(model.scale)&&model.scale>0);}
   for(const name of ['person-mixamo.glb','person-male-mixamo.glb','person-motion.json'])assert.ok(attempts[name]>=2,name+' retried');
   await page.locator('#toggleSimulation').click();

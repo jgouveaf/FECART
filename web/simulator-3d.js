@@ -112,14 +112,63 @@
       officeEnvironment.add(office);
       builtInEnvironment.visible=false;
       container.dataset.environment='office';
-      const status=document.getElementById('simGraphicsStatus');if(status)status.textContent='Escritório 3D · sala principal';
+      const status=document.getElementById('simGraphicsStatus');if(status)status.textContent='Laboratório Quantum · pista de testes';
     },undefined,()=>{
       if(disposed)return;
       // Keep the existing procedural room as an offline/failure fallback.
       const status=document.getElementById('simGraphicsStatus');if(status)status.textContent='Laboratório · cenário local';
     });
-    // Fixed obstacles use exactly the same bounds as collision and sensor logic.
-    for(const o of world.obstacles) {
+    // Shared lab furnishings remain present with either the downloaded office
+    // or the fallback room. Their footprint is also used by the virtual sensor.
+    const lab=new T.Group();lab.name='technology-lab';scene.add(lab);
+    const cyan=new T.MeshStandardMaterial({color:0x52d9ee,emissive:0x159ab8,emissiveIntensity:1.2,roughness:.35});
+    const violet=new T.MeshStandardMaterial({color:0x9983ff,emissive:0x5845b8,emissiveIntensity:.8});
+    for(const o of world.labObstacles) {
+      const x=(o.x+o.w/2)/100,z=(o.y+o.h/2)/100,w=o.w/100,d=o.h/100;
+      if(o.kind==='workstation') {
+        box(x,.83,z,w,.08,d,materials.dark,lab);
+        for(const dx of [-w/2+.08,w/2-.08])box(x+dx,.4,z,.08,.8,d-.12,materials.metal,lab);
+        box(x,1.12,z-.17,.08,.55,.08,materials.metal,lab);
+        box(x,1.36,z-.17,1.15,.58,.06,materials.black,lab);
+        const screen=mesh(new T.PlaneGeometry(1.04,.46),new T.MeshBasicMaterial({map:label('QUANTUM  /  ONLINE','#70ecff','#102536')}),lab);
+        screen.position.set(x,1.36,z-.13);
+        box(x,.89,z+.19,.5,.025,.18,materials.black,lab);
+        box(x,.78,z+d/2+.005,w-.12,.025,.02,cyan,lab);
+      } else if(o.kind==='server') {
+        box(x,1.1,z,w,2.2,d,materials.dark,lab);
+        for(let y=.28;y<2.1;y+=.22) {
+          box(x,y,z+d/2+.005,w-.1,.13,.02,materials.black,lab);
+          box(x-w*.3,y,z+d/2+.02,.025,.035,.02,cyan,lab);
+        }
+      }
+    }
+    for(const ramp of world.ramps) {
+      const run=ramp.run/100,width=ramp.w/100,rise=ramp.rise/100,depth=ramp.h/100;
+      const shape=new T.Shape();shape.moveTo(0,0);shape.lineTo(width,0);shape.lineTo(width-run,rise);shape.lineTo(run,rise);shape.closePath();
+      const deck=mesh(new T.ExtrudeGeometry(shape,{depth,bevelEnabled:false}),materials.metal,lab);
+      deck.name='traversable-ramp';deck.position.set(ramp.x/100,.002,ramp.y/100);
+      for(const z of [(ramp.y-5)/100,(ramp.y+ramp.h+5)/100]) {
+        for(let x=ramp.x;x<=ramp.x+ramp.w;x+=100)box(x/100,.37,z,.04,.74,.08,materials.dark,lab);
+        box((ramp.x+ramp.w/2)/100,.75,z,width,.035,.09,cyan,lab);
+      }
+      for(const end of [ramp.x-45,ramp.x+ramp.w+45]) {
+        const marker=mesh(new T.PlaneGeometry(.5,depth),new T.MeshBasicMaterial({color:0x48cbdc}),lab);
+        marker.rotation.x=-Math.PI/2;marker.position.set(end/100,.007,(ramp.y+ramp.h/2)/100);
+      }
+    }
+    // Wall strips and room signage are above the drivable floor.
+    box(roomWidth/2,2.8,.012,roomWidth-.4,.035,.03,cyan,lab);
+    box(.012,2.8,roomDepth/2,.03,.035,roomDepth-.4,violet,lab);
+    box(roomWidth-.012,2.8,roomDepth/2,.03,.035,roomDepth-.4,cyan,lab);
+    box(8.3,.008,3.6,15,.012,.035,cyan,lab);
+    const dashboard=mesh(new T.PlaneGeometry(3.8,1.25),new T.MeshBasicMaterial({map:label('01 AUTO   /   02 SEGUIR   /   03 GESTOS','#7df2ff','#102333',1024,256)}),lab);
+    dashboard.rotation.y=-Math.PI/2;dashboard.position.set(roomWidth-.014,1.85,4.4);
+    const labSign=mesh(new T.PlaneGeometry(4,.65),new T.MeshBasicMaterial({map:label('QUANTUM  /  ROBOTICS LAB','#75ecff','#172934')}),lab);
+    labSign.position.set(11.4,2.32,.02);
+    const rampSign=mesh(new T.PlaneGeometry(3,.42),new T.MeshBasicMaterial({map:label('02  /  PISTA DE TESTES','#93ecff','#172934')}),lab);
+    rampSign.rotation.y=-Math.PI/2;rampSign.position.set(roomWidth-.012,2.3,7.4);
+    // Fixed fallback obstacles use the same bounds as collision and sensor logic.
+    for(const o of world.obstacles.filter(o=>!['workstation','server','ramp-rail'].includes(o.kind))) {
       const x=(o.x+o.w/2)/100,z=(o.y+o.h/2)/100,w=o.w/100,d=o.h/100,h=o.height/100;
       if(o.kind==='bench') {
         box(x,h,z,w,.075,d,materials.wood);
@@ -141,7 +190,7 @@
     const collisionRing=mesh(new T.RingGeometry(.18,.25,40),new T.MeshBasicMaterial({color:0xff4f63,side:T.DoubleSide,transparent:true,opacity:.9}),collisionMarker);collisionRing.rotation.x=-Math.PI/2;collisionRing.castShadow=false;
     const collisionLight=new T.PointLight(0xff5267,0,2);collisionMarker.add(collisionLight);
     // Detailed two-wheel chassis, board, battery and forward ultrasonic sensor.
-    const robot=new T.Group();scene.add(robot);
+    const robot=new T.Group();robot.name='virtual-robot';scene.add(robot);
     box(0,.095,0,.32,.035,.265,materials.orange,robot);
     box(-.005,.13,0,.22,.018,.19,materials.dark,robot);
     box(.015,.15,-.035,.085,.009,.06,materials.blue,robot);
@@ -261,12 +310,13 @@
       render(time,force=false){
         if(disposed||!healthy||!force&&time-lastFrame<1000/30) return;
         const dt=lastFrame?Math.min((time-lastFrame)/1000,.1):0;lastFrame=time;
-        const r=world.robot;robot.position.set(r.x/100,0,r.y/100);robot.rotation.y=-r.angle;
+        const r=world.robot,ground=world.groundPose(r.x,r.y,r.angle),groundY=ground.height/100;
+        robot.position.set(r.x/100,groundY,r.y/100);robot.rotation.order='YXZ';robot.rotation.set(0,-r.angle,ground.pitch);
         wheels[0].rotation.z-=r.left/100*dt/.074;wheels[1].rotation.z-=r.right/100*dt/.074;
         for(const avatar of avatars.values()) avatar.group.visible=false;
         for(const p of world.people) {
           if(!avatars.has(p.id)) avatars.set(p.id,makePerson(p));
-          const avatar=avatars.get(p.id);avatar.group.visible=world.peopleVisible;avatar.group.position.set(p.x/100,0,p.y/100);avatar.group.rotation.y=Math.PI/2-p.angle;
+          const avatar=avatars.get(p.id);avatar.group.visible=world.peopleVisible;avatar.group.position.set(p.x/100,world.groundHeight(p.x,p.y)/100,p.y/100);avatar.group.rotation.y=Math.PI/2-p.angle;
           avatar.ring.visible=p.id===world.targetId;
           const stride=world.peopleMoving?Math.sin(world.time*p.speed/9)*.28:0;
           avatar.limbs[0].rotation.x=stride;avatar.limbs[2].rotation.x=-stride;avatar.limbs[1].rotation.x=-stride*.7;avatar.limbs[3].rotation.x=stride*.7;
@@ -279,12 +329,13 @@
         }
         const impact=world.lastCollision;
         collisionMarker.visible=Boolean(impact);
-        if(impact) {collisionMarker.position.set(impact.x/100,.012,impact.y/100);const pulse=.92+.12*Math.sin(time*.018);collisionRing.scale.setScalar(pulse);collisionRing.material.opacity=.55+.3*Math.sin(time*.018);collisionLight.intensity=1.5;}
+        if(impact) {collisionMarker.position.set(impact.x/100,world.groundHeight(impact.x,impact.y)/100+.012,impact.y/100);const pulse=.92+.12*Math.sin(time*.018);collisionRing.scale.setScalar(pulse);collisionRing.material.opacity=.55+.3*Math.sin(time*.018);collisionLight.intensity=1.5;}
         const a=r.angle+orbit,x=r.x/100,z=r.y/100;
         if(view==='first') {desired.set(x+Math.cos(r.angle)*.12,.28,z+Math.sin(r.angle)*.12);look.set(desired.x+Math.cos(a)*3,1.45+(elevation-.5),desired.z+Math.sin(a)*3);}
         else {desired.set(x-Math.cos(a)*zoom,zoom*elevation+.6,z-Math.sin(a)*zoom);look.set(x+.3*Math.cos(r.angle),.85,z+.3*Math.sin(r.angle));}
+        desired.y+=groundY;look.y+=groundY;
         desired.x=clamp(desired.x,.12,roomWidth-.12);desired.z=clamp(desired.z,.12,roomDepth-.12);
-        if(view==='third') desired.y=Math.min(3.05,Math.hypot(desired.x-x,desired.z-z)*elevation+.6);
+        if(view==='third') desired.y=Math.min(3.05,Math.hypot(desired.x-x,desired.z-z)*elevation+.6+groundY);
         if(!cameraReady||view==='first') {camera.position.copy(desired);lastLook.copy(look);cameraReady=true;}
         else {const ease=1-Math.exp(-dt*9);camera.position.lerp(desired,ease);lastLook.lerp(look,ease);}
         camera.lookAt(lastLook);renderer.render(scene,camera);

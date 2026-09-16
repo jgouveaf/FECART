@@ -103,3 +103,26 @@ test('expanded world remains traversable beyond the former walls',()=>{
   assert.equal(w.collides(w.width-10,w.robot.y),true);
   const x=w.robot.x;w.step(.05,{mode:'GESTOS',command:'FRENTE'});assert.ok(w.robot.x>x);
 });
+test('ramp traversal ascends, levels, descends and respects side barriers in all modes',()=>{
+  for(const mode of ['AUTONOMO','SEGUIR','GESTOS']) {
+    const w=new World();w.peopleVisible=false;w.robot.x=950;w.robot.y=740;w.robot.speed=100;
+    let peak=0,up=false,down=false;
+    for(let i=0;i<145;i++) {
+      w.step(.05,{mode,command:'FRENTE'});
+      const pose=w.groundPose(w.robot.x,w.robot.y,w.robot.angle);
+      peak=Math.max(peak,pose.height);up ||=pose.pitch>0;down ||=pose.pitch<0;
+      assert.equal(w.collides(w.robot.x,w.robot.y),false);
+    }
+    assert.ok(w.robot.x>1600,mode);assert.equal(peak,30);assert.ok(up&&down);assert.equal(w.groundHeight(w.robot.x,w.robot.y),0);
+    assert.equal(w.collides(1300,645),true);
+    assert.equal(w.personBlocked(1300,835),true);
+  }
+});
+test('lab starts with six people and can reach ten without overlapping spawns',()=>{
+  const w=new World();w.setEnvironment('office',[{x:20,y:20,w:50,h:50,height:90,kind:'desk'}]);
+  assert.equal(w.people.length,6);
+  for(let i=0;i<4;i++)assert.equal(w.addPerson(),true);
+  assert.equal(w.people.length,10);assert.equal(w.addPerson(),false);
+  for(const p of w.people)assert.equal(w.personBlocked(p.x,p.y),false);
+  for(let i=0;i<w.people.length;i++)for(let j=i+1;j<w.people.length;j++)assert.ok(Math.hypot(w.people[i].x-w.people[j].x,w.people[i].y-w.people[j].y)>=38);
+});

@@ -18,10 +18,17 @@
   class World {
     constructor() {
       this.width=1800; this.height=1200;
+      this.maxPeople=10;
+      this.ramps=[{x:1000,y:650,w:600,h:180,rise:30,run:200}];
+      this.labObstacles=[
+        ...[900,1120,1340].map(x=>({x,y:90,w:150,h:85,height:85,kind:'workstation'})),
+        ...[130,280,430].map(y=>({x:1700,y,w:65,h:90,height:220,kind:'server'})),
+        {x:1000,y:640,w:600,h:10,height:75,kind:'ramp-rail'},
+        {x:1000,y:830,w:600,h:10,height:75,kind:'ramp-rail'}];
       this.obstacles=[{x:350,y:130,w:95,h:195,height:92,kind:'bench'},
         {x:640,y:80,w:230,h:80,height:125,kind:'cabinet'},
         {x:730,y:520,w:100,h:170,height:95,kind:'bench'},
-        {x:160,y:630,w:210,h:65,height:50,kind:'planter'}];
+        {x:160,y:630,w:210,h:65,height:50,kind:'planter'},...this.labObstacles.map(o=>({...o}))];
       this.reset();
     }
     reset() {
@@ -32,7 +39,13 @@
           route:[[970,240],[970,635],[1040,635],[1040,240]],leg:1}];
       if(this.environmentId==='office') {
         this.people[0].route=[[280,410],[870,410],[870,960],[445,960],[445,410]];
-        Object.assign(this.people[1],{x:1370,y:430,route:[[1370,430],[1370,1035],[1640,1035],[1640,430]]});
+        Object.assign(this.people[1],{x:1640,y:430,route:[[1640,430],[1640,1035],[1710,1035],[1710,550]]});
+        for(const [name,gender,x,y,route] of [
+          ['Sofia','female',600,1060,[[600,1060],[900,1060]]],
+          ['Pedro','male',1080,320,[[1080,320],[1450,320]]],
+          ['Marina','female',450,550,[[450,550],[450,850]]],
+          ['Rafael','male',1200,1000,[[1200,1000],[1500,1000]]]
+        ]) this.people.push({id:`p${this.people.length+1}`,name,gender,x,y,route,leg:1,angle:0,speed:23,color:0x428ca0});
       }
       this.targetId='p1'; this.peopleVisible=true;this.peopleMoving=true;
       this.running=true;this.events=0;this.collisions=0;this.lastCollision=null;this.time=0;this.lastTime=0;
@@ -43,7 +56,7 @@
       if(!Array.isArray(obstacles)||!obstacles.length||obstacles.some(o=>
         ![o.x,o.y,o.w,o.h,o.height].every(Number.isFinite)||o.w<=0||o.h<=0)) return false;
       const running=this.running,peopleVisible=this.peopleVisible,peopleMoving=this.peopleMoving;
-      this.environmentId=id;this.obstacles=obstacles.map(o=>({...o}));this.reset();
+      this.environmentId=id;this.obstacles=[...obstacles,...this.labObstacles].map(o=>({...o}));this.reset();
       Object.assign(this,{running,peopleVisible,peopleMoving});return true;
     }
     resetControl() { this.robot.avoidance=null;this.reverseAllowed=true;this.turnRight=true;this.sensorAt=-Infinity;
@@ -51,17 +64,25 @@
     selectPerson(id) { if(this.people.some(p=>p.id===id)) this.targetId=id; }
     addPerson() {
       this.peopleVisible=true;
-      if(this.people.length>=5) return false;
-      const i=this.people.length,y=this.environmentId==='office'?430:400,x=this.environmentId==='office'?1250-(i-2)*100:1040-i*65;
+      if(this.people.length>=this.maxPeople) return false;
+      const i=this.people.length,y=this.environmentId==='office'?1120:400,x=this.environmentId==='office'?300+(i-6)*240:1040-i*65;
       if(this.personBlocked(x,y)||Math.hypot(x-this.robot.x,y-this.robot.y)<this.robot.radius+19||
         this.people.some(p=>Math.hypot(x-p.x,y-p.y)<38)) return false;
-      this.people.push({id:`p${i+1}`,name:`Visitante ${i-1}`,gender:'male',x,y,angle:0,speed:20+i,
-        color:[0x758b61,0x806fa9,0xd2b567][i-2],route:[[x,y],[x,this.environmentId==='office'?1035:710]],leg:1});
+      this.people.push({id:`p${i+1}`,name:`Visitante ${i-1}`,gender:i%2?'female':'male',x,y,angle:0,speed:20+i,
+        color:[0x758b61,0x806fa9,0xd2b567][i%3],route:[[x,y],[x+100,y]],leg:1});
       return true;
     }
     personBlocked(x,y,radius=19) {
       if(x<radius||y<radius||x>this.width-radius||y>this.height-radius) return true;
       return this.obstacles.some(o=>Math.hypot(x-clamp(x,o.x,o.x+o.w),y-clamp(y,o.y,o.y+o.h))<radius);
+    }
+    groundHeight(x,y) {
+      const ramp=this.ramps.find(r=>x>=r.x&&x<=r.x+r.w&&y>=r.y&&y<=r.y+r.h);
+      return ramp?Math.max(0,Math.min(1,(x-ramp.x)/ramp.run,(ramp.x+ramp.w-x)/ramp.run))*ramp.rise:0;
+    }
+    groundPose(x,y,angle) {
+      const dx=Math.cos(angle)*14,dy=Math.sin(angle)*14;
+      return {height:this.groundHeight(x,y),pitch:Math.atan2(this.groundHeight(x+dx,y+dy)-this.groundHeight(x-dx,y-dy),28)};
     }
     advancePeople(dt) {
       if(!this.peopleVisible||!this.peopleMoving) return;

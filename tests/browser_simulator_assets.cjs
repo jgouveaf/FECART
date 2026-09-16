@@ -54,7 +54,7 @@ const base=process.env.QT_SITE_URL||'http://127.0.0.1:9878/';
   await fallback.waitForFunction(()=>window.__graphics?.ready,null,{timeout:60000});
   await fallback.waitForFunction(()=>document.getElementById('simGraphicsStatus').textContent.includes('cenário local'));
   const failed=await fallback.evaluate(()=>({obstacles:window.__world.obstacles.length,environment:window.__world.environmentId||null,usb:window.__usbRequests}));
-  assert.equal(failed.obstacles,4);assert.equal(failed.environment,null);assert.equal(failed.usb,0);assert.deepEqual(fallbackErrors,[]);
+  assert.equal(failed.obstacles,12);assert.equal(failed.environment,null);assert.equal(failed.usb,0);assert.deepEqual(fallbackErrors,[]);
   await fallback.close();
   console.log('PASS - real GLB furniture collisions, three virtual modes, people routes, load-failure fallback and zero USB access');
  } finally {await browser.close();}

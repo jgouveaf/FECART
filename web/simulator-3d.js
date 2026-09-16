@@ -164,15 +164,27 @@
       const kind=gender==='male'?'male':'female';
       if(humanPromises.has(kind))return humanPromises.get(kind);
       const modelUrl=new URL(kind==='male'?'person-male-mixamo.glb':'person-mixamo.glb',assetBase).href;
-      const promise=(kind==='male'?assetLoader.loadAsync(modelUrl):Promise.all([
-        assetLoader.loadAsync(modelUrl),
-        fetch(new URL('person-motion.json',assetBase)).then(response=>{if(!response.ok)throw Error('Animações indisponíveis');return response.json();})
-      ]).then(([gltf,motion])=>{gltf.animations=motion.clips.map(clip=>T.AnimationClip.parse(clip));return gltf;}))
-        .then(gltf=>{
-          if(disposed){disposeTree(gltf.scene);return null;}
-          if(!['Idle','Walk'].every(name=>gltf.animations.some(clip=>clip.name===name))) {disposeTree(gltf.scene);throw Error('Animações incompletas');}
-          humanResources.add(gltf.scene);return gltf;
-        });
+      const promise=(async()=>{
+        for(let attempt=0;attempt<3;attempt++) {
+          if(disposed)return null;
+          let gltf;
+          try {
+            gltf=await assetLoader.loadAsync(modelUrl);
+            if(kind==='female') {
+              const response=await fetch(new URL('person-motion.json',assetBase));
+              if(!response.ok)throw Error('Animações indisponíveis');
+              const motion=await response.json();gltf.animations=motion.clips.map(clip=>T.AnimationClip.parse(clip));
+            }
+            if(disposed){disposeTree(gltf.scene);return null;}
+            if(!['Idle','Walk'].every(name=>gltf.animations.some(clip=>clip.name===name)))throw Error('Animações incompletas');
+            humanResources.add(gltf.scene);return gltf;
+          } catch(error) {
+            if(gltf)disposeTree(gltf.scene);
+            if(attempt===2){humanPromises.delete(kind);throw error;}
+            await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+          }
+        }
+      })();
       humanPromises.set(kind,promise);return promise;
     }
     function makePerson(p) {
@@ -217,6 +229,7 @@
         character.scale.multiplyScalar(scale);character.position.y=-bounds.min.y*scale;
         if(gender==='male') character.rotation.y=Math.PI;
         character.traverse(object=>{if(object.isMesh){object.castShadow=true;object.receiveShadow=true;}});
+        character.name='person-model-'+gender;
         group.add(character);legacy.visible=false;
         avatar.mixer=mixer;
         avatar.actions={
@@ -225,7 +238,7 @@
         };
         avatar.actions.idle.play();avatar.motion='idle';
         container.dataset.peopleModel='mixamo';
-        if([...avatars.values()].some(item=>item.gender==='male')&&[...avatars.values()].some(item=>item.gender==='female')) container.dataset.peopleGenders='female,male';
+        container.dataset.peopleGenders=[...new Set([...avatars.values()].filter(item=>item.mixer).map(item=>item.gender))].sort().join(',');
       }).catch(()=>{if(!disposed)group.userData.assetFailed=true;});
       avatar.gender=gender;
       return avatar;

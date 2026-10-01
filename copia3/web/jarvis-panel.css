@@ -1,0 +1,6 @@
+.jarvis-panel { overflow: hidden; }
+.jarvis-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0; }
+.jarvis-actions a { color: var(--cyan); font-weight: 700; }
+.jarvis-panel p { line-height: 1.6; }
+#jarvisFrame { display: block; width: 100%; height: min(720px, 75vh); margin-top: 18px; border: 1px solid var(--line); border-radius: 14px; background: #07151c; }
+#jarvisFrame[hidden] { display: none; }

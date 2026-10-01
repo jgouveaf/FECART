@@ -1,0 +1,114 @@
+/* Visual da copia 3. Somente apresentacao: nenhum seletor altera controles ou telemetria. */
+:root {
+  --bg: #f3f5f2;
+  --surface: #ffffff;
+  --surface-2: #f7f9f6;
+  --line: #d7e0da;
+  --line-strong: #b5c7bd;
+  --text: #1c2d2b;
+  --muted: #52665f;
+  --cyan: #235f59;
+  --blue: #235f59;
+  --ui-panel: #ffffff;
+  --ui-soft: #f7f9f6;
+  --ui-ink: #1c2d2b;
+  --ui-muted: #52665f;
+  --ui-accent: #235f59;
+  --panel-shadow: 0 2px 12px rgba(25, 47, 40, .04);
+}
+
+:root[data-theme="dark"] {
+  --bg: #111b1a;
+  --surface: #1a2926;
+  --surface-2: #21332f;
+  --line: #3a514a;
+  --line-strong: #607c70;
+  --text: #edf5ef;
+  --muted: #b6c9bd;
+  --cyan: #9ad8c6;
+  --blue: #9ad8c6;
+  --ui-panel: #1a2926;
+  --ui-soft: #21332f;
+  --ui-ink: #edf5ef;
+  --ui-muted: #b6c9bd;
+  --ui-accent: #9ad8c6;
+  --panel-shadow: none;
+}
+
+body { background: var(--bg); color: var(--text); }
+.sidebar { background: #203a37; }
+.brand-mark { color: #203a37; background: #f4f8f5; }
+.nav-link:hover { background: rgba(255, 255, 255, .1); }
+.nav-link.active { color: #203a37; background: #f4f8f5; }
+.nav-link.active span { color: #235f59; }
+.sidebar-logout:hover { background: rgba(255, 255, 255, .12); }
+main { background: var(--bg); }
+.topbar { background: var(--surface); }
+.eyebrow, .section-tag { color: var(--ui-accent); }
+
+.operation-intro .hero-card {
+  padding: 26px 30px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid #235f59;
+  box-shadow: var(--panel-shadow);
+}
+.operation-intro h2 { max-width: 620px; font-size: clamp(24px, 2.2vw, 30px); line-height: 1.18; }
+.operation-intro p { max-width: 610px; font-size: 14px; line-height: 1.55; }
+.operation-intro .hero-actions { gap: 8px; }
+
+.primary-button { color: #ffffff; background: #235f59; box-shadow: none; }
+.secondary-button { color: var(--text); background: var(--surface); border-color: var(--line-strong); }
+.primary-button:hover:not(:disabled) { background: #194b45; }
+.status-dot, .system-indicator[data-status]::before { box-shadow: none; }
+
+.panel, .robot-control-panel { box-shadow: var(--panel-shadow); }
+.robot-control-panel { border-color: var(--line); }
+.robot-mode { background: var(--surface); border-color: var(--line); }
+.robot-mode > b { color: #235f59; background: #e7f1eb; }
+.robot-mode.active { background: #eaf3ee; border-color: #235f59; box-shadow: inset 3px 0 0 #235f59; }
+.robot-mode:hover:not(:disabled) { border-color: #7d9e8f; }
+.control-step-label, .mission-summary small, .system-indicator > span:not([id]) {
+  color: var(--muted);
+  letter-spacing: .01em;
+  text-transform: none;
+}
+.robot-telemetry strong, .mission-summary strong, .system-indicator strong,
+.system-indicator [id] { color: var(--text); font-family: inherit; font-weight: 700; }
+.mission-summary { background: var(--surface-2); border-color: var(--line); }
+.mission-summary > * { border-left-color: var(--line-strong); }
+.system-indicator { background: var(--surface-2); border-color: var(--line); }
+.system-indicator[data-status="online"] { background: #edf5ef; border-color: #b8d4c3; }
+.system-indicator[data-status="warning"] { background: #fbf5e9; }
+.system-indicator[data-status="error"] { background: #fff0f1; }
+
+:root[data-theme="dark"] .sidebar { background: #142522; }
+:root[data-theme="dark"] .topbar,
+:root[data-theme="dark"] .operation-intro .hero-card { background: var(--surface); }
+:root[data-theme="dark"] .operation-intro .hero-card { border-left-color: #9ad8c6; }
+:root[data-theme="dark"] .primary-button { color: #ffffff; background: #236358; }
+:root[data-theme="dark"] .primary-button:hover:not(:disabled) { background: #2d786a; }
+:root[data-theme="dark"] .secondary-button,
+:root[data-theme="dark"] .robot-mode { color: var(--text); background: var(--surface); border-color: var(--line); }
+:root[data-theme="dark"] .robot-mode > b { color: #d9eee2; background: #2d4d42; }
+:root[data-theme="dark"] .robot-mode.active { background: #29473b; border-color: #9ad8c6; box-shadow: inset 3px 0 0 #9ad8c6; }
+:root[data-theme="dark"] .mission-summary,
+:root[data-theme="dark"] .system-indicator { color: var(--text); background: var(--surface-2); border-color: var(--line); }
+:root[data-theme="dark"] .mission-summary strong,
+:root[data-theme="dark"] .robot-telemetry strong,
+:root[data-theme="dark"] .system-indicator strong,
+:root[data-theme="dark"] .system-indicator [id] { color: var(--text); }
+:root[data-theme="dark"] .system-indicator[data-status="online"] { border-color: #47755d; }
+:root[data-theme="dark"] .system-indicator[data-status="warning"] { border-color: #8b683b; }
+:root[data-theme="dark"] .system-indicator[data-status="error"] { border-color: #90535d; }
+
+@media (max-width: 620px) {
+  .operation-intro .hero-card { padding: 20px; }
+  /* Ferramentas auxiliares no rodape, sem cobrir o botao de emergencia. */
+  .interface-tools {
+    position: static;
+    max-width: none;
+    margin: 20px 12px;
+    box-shadow: none;
+  }
+}

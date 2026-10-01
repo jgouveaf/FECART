@@ -1,0 +1,387 @@
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const video = $("cameraVideo"), canvas = $("personCanvas");
+  if (!video || !canvas || !window.QuantumPersonFollowMath) return;
+  const ctx = canvas.getContext("2d"), control = window.QuantumControl;
+  const follower = new window.QuantumPersonFollowMath.PersonFollower();
+  const labels = { SELECT_TARGET: "Clique em Seguir no cadastro da pessoa", CONFIRMING: "Confirmando o alvo",
+    FACE_TRACKING: "Seguindo pelo rosto do alvo",
+    FOLLOWING: "Pessoa identificada", BODY_TRACKING: "Acompanhando o corpo · FaceID sendo atualizado",
+    NEAREST_TRACKING: "Teste ativo · seguindo a pessoa mais próxima sem FaceID",
+    APPEARANCE_TRACKING: "Alvo mantido pelo corpo e roupa · rosto fora de vista",
+    SEARCHING_LEFT: "Alvo saiu à esquerda · procurando nesse lado",
+    SEARCHING_RIGHT: "Alvo saiu à direita · procurando nesse lado",
+    SEARCH_TIMEOUT: "Busca lateral concluída sem reencontro · robô parado",
+    AMBIGUOUS: "Pessoas sobrepostas · confirme o rosto", REIDENTIFY: "Mostre o rosto para confirmar o alvo",
+    TARGET_LOST: "Alvo perdido · parado", PREDICTED_STOP: "Posição estimada · robô parado",
+    KEEP_DISTANCE: "Distância de parada atingida", SENSOR_WAIT: "Aguardando leitura atual do sensor",
+    SENSOR_DISTANCE: "Sensor detectou obstáculo · retoma com pelo menos 40 cm livres",
+    VISUAL_DISTANCE: "Pessoa muito próxima na imagem · prévia sem Arduino",
+    STALE_FRAME: "Imagem atrasada ou congelada · parado", LOADING: "Carregando detector de pessoas",
+    LOW_BODY_CONFIDENCE: "Detecção do corpo incerta · parado",
+    OFFLINE: "Ative o Modo 2 e a câmera", ERROR: "Detector indisponível · parado", PAUSED: "Seguimento pausado",
+    ENROLLING: "Cadastro em andamento · seguimento pausado" };
+  let worker = null, generation = 0, ready = false, pending = null, schedule = 0;
+  let lastVideoTime = -1, lastFrameAt = 0, cameraActive = false, activeView = "face";
+  let faces = [], selectedName = "", paused = false, enrolling = false;
+  let observedPeople = [];
+  let distance = null, sensorAt = 0, lastOutput = null, lastEmitAt = 0, sequence = 0;
+  const diagnostics = { frameAgeMs: null, frameIntervalMs: null, lastStop: null, transitions: [] };
+  const modeTwo = () => Number(control?.state.mode.id) === 2 && control?.state.mode.phase === "ACTIVE";
+  const enabled = () => modeTwo() && cameraActive && activeView === "face" && !paused && !document.hidden && Boolean(follower.id);
+  const movingCamera = () => ["DIREITA", "ESQUERDA", "GIRAR"].includes(control?.state.robot.command)
+    || control?.state.robot.firmwareState === "DESVIANDO";
+  // Head-only tracking gives identity more CPU time. A full body retains the
+  // 200 ms cadence needed for its 500 ms confidence hysteresis.
+  const frameInterval = () => directFaceReady(performance.now()) ? 300 : faces.some(f => f.id === follower.id && f.registered
+    && performance.now() - f.capturedAt >= 0 && performance.now() - f.capturedAt <= 600) ? 200 : 100;
+  const directFaceReady = now => ready && lastFrameAt > 0
+    && !follower.anonymous
+    && faces.length === 1 && faces[0].registered && faces[0].id === follower.id
+    && faces[0].confidence >= .58 && window.QuantumPersonFollowMath.validBox(faces[0].box)
+    && Number.isFinite(faces[0].capturedAt)
+    && now >= faces[0].capturedAt && now - faces[0].capturedAt <= 600
+    && (observedPeople.length === 0 || observedPeople.length === 1 && observedPeople[0].confidence >= .5
+      && window.QuantumPersonFollowMath.validBox(observedPeople[0].box)
+      && window.QuantumPersonFollowMath.headOnlyDetection(observedPeople[0].box,faces[0].box));
+
+  function updateCount(now = performance.now()) {
+    const viewing = cameraActive && activeView === 'face' && !document.hidden;
+    const bodies = viewing && now - lastFrameAt >= 0 && now - lastFrameAt <= 600 ? observedPeople : [];
+    $("personCount").textContent = viewing
+      ? String(window.QuantumPersonFollowMath.visiblePeople(bodies, faces, now)) : '—';
+  }
+
+  function updateSensor(now = performance.now()) {
+    const element = $('personSensorReading');
+    if (!element) return;
+    if (modeTwo()) { element.textContent = 'Não usado no Modo 2'; return; }
+    const age = Math.max(0, Math.round(now - sensorAt));
+    element.textContent = !control.state.robot.connected ? 'Arduino desconectado'
+      : !sensorAt ? 'Ainda sem telemetria'
+        : !Number.isFinite(distance) || distance <= 0 ? `Sem leitura válida · ${age} ms`
+          : `${distance.toFixed(1)} cm · ${age > 700 ? 'leitura atrasada · ' : ''}${age} ms`;
+  }
+
+  // These values explain the decision already made by PersonFollower.  They
+  // deliberately do not decide movement: the controller and the firmware
+  // remain the only authorities for motors and HC-SR04 safety.
+  function targetLockState(result) {
+    if (result.searching) return 'TARGET_SEARCHING';
+    if (result.prediction || result.dropout) return 'TARGET_TEMPORARILY_LOST';
+    return result.visible === true ? 'TARGET_VISIBLE' : 'TARGET_LOST';
+  }
+
+  function distanceState(result, now) {
+    if (modeTwo()) return { band: 'NÃO USADO', source: 'Modo 2', value: '' };
+    const sensorFresh = control?.state.robot.connected && sensorAt > 0
+      && Number.isFinite(distance) && distance > 0 && now >= sensorAt && now - sensorAt <= 700;
+    if (sensorFresh) {
+      const band = distance <= 30 ? 'MUITO PERTO' : distance < 40 ? 'PERTO'
+        : distance <= 90 ? 'IDEAL' : distance <= 180 ? 'LONGE' : 'MUITO LONGE';
+      return { band, source: 'HC-SR04', value: `${Math.round(distance)} cm` };
+    }
+    // A box is only a relative visual estimate. It must never be presented as
+    // centimetres or bypass the physical sensor when Arduino is connected.
+    const box = result.box || result.faceBox;
+    if (!window.QuantumPersonFollowMath.validBox(box)) return { band: 'SEM ESTIMATIVA', source: 'visão', value: '' };
+    const height = box.height;
+    const band = height >= .70 ? 'MUITO PERTO' : height >= .52 ? 'PERTO'
+      : height >= .24 ? 'IDEAL' : height >= .10 ? 'LONGE' : 'MUITO LONGE';
+    return { band, source: 'visão aproximada', value: '' };
+  }
+
+  function describeDecision(result, now) {
+    const sensorFresh = control?.state.robot.connected && sensorAt > 0
+      && Number.isFinite(distance) && distance > 0 && now >= sensorAt && now - sensorAt <= 700;
+    const horizontalError = Number.isFinite(result.center) ? (result.center - .5) * 100 : null;
+    const obstacle = control?.state.safety.emergency ? 'EMERGÊNCIA'
+      : !control?.state.robot.connected ? 'SEM ARDUINO'
+        : modeTwo() ? 'NÃO USADO NO MODO 2'
+        : !sensorFresh ? 'SEM LEITURA ATUAL'
+          : distance <= 30 ? 'BLOQUEADO' : 'LIVRE';
+    return {
+      targetLock: targetLockState(result),
+      horizontalErrorPercent: horizontalError == null ? null : Math.round(horizontalError),
+      distance: distanceState(result, now),
+      obstacle,
+      reason: result.reason || result.state,
+    };
+  }
+
+  function publish(result, people = []) {
+    const now = performance.now();
+    const decision = describeDecision(result, now);
+    const output = { ...result, decision };
+    const changed = !lastOutput || lastOutput.state !== output.state || lastOutput.command !== output.command
+      || lastOutput.decision?.targetLock !== decision.targetLock
+      || lastOutput.decision?.distance.band !== decision.distance.band
+      || lastOutput.decision?.obstacle !== decision.obstacle;
+    const reason = result.reason || result.state;
+    if (changed) {
+      diagnostics.transitions.push({ atMs: Math.round(now), state: result.state, reason,
+        command: result.command, visualCommand: result.visualCommand || 'PARAR',
+        frameAgeMs: lastFrameAt ? Math.round(now - lastFrameAt) : null,
+        bodyConfidence: Number.isFinite(result.confidence) ? result.confidence : null,
+        sensorCm: distance, sensorAgeMs: sensorAt ? Math.round(now - sensorAt) : null,
+        targetLock: decision.targetLock, horizontalErrorPercent: decision.horizontalErrorPercent,
+        distanceState: decision.distance.band, distanceSource: decision.distance.source,
+        obstacle: decision.obstacle,
+        recognition: window.quantumFaceRecognition || null });
+      if (diagnostics.transitions.length > 60) diagnostics.transitions.shift();
+    }
+    if (result.command === 'PARAR' && !['SELECT_TARGET', 'CONFIRMING', 'LOADING', 'OFFLINE', 'PAUSED', 'ENROLLING'].includes(result.state)) {
+      diagnostics.lastStop = { reason, label: labels[reason] || reason, atMs: Math.round(now) };
+    }
+    lastOutput = output;
+    const freshTargetFace = faces.some(f => f.id === follower.id && f.registered
+      && now - f.capturedAt >= 0 && now - f.capturedAt <= 800);
+    const framingNeeded = freshTargetFace && ['REIDENTIFY', 'TARGET_LOST'].includes(reason);
+    const identityPending = !freshTargetFace && faces.length === 1 && !faces[0].registered
+      && now - faces[0].capturedAt >= 0 && now - faces[0].capturedAt <= 800
+      && ['REIDENTIFY', 'TARGET_LOST'].includes(reason);
+    const statusLabel = result.state === 'KEEP_DISTANCE' ? labels[reason] || labels[result.state] : labels[result.state];
+    $("personFollowStatus").textContent = identityPending
+      ? 'Rosto visível; aguardando confirmação da identidade.' : framingNeeded
+      ? 'Rosto identificado; mantenha o alvo visível e separado de outras pessoas.' : statusLabel || result.state;
+    if (reason === 'SENSOR_DISTANCE' && Number.isFinite(result.distance)) {
+      $("personFollowStatus").textContent += ` · leitura: ${Math.round(result.distance)} cm`;
+    }
+    if (result.state === 'FOLLOWING') $("personFollowStatus").textContent += result.appearanceReady
+      ? ' · continuidade visual pronta' : ' · preparando continuidade visual';
+    updateCount(now);
+    updateSensor(now);
+    $("personTarget").textContent = follower.id ? `${selectedName || follower.id} · ${follower.id}` : "Nenhum · clique em Seguir no cadastro";
+    $("personPrediction").textContent = result.prediction
+      ? `${Math.round(result.prediction.x * 100)}% da largura · estimativa de ${Math.round(result.prediction.ageMs)} ms`
+      : Number.isFinite(result.center)
+        ? `${result.center < .4 ? 'À esquerda' : result.center > .6 ? 'À direita' : 'No centro'} · ${Math.round(result.center * 100)}% da largura`
+        : 'Aguardando alvo';
+    if ($('personTargetLock')) $('personTargetLock').textContent = decision.targetLock.replaceAll('_', ' ');
+    if ($('personHorizontalError')) $('personHorizontalError').textContent = decision.horizontalErrorPercent == null
+      ? '—' : `${decision.horizontalErrorPercent > 0 ? '+' : ''}${decision.horizontalErrorPercent}%`;
+    if ($('personDistanceState')) $('personDistanceState').textContent = decision.distance.value
+      ? `${decision.distance.band} · ${decision.distance.value} (${decision.distance.source})`
+      : `${decision.distance.band} · ${decision.distance.source}`;
+    if ($('personObstacleState')) $('personObstacleState').textContent = decision.obstacle;
+    $("faceTrackingState").textContent = identityPending ? 'Confirmando a identidade do rosto visível'
+      : labels[result.trackingState] || statusLabel || result.state;
+    $("faceDirection").textContent = result.visualCommand || 'PARAR';
+    if ($('personVisualCommand')) $('personVisualCommand').textContent = result.visualCommand || 'PARAR';
+    if ($('personMotionCommand')) $('personMotionCommand').textContent = !control.state.robot.connected ? 'Sem envio'
+      : control.state.safety.emergency ? 'PARAR · emergência' : result.command;
+    if ($('personFrameAge')) $('personFrameAge').textContent = diagnostics.frameAgeMs == null ? '—' : `${diagnostics.frameAgeMs} ms`;
+    if ($('personFrameInterval')) $('personFrameInterval').textContent = diagnostics.frameIntervalMs == null ? '—' : `${diagnostics.frameIntervalMs} ms`;
+    if ($('personLastStop')) $('personLastStop').textContent = diagnostics.lastStop?.label || 'Nenhuma parada registrada';
+    if ($('personFaceProcessing')) $('personFaceProcessing').textContent = window.quantumFacePerformance
+      ? `${window.quantumFacePerformance.processingMs} ms` : '—';
+    $("personFollowDelivery").textContent = !modeTwo() ? "Somente o Modo 2 recebe estas decisões."
+      : !control.state.robot.connected ? "Prévia local: Arduino desconectado. Nenhum movimento físico."
+        : control.state.safety.emergency ? "Arduino conectado, mas bloqueado pela parada de emergência."
+          : `${result.command === 'PARAR' ? `Parado: ${$('personFollowStatus').textContent}` : `Pedido: ${result.command}`} · última resposta USB: ${control.state.communication.lastRx || "—"}`;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of people) {
+      const selected = result.box && window.QuantumPersonFollowMath.overlap(result.box, p.box) > 0.8;
+      const b = p.box, x = (1 - b.x - b.width) * canvas.width, y = b.y * canvas.height;
+      ctx.strokeStyle = selected ? "#187653" : "#1666a8";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, b.width * canvas.width, b.height * canvas.height);
+      ctx.font = "16px sans-serif";
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText(selected ? (selectedName || follower.id) : "Pessoa", x + 4, Math.max(18, y - 8));
+    }
+    if (result.prediction) {
+      const x = (1 - result.prediction.x) * canvas.width;
+      ctx.setLineDash([8, 6]); ctx.strokeStyle = "#ad6400";
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // Do not publish decisions into other modes, including their simulator input.
+    if (!modeTwo()) return;
+    control?.patch("vision", { targetId: follower.id, tracking: result.state,
+      direction: result.command, confidence: result.confidence || 0 }, { source: "person-follow" });
+    const unchanged = publish.signature === `${result.state}:${result.command}:${follower.id}`;
+    if (unchanged && now - lastEmitAt < 150) return;
+    publish.signature = `${result.state}:${result.command}:${follower.id}`;
+    lastEmitAt = now;
+    window.dispatchEvent(new CustomEvent("quantum:person-tracking", { detail: {
+      ...output, tracking: result.state, emittedAt: now, modeGeneration: window.quantumRobot?.modeGeneration,
+      // Prediction is NEVER presented as visible to the existing USB controller.
+      visible: result.visible === true && !result.prediction, searching: result.searching === true,
+      registered: Boolean(follower.id) && !follower.anonymous,
+    } }));
+  }
+  function stopped(state) { publish(follower.stop(state)); }
+  function stop(state = "OFFLINE") {
+    ++generation;
+    clearTimeout(schedule);
+    worker?.terminate(); worker = null;pending?.release?.();
+    ready = false; pending = null; lastVideoTime = -1; lastFrameAt = 0; observedPeople = [];
+    follower.reset(); stopped(state);
+  }
+  function fail(message) {
+    stop("ERROR");
+    $("personFollowStatus").textContent = `Detector indisponível: ${message}`;
+    $("retryPersonDetection").hidden = false;
+    control?.log("ERROR", "MODO 2", `Detector de pessoas: ${message}`);
+  }
+  async function frame(token) {
+    if (token !== generation || !enabled() || !ready) return;
+    try {
+      if (enrolling) { stopped("ENROLLING"); return; }
+      if (pending || video.readyState < 2 || video.currentTime === lastVideoTime) return;
+      const release=await window.QuantumVisionScheduler?.acquire?.();
+      if(token!==generation || !enabled()) {release?.();return;}
+      lastVideoTime = video.currentTime;
+      const capturedAt = performance.now(), id = ++sequence;
+      pending = { id, capturedAt, release };
+      const scale=Math.min(1,640/Math.max(video.videoWidth,video.videoHeight));
+      const bitmap = await createImageBitmap(video,{resizeWidth:Math.max(1,Math.round(video.videoWidth*scale)),
+        resizeHeight:Math.max(1,Math.round(video.videoHeight*scale)),resizeQuality:'high'});
+      if (token !== generation || !enabled()) { bitmap.close(); return; }
+      worker.postMessage({ type: "frame", id, capturedAt, bitmap }, [bitmap]);
+    } catch (error) { if (token === generation) fail(error.message); }
+    finally { if (token === generation && enabled()) schedule = setTimeout(() => frame(token), frameInterval()); }
+  }
+  function start() {
+    if (!enabled() || worker) return;
+    const token = ++generation;
+    canvas.width = video.videoWidth || 960; canvas.height = video.videoHeight || 540;
+    stopped("LOADING");
+    $("retryPersonDetection").hidden = true;
+    try {
+      worker = new Worker(new URL("web/person-detector.worker.js?v=3", document.baseURI));
+      const startedAt = performance.now();
+      pending = { id: "loading", capturedAt: startedAt };
+      worker.onerror = error => { if (token === generation) fail(error.message || "Falha no worker local"); };
+      worker.onmessage = ({ data }) => {
+        if (token !== generation || !enabled()) return;
+        if (data.type === "ready") { ready = true; pending = null; frame(token); return; }
+        if (data.type === "error") { fail(data.message); return; }
+        if (data.type !== "result" || !pending || pending.id !== data.id) return;
+        pending.release?.();pending = null;
+        const now = performance.now();
+        if (enrolling) { stopped("ENROLLING"); return; }
+        diagnostics.frameAgeMs = Math.round(now - data.capturedAt);
+        diagnostics.frameIntervalMs = lastFrameAt ? Math.round(data.capturedAt - lastFrameAt) : null;
+        lastFrameAt = data.capturedAt;
+        observedPeople = data.people;
+        const result = follower.update({ people: data.people, faces, now, capturedAt: data.capturedAt,
+          cameraMoving: movingCamera(), requireSensor: false,
+          distance, sensorAgeMs: now - sensorAt });
+        publish(result, data.people);
+        if (token !== generation || !enabled()) return;
+        // Resume from completion instead of waiting for the next polling tick.
+        // At most one frame is in flight, respecting the current CPU budget.
+        clearTimeout(schedule);
+        schedule = setTimeout(() => frame(token), Math.max(0, frameInterval() - (performance.now() - data.capturedAt)));
+      };
+      worker.postMessage({ type: "init" });
+    } catch (error) { fail(error.message); }
+  }
+  const watchdog = setInterval(() => {
+    updateCount();
+    updateSensor();
+    if (!enabled() || !worker || enrolling) return;
+    const now = performance.now();
+    if (pending && now - pending.capturedAt > (ready ? 5000 : 30000)) { fail("Tempo de processamento esgotado"); return; }
+    if (ready && (!lastFrameAt || now - lastFrameAt > 600) && !directFaceReady(now)) {
+      // Stop the expired command, but let the next observed frame decide if the
+      // track is continuous. A timer firing before an in-flight result must not
+      // erase face evidence. update() still rejects stale frames and long gaps.
+      publish(follower.stop("STALE_FRAME"));
+    }
+  }, 100);
+
+  window.addEventListener("quantum:face-observations", ({ detail }) => {
+    faces = detail.faces || [];
+    enrolling = Boolean(detail.registering);
+    updateCount();
+    // The nearest-person test owns its temporary target until the operator
+    // explicitly selects a registered person. Ordinary face frames with no
+    // selected profile must not cancel the body-only test.
+    if ((!follower.anonymous || detail.selectedId) && follower.id !== detail.selectedId) {
+      follower.select(detail.selectedId); selectedName = detail.selectedName || "";
+      if (!follower.id) stop('SELECT_TARGET');
+      else { stopped('CONFIRMING'); start(); }
+    }
+    if (detail.failed) { faces = []; follower.reset(); stopped("ERROR"); }
+    if (enrolling) { follower.reset(); stopped("ENROLLING"); }
+    // Consume identity as soon as it arrives, without waiting another body
+    // inference cycle. A freshly measured, recognized face is direct evidence;
+    // the body timer must not stop that face just because no torso is visible.
+    // Keep known competing bodies, worker errors and the 5 s failure timeout.
+    const now = performance.now(), capturedAt = Math.max(...faces.map(f => f.capturedAt));
+    if (!detail.failed && !enrolling && enabled() && directFaceReady(now)
+      && Number.isFinite(capturedAt) && capturedAt <= now && now - capturedAt <= 600
+      && capturedAt > follower.lastFaceSampleAt) {
+      publish(follower.update({ source: 'face', people: observedPeople, faces, now, capturedAt,
+        cameraMoving: movingCamera(), requireSensor: false,
+        distance, sensorAgeMs: now - sensorAt }));
+    }
+  });
+  window.addEventListener("quantum:camera-started", () => { cameraActive = true; start(); });
+  window.addEventListener("quantum:camera-stopped", () => { cameraActive = false; faces = []; stop(); });
+  window.addEventListener("quantum:camera-error", () => { cameraActive = false; faces = []; stop("ERROR"); });
+  window.addEventListener("quantum:camera-view-changed", ({ detail }) => {
+    activeView = detail.view;
+    if (activeView !== "face") { faces = []; stop("PAUSED"); } else start();
+  });
+  window.addEventListener("quantum:mode-will-change", () => { stop("PAUSED"); });
+  window.addEventListener("quantum:mode-changed", () => {
+    paused = false;
+    if (modeTwo() && !follower.id) {
+      follower.selectNearest();
+      selectedName = 'Pessoa visível · teste sem cadastro';
+      stopped('CONFIRMING');
+    }
+    start();
+  });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stop("PAUSED"); else start(); });
+  window.addEventListener("pagehide", () => { stop(); clearInterval(watchdog); });
+  control?.subscribe?.(({ section, current, meta }) => {
+    if (section === 'robot') {
+      if (meta?.source === 'arduino-telemetry') { distance = current.robot.distance; sensorAt = performance.now(); }
+      else if (!current.robot.connected) { distance = null; sensorAt = 0; }
+    }
+  });
+  async function prepare() {
+    paused = false;
+    // No profile selected means the operator asked for the direct body test.
+    // It uses the first visible person and never sends FaceID data to control.
+    if (!follower.id) {
+      follower.selectNearest();
+      selectedName = 'Pessoa visível · teste sem cadastro';
+    }
+    if (!modeTwo()) window.quantumRobot?.requestMode(2, "person-follow");
+    else {
+      try { await window.quantumGestureController?.selectView("face"); await window.quantumCameraController?.start(); start(); }
+      catch (error) { fail(error.message); }
+    }
+  }
+  $("preparePersonFollow").addEventListener("click", prepare);
+  function prepareNearest() {
+    paused = false;
+    follower.selectNearest();
+    selectedName = 'Pessoa mais próxima · teste sem cadastro';
+    stopped('CONFIRMING');
+    prepare();
+  }
+  $('followNearestPerson')?.addEventListener('click', prepareNearest);
+  $("pausePersonFollow").addEventListener("click", () => { paused = true; stop("PAUSED"); });
+  $("retryPersonDetection").addEventListener("click", () => { stop(); paused = false; start(); });
+  function diagnosticSnapshot() {
+    return JSON.parse(JSON.stringify({ version: 2, ...diagnostics, currentDecision: lastOutput?.decision || null,
+      face: window.quantumFacePerformance || null,
+      recognition: window.quantumFaceRecognition || null }));
+  }
+  $('downloadPersonDiagnostics')?.addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(diagnosticSnapshot(), null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = 'quantum-modo2-diagnostico.json'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  window.quantumPersonFollower = Object.freeze({ prepare, prepareNearest, get snapshot() { return lastOutput; },
+    get diagnostics() { return diagnosticSnapshot(); } });
+  stopped("OFFLINE");
+})();

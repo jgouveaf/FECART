@@ -1,0 +1,15 @@
+.robot-mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.voice-panel .voice-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.voice-panel .voice-actions button { min-width: 150px; }
+.voice-panel .voice-actions button[disabled] { opacity: .55; cursor: not-allowed; }
+.voice-panel .voice-actions label { display: grid; gap: 4px; color: #a7c6db; font-size: 13px; }
+.voice-panel .voice-actions select { min-width: 230px; max-width: min(100%, 430px); min-height: 40px; padding: 8px; border: 1px solid #527188; border-radius: 8px; color: #eaf6ff; background: #0a1523; }
+.voice-panel .voice-readout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.voice-panel .voice-readout div { padding: 12px; border: 1px solid #29465d; border-radius: 10px; background: #0a1523; color: #eaf6ff; }
+.voice-panel .voice-readout div:last-child { grid-column: 1 / -1; }
+.voice-panel .voice-readout small, .voice-panel .voice-readout strong { display: block; }
+.voice-panel .voice-readout small { color: #a7c6db; }
+.voice-panel .voice-readout strong { margin-top: 6px; color: #f4fbff; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .robot-mode-grid, .voice-panel .voice-readout { grid-template-columns: 1fr; }
+}

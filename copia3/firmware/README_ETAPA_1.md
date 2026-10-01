@@ -1,0 +1,166 @@
+# Firmware atual da terceira cópia: PWM base 200/200 nos quatro modos; curva suave no Modo 2 com roda externa 200 e interna 150. Compilado e gravado em 25/09; movimento físico ainda não testado.
+
+Firmware integrado V7 para Arduino UNO, L298N, dois motores DC e HC-SR04. Ele
+mantém a segurança no próprio Arduino e aceita comandos do site pelo cabo USB.
+Câmera e visão executam no computador; o Arduino não depende delas para
+detectar o obstáculo à frente. O projeto atual não usa ESP32 nem Bluetooth.
+
+## Pinagem confirmada
+
+Desligue o USB e as baterias antes de alterar qualquer fio.
+
+| Arduino UNO | Destino |
+|---|---|
+| D7 | L298N IN1 |
+| D6 | L298N IN2 |
+| D5 | L298N IN3 |
+| D4 | L298N IN4 |
+| D3 | HC-SR04 TRIG |
+| D2 | HC-SR04 ECHO |
+| 5V | HC-SR04 VCC |
+| GND | HC-SR04 GND e GND do L298N |
+
+No L298N, mantenha os jumpers ENA e ENB instalados, ligue um motor em
+OUT1/OUT2 e o outro em OUT3/OUT4. O negativo da bateria, o GND do L298N e o GND
+do Arduino precisam estar unidos. A alimentação dos motores entra no borne
+`12V`/`VMS` e `GND`; nunca coloque as pilhas diretamente no pino 5V do Arduino.
+
+## Instalar pelo site ou pelo Arduino IDE 2.3.10
+
+O fluxo principal é abrir a aba **Códigos** do site e clicar em **Gravar no
+Arduino UNO**. Esse botão envia o HEX oficial previamente compilado e verifica
+se o arquivo servido é exatamente a versão esperada. O editor de texto do site
+é para consulta e download; alterações manuais ainda precisam ser compiladas.
+
+Como alternativa:
+
+1. Abra `firmware/quantum_tracker_arduino/quantum_tracker_arduino.ino`.
+2. Selecione **Arduino Uno** e a porta COM correta.
+3. Feche o Monitor Serial e feche qualquer site/app que esteja usando essa COM.
+4. Deixe as rodas suspensas, confira a polaridade da alimentação e clique em
+   **Carregar**.
+5. A compilação validada usa 7.296 bytes de flash e 401 bytes de RAM. O sketch
+   não precisa de biblioteca externa.
+
+O código permanece gravado no UNO depois que o cabo ou a alimentação são
+desligados. Depois de usar o IDE, feche o Monitor Serial e o Arduino IDE para
+liberar a porta COM ao site.
+
+Ao ligar ou reiniciar, o firmware permanece em ESTOP, sem partida automática.
+Abra o painel no Chrome ou Edge para computador, clique em **Conectar Arduino
+USB** e escolha o Arduino UNO. Abrir a serial pode reiniciar a placa. Aguarde
+`Firmware V7 confirmado` e, com as rodas suspensas, clique em **Ativar Modo 1**
+na aba Códigos. A liberação exige duas novas leituras válidas do sensor.
+
+## Os três modos
+
+### Modo 1 — autônomo
+
+Após a liberação explícita, o Arduino anda depois de duas novas leituras válidas do HC-SR04. A primeira
+leitura de até 5 cm já para as rodas; duas novas leituras próximas confirmam o
+desvio: recuar uma única vez, fazer uma curva suave e confirmar duas leituras
+livres na nova direção. Se ainda estiver bloqueado, prolonga somente a curva,
+sem repetir a ré, inclusive após uma falha do sensor na curva. O lado é alternado
+entre manobras. Depois de iniciado, esse modo continua funcionando mesmo sem site
+conectado, mas um reset ou desligamento volta a exigir liberação.
+
+**O limite de 5 cm foi aprovado somente com as rodas suspensas e não é uma
+distância segura validada para uso no piso.** Ele deve ser calibrado antes do
+ensaio livre. A arena 2D reprovou três cenários com esse ajuste; a V7 é destinada
+ao próximo teste supervisionado com rodas suspensas, não está liberada para o piso.
+
+### Modo 2 — seguir pessoa
+
+A câmera do rosto escolhe a maior pessoa detectada e envia `ESQUERDA`, `FRENTE`
+ou `DIREITA` conforme a posição dela no quadro. Ao perder o rosto, o comando é
+`PARAR`. O HC-SR04 continua tendo prioridade e executa o desvio antes de voltar
+ao seguimento.
+
+### Modo 3 — gestos
+
+A câmera da mão conta os dedos e o site envia:
+
+| Dedos | Comando |
+|---:|---|
+| 1 | Frente |
+| 2 | Direita |
+| 3 | Esquerda |
+| 4 | Parar imediatamente |
+| 5 | Girar |
+
+Sem uma mão válida por cerca de 700 ms, o site manda parar. Sem receber um
+comando novo por 1,5 s, o próprio Arduino também para.
+
+## Camadas de segurança
+
+- `PARAR` e `ESTOP` cancelam um desvio em andamento.
+- No Modo 1, `CMD:PARAR` permanece travado até `RESET_ESTOP`; nos modos remotos,
+  um novo comando pode substituir `PARAR`, mas nunca um `ESTOP` ainda ativo.
+- Gravar pelo site exige confirmação de `ESTOP` antes de fechar uma conexão
+  de controle existente. Sem confirmação, a gravação é cancelada.
+- Nenhum motor é liberado antes de duas leituras válidas do HC-SR04.
+- O HC-SR04 é verificado nos três modos e sempre vence um comando da câmera.
+- Após uma curva, duas leituras livres confirmam o novo caminho antes do avanço.
+- Uma leitura inválida do sensor interrompe a manobra ou o avanço; duas novas
+  leituras válidas são exigidas para recuperar.
+- Não existe temporizador de missão nem contador que pare o Modo 1 após alguns
+  ciclos de desvio.
+- Nos Modos 2 e 3, ausência de comandos por 1,5 segundo para os motores.
+- Silêncio ou perda da USB para os Modos 2 e 3 fecha o movimento em segurança.
+  No Modo 1, a autonomia local permanece funcionando na placa.
+- Linhas seriais corrompidas ou longas são descartadas até o próximo fim de linha.
+- Somente `OK:CMD:...` confirma um comando; telemetria antiga nunca vale como ACK.
+- O botão de emergência só deve ser liberado depois de conferir o entorno e as
+  rodas.
+
+A câmera auxilia no alinhamento com a pessoa; ela não substitui o HC-SR04 como
+sensor físico de obstáculo.
+
+## Protocolo serial (9600 baud)
+
+Comandos aceitos, uma linha por vez:
+
+```text
+MODE:1
+MODE:2
+MODE:3
+CMD:FRENTE
+CMD:TRAS
+CMD:DIREITA
+CMD:ESQUERDA
+CMD:PARAR
+CMD:GIRAR
+ESTOP
+RESET_ESTOP
+STATUS
+PING
+```
+
+Telemetria emitida pelo Arduino:
+
+```text
+QT|MODE:3|DIST:42.0|CMD:FRENTE|STATE:GESTOS
+```
+
+## Diagnóstico em ordem
+
+1. Com as rodas suspensas, teste alimentação, GND comum e jumpers ENA/ENB.
+2. Se nenhum motor girar, carregue `teste_motores/teste_motores.ino`.
+3. Se o sensor não variar, carregue `teste_sensor_hcsr04/teste_sensor_hcsr04.ino`
+   e leia a distância no Monitor Serial.
+4. Recarregue o firmware integrado e teste primeiro o Modo 1.
+5. Só depois teste os Modos 2 e 3 pelo site, mantendo o cabo USB conectado.
+
+Quatro pilhas Ni-MH de 1,2 V fornecem aproximadamente 4,8 V antes das perdas do
+L298N. Se o motor só vibrar ou não partir, meça a tensão sob carga: alimentação
+insuficiente não pode ser corrigida por software.
+
+## Testes sem movimentar o robô
+
+```powershell
+cd D:\QUANTUM_TRACKER
+.\.venv\Scripts\python.exe -m unittest discover -s tests -q
+```
+
+Esses testes verificam firmware, protocolo, segurança, interface, câmera e
+persistência. Eles não substituem o teste físico com as rodas suspensas.

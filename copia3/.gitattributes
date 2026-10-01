@@ -1,0 +1,4 @@
+# Preserve downloaded model, library, asset and firmware bytes on Windows.
+web/vendor/** -text
+web/assets/** -text
+*.hex -text

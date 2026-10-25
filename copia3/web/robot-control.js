@@ -566,7 +566,7 @@
       return false;
     }
     if (window.location?.protocol === "file:") {
-      setConnection("ABRA O SITE HTTPS", "ERROR", "O controle físico foi bloqueado. Use https://jgouveaf.github.io/FECART/.");
+      setConnection("ABRA O SITE HTTPS", "ERROR", "O controle físico foi bloqueado. Use https://jgouveaf.github.io/FECART/copia3/.");
       reportError("Web Serial bloqueado em página aberta diretamente pelo disco.");
       return false;
     }

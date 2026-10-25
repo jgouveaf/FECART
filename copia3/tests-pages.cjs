@@ -27,3 +27,19 @@ test("public voice page leaves recognition to browser without polling Vosk", () 
   });
   assert.equal(window.QuantumLocalVoice, undefined);
 });
+
+test("copy 3 never redirects users to localhost or the original site", () => {
+  const publicUrl = "https://jgouveaf.github.io/FECART/copia3/";
+  const files = [
+    "index.html",
+    "web/camera-controller.js",
+    "web/face-identities.js",
+    "web/robot-control.js",
+  ].map(file => fs.readFileSync(path.join(__dirname, file), "utf8"));
+
+  for (const source of files) {
+    assert.match(source, new RegExp(publicUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(source, /https:\/\/jgouveaf\.github\.io\/FECART\/(?!copia3\/)/);
+  }
+  assert.doesNotMatch(files[0], /const publicSiteUrl = "http:\/\/127\.0\.0\.1/);
+});

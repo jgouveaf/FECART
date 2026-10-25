@@ -635,7 +635,7 @@
     if (modelsPromise) await modelsPromise.catch(() => {});
     if (modelsReady && faceInference.ready && activeEngine === engine) return;
     if (window.location?.protocol === "file:") {
-      throw new Error("O FaceID exige o site HTTPS. Abra https://jgouveaf.github.io/FECART/.");
+      throw new Error("O FaceID exige o site HTTPS. Abra https://jgouveaf.github.io/FECART/copia3/.");
     }
     setStatus("CARREGANDO FACEID", true);
     faceHint.textContent = 'Preparando o reconhecimento local. Na primeira abertura, aguarde o download dos modelos.';

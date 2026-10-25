@@ -10,11 +10,14 @@
   <title>Quantum Tracker — Painel Web</title>
   <script>
     (() => {
-      const publicSiteUrl = "https://jgouveaf.github.io/FECART/";
+      const publicSiteUrl = "https://jgouveaf.github.io/FECART/copia3/";
       const runningFromFile = window.location.protocol === "file:";
       window.QuantumRuntime = Object.freeze({ publicSiteUrl, runningFromFile });
-      if (runningFromFile) {
+      const runningOnFormerPublicRoot = window.location.hostname === "jgouveaf.github.io"
+        && window.location.pathname.replace(/\/+$/, "") === "/FECART";
+      if (runningFromFile || runningOnFormerPublicRoot) {
         const destination = new URL(publicSiteUrl);
+        destination.search = window.location.search;
         destination.hash = window.location.hash;
         window.location.replace(destination.href);
       }

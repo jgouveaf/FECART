@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07131c">
+  <meta name="description" content="Apresentação do FECART Quantum Tracker: proposta, escolhas, desafios e resultados.">
+  <title>FECART — Apresentação do projeto</title>
+  <style>
+    :root{--bg:#07131c;--panel:#0d202a;--panel2:#102a35;--line:#21404b;--ink:#f3f7f8;--muted:#a7bdc5;--cyan:#44c1b3;--lime:#b9d66b;--amber:#f0b35a;--red:#ef7d78;--rail:260px}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-snap-type:y proximity}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.55}
+    a{color:inherit}.progress{position:fixed;inset:0 0 auto 0;height:4px;background:rgba(255,255,255,.06);z-index:20}.progress span{display:block;width:0;height:100%;background:linear-gradient(90deg,var(--cyan),var(--lime))}
+    .rail{position:fixed;inset:0 auto 0 0;width:var(--rail);padding:34px 24px;background:#081820;border-right:1px solid var(--line);z-index:10;display:flex;flex-direction:column;gap:24px}
+    .brand{display:flex;gap:12px;align-items:center;text-decoration:none}.mark{display:grid;place-items:center;width:42px;height:42px;border:1px solid var(--cyan);border-radius:12px;color:var(--cyan);font-weight:900}.brand strong{display:block;letter-spacing:.08em}.brand small{color:var(--muted)}
+    .rail nav{display:grid;gap:7px}.rail nav a{padding:9px 11px;border-radius:9px;color:var(--muted);text-decoration:none;font-size:.88rem;border-left:2px solid transparent}.rail nav a:hover,.rail nav a.active{color:var(--ink);background:rgba(68,193,179,.09);border-left-color:var(--cyan)}
+    .rail-foot{margin-top:auto;color:var(--muted);font-size:.76rem}.rail-foot strong{color:var(--ink)}
+    main{margin-left:var(--rail)}.slide{min-height:100vh;scroll-snap-align:start;padding:72px clamp(34px,6vw,96px);display:flex;flex-direction:column;justify-content:center;border-bottom:1px solid var(--line);background:radial-gradient(circle at 92% 10%,rgba(68,193,179,.08),transparent 30%)}
+    .slide:nth-child(even){background:radial-gradient(circle at 10% 90%,rgba(185,214,107,.06),transparent 30%),#081720}.eyebrow{color:var(--cyan);font-size:.78rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.count{float:right;color:#66818b;letter-spacing:.08em}
+    h1,h2{margin:.18em 0;line-height:1.03;letter-spacing:-.04em}h1{font-size:clamp(3.2rem,7vw,7.5rem);max-width:1050px}h2{font-size:clamp(2.3rem,5vw,5rem);max-width:950px}h3{margin:.1em 0 .35em;font-size:1.05rem}.accent{color:var(--cyan)}
+    .lead{max-width:900px;color:var(--muted);font-size:clamp(1rem,1.8vw,1.35rem)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:28px}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .card{padding:22px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.012));min-height:150px}.card p{margin:.35em 0 0;color:var(--muted)}.tag{display:block;margin-bottom:13px;color:var(--cyan);font-size:.7rem;font-weight:900;letter-spacing:.14em;text-transform:uppercase}.tag.warn{color:var(--amber)}.tag.good{color:var(--lime)}.tag.bad{color:var(--red)}
+    .metric{display:block;color:var(--lime);font-size:2rem;font-weight:900;line-height:1}.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:30px}.flow .step{position:relative;padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}.flow .step:not(:last-child)::after{content:'→';position:absolute;right:-13px;top:42%;z-index:2;color:var(--cyan);font-weight:900}.step b{display:block;color:var(--cyan);margin-bottom:5px}.step span{color:var(--muted);font-size:.9rem}
+    .team{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:28px 0}.person{padding:20px 12px;text-align:center;border:1px solid var(--line);border-radius:14px;background:var(--panel)}.avatar{display:grid;place-items:center;width:52px;height:52px;margin:0 auto 10px;border-radius:50%;background:rgba(68,193,179,.13);color:var(--cyan);font-weight:900}.person small{display:block;color:var(--muted)}
+    .timeline{margin-top:26px;display:grid;gap:12px}.event{display:grid;grid-template-columns:140px 1fr;gap:18px;padding:16px 18px;border-left:3px solid var(--red);background:rgba(255,255,255,.025);border-radius:0 12px 12px 0}.event strong{color:var(--red)}.event p{margin:0;color:var(--muted)}
+    .terminal{margin-top:24px;padding:20px;border:1px solid #265160;border-radius:14px;background:#041015;color:#b9e3de;font:500 .87rem/1.7 Consolas,monospace;white-space:pre-wrap}.caption{margin-top:18px;color:#78949e;font-size:.83rem}.footer-nav{display:flex;justify-content:space-between;gap:16px;margin-top:30px}.footer-nav a,.actions a{padding:10px 14px;border:1px solid var(--line);border-radius:10px;text-decoration:none;color:var(--muted)}.footer-nav a:hover,.actions a:hover{border-color:var(--cyan);color:var(--ink)}
+    .actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}.actions .primary{background:var(--cyan);color:#062028;border-color:var(--cyan);font-weight:800}.status{display:inline-flex;align-items:center;gap:8px;color:var(--lime);font-weight:800}.status::before{content:'';width:9px;height:9px;border-radius:50%;background:var(--lime);box-shadow:0 0 14px var(--lime)}
+    .toolbar{position:fixed;right:18px;top:18px;z-index:15}.toolbar button{border:1px solid var(--line);border-radius:9px;background:#0a1d26;color:var(--muted);padding:9px 12px;cursor:pointer}.toolbar button:hover{color:var(--ink);border-color:var(--cyan)}
+    @media(max-width:900px){:root{--rail:0px}.rail{position:relative;width:auto;inset:auto;padding:18px}.rail nav{display:flex;overflow:auto}.rail nav a{white-space:nowrap}.rail-foot{display:none}main{margin:0}.slide{min-height:auto;padding:64px 22px}.grid,.grid.three,.flow,.team{grid-template-columns:1fr}.flow .step:not(:last-child)::after{content:'↓';right:auto;left:50%;top:auto;bottom:-19px}.event{grid-template-columns:1fr}.toolbar{display:none}h1{font-size:3.15rem}}
+    @media print{.rail,.toolbar,.progress{display:none}main{margin:0}.slide{page-break-after:always;min-height:100vh}}
+  </style>
+</head>
+<body>
+  <div class="progress" aria-hidden="true"><span id="progressBar"></span></div>
+  <aside class="rail">
+    <a class="brand" href="#inicio"><span class="mark">QT</span><span><strong>FECART</strong><small>Quantum Tracker</small></span></a>
+    <nav aria-label="Telas da apresentação">
+      <a href="#inicio">01 · Abertura</a><a href="#equipe">02 · Equipe</a><a href="#projeto">03 · O projeto</a><a href="#escolha">04 · Por que escolhemos</a><a href="#funcionamento">05 · Como funciona</a><a href="#erros">06 · O que deu errado</a><a href="#correcoes">07 · Como corrigimos</a><a href="#acertos">08 · O que deu certo</a><a href="#resultado">09 · Resultado</a>
+    </nav>
+    <div class="rail-foot"><strong>Apresentação interativa</strong><br>Use ↑ e ↓ para navegar.</div>
+  </aside>
+  <div class="toolbar"><button id="fullScreen" type="button">Tela cheia</button></div>
+  <main>
+    <section class="slide" id="inicio">
+      <div><span class="eyebrow">FECART · Robótica aplicada</span><span class="count">01 / 09</span></div>
+      <h1>Quantum <span class="accent">Tracker</span></h1>
+      <p class="lead">Um robô móvel controlado por sensores, visão computacional, gestos e voz — construído para transformar programação em movimento real.</p>
+      <div class="actions"><a class="primary" href="#projeto">Conhecer o projeto ↓</a><a href="./">Abrir o painel do robô ↗</a></div>
+    </section>
+
+    <section class="slide" id="equipe">
+      <div><span class="eyebrow">Quem construiu</span><span class="count">02 / 09</span></div>
+      <h2>Nossa equipe</h2>
+      <p class="lead">O projeto reúne montagem, programação embarcada, interface web, visão computacional e testes no robô.</p>
+      <div class="team">
+        <div class="person"><span class="avatar">JL</span><strong>João Lorenzo</strong><small>Equipe FECART</small></div>
+        <div class="person"><span class="avatar">R</span><strong>Renato</strong><small>Equipe FECART</small></div>
+        <div class="person"><span class="avatar">R</span><strong>Rafael</strong><small>Equipe FECART</small></div>
+        <div class="person"><span class="avatar">G</span><strong>Gustavo</strong><small>Equipe FECART</small></div>
+      </div>
+      <div class="footer-nav"><a href="#inicio">← Abertura</a><a href="#projeto">O projeto →</a></div>
+    </section>
+
+    <section class="slide" id="projeto">
+      <div><span class="eyebrow">O que é</span><span class="count">03 / 09</span></div>
+      <h2>Um robô que percebe e responde</h2>
+      <p class="lead">O Quantum Tracker combina um Arduino Uno, ponte H L298N, motores, sensor ultrassônico, câmera e um site de controle. O navegador interpreta o ambiente e envia ordens curtas; o Arduino aplica os movimentos com travas de segurança.</p>
+      <div class="grid three">
+        <div class="card"><span class="tag">Percepção</span><h3>Câmera e sensor</h3><p>Detectam pessoas, mãos e obstáculos próximos.</p></div>
+        <div class="card"><span class="tag">Decisão</span><h3>Software no navegador</h3><p>Transforma posição, gesto ou fala em um comando válido.</p></div>
+        <div class="card"><span class="tag">Movimento</span><h3>Arduino e L298N</h3><p>Recebem a ordem e controlam as duas rodas do robô.</p></div>
+      </div>
+      <div class="footer-nav"><a href="#equipe">← Equipe</a><a href="#escolha">Por que escolhemos →</a></div>
+    </section>
+
+    <section class="slide" id="escolha">
+      <div><span class="eyebrow">Nossa escolha</span><span class="count">04 / 09</span></div>
+      <h2>Por que escolhemos esse projeto?</h2>
+      <div class="grid">
+        <div class="card"><span class="tag good">Integração</span><h3>Várias áreas em um só protótipo</h3><p>Ele junta eletrônica, mecânica, programação web, inteligência computacional e comunicação serial.</p></div>
+        <div class="card"><span class="tag good">Demonstração</span><h3>O resultado pode ser visto</h3><p>Uma decisão do software vira movimento físico, facilitando explicar causa, efeito e correções.</p></div>
+        <div class="card"><span class="tag good">Aplicação</span><h3>Base para monitoramento</h3><p>O mesmo conceito pode apoiar inspeção supervisionada, acompanhamento e observação remota.</p></div>
+        <div class="card"><span class="tag good">Aprendizado</span><h3>Problemas reais de engenharia</h3><p>Latência, ruído, alimentação, identificação da placa e segurança exigem testes além da simulação.</p></div>
+      </div>
+      <div class="footer-nav"><a href="#projeto">← O projeto</a><a href="#funcionamento">Como funciona →</a></div>
+    </section>
+
+    <section class="slide" id="funcionamento">
+      <div><span class="eyebrow">Arquitetura</span><span class="count">05 / 09</span></div>
+      <h2>Como a informação vira movimento</h2>
+      <div class="flow">
+        <div class="step"><b>1 · Entrada</b><span>Câmera, gesto, voz ou sensor detecta uma condição.</span></div>
+        <div class="step"><b>2 · Interpretação</b><span>O site escolhe FRENTE, TRÁS, DIREITA, ESQUERDA ou PARAR.</span></div>
+        <div class="step"><b>3 · Comunicação</b><span>Web Serial envia o comando ao Arduino pela USB.</span></div>
+        <div class="step"><b>4 · Ação</b><span>O firmware controla o L298N e mantém ESTOP e watchdog.</span></div>
+      </div>
+      <div class="grid">
+        <div class="card"><span class="metric">4</span><h3>Modos de operação</h3><p>Autônomo, seguir pessoa, gestos e voz.</p></div>
+        <div class="card"><span class="metric">V7</span><h3>Protocolo confirmado</h3><p>O site só libera o controle após receber <code>QT:READY:V7</code>.</p></div>
+      </div>
+      <div class="footer-nav"><a href="#escolha">← Nossa escolha</a><a href="#erros">O que deu errado →</a></div>
+    </section>
+
+    <section class="slide" id="erros">
+      <div><span class="eyebrow">Desafios reais</span><span class="count">06 / 09</span></div>
+      <h2>O que deu errado</h2>
+      <p class="lead">Os principais problemas apareceram na integração entre câmera, navegador, firmware e hardware.</p>
+      <div class="timeline">
+        <div class="event"><strong>Seguimento</strong><p>A identificação reiniciava várias vezes, provocava pausas e impedia o robô de manter um movimento contínuo.</p></div>
+        <div class="event"><strong>Sensor</strong><p>O HC-SR04 mostrou “SEM ECO” quando o fio ECHO estava na porta errada, bloqueando corretamente o modo autônomo.</p></div>
+        <div class="event"><strong>Motores</strong><p>Uma roda perdeu força e depois parou; testes isolados separaram problemas de potência, conexão e motor físico.</p></div>
+        <div class="event"><strong>Firmware</strong><p>A placa chegou a executar “Trilho de Gauss – 4 bobinas”. O site recebia dados, mas não encontrava <code>QT:READY:V7</code>.</p></div>
+      </div>
+      <div class="footer-nav"><a href="#funcionamento">← Como funciona</a><a href="#correcoes">Como corrigimos →</a></div>
+    </section>
+
+    <section class="slide" id="correcoes">
+      <div><span class="eyebrow">Método de engenharia</span><span class="count">07 / 09</span></div>
+      <h2>Como corrigimos</h2>
+      <div class="grid">
+        <div class="card"><span class="tag">Visão</span><h3>Controle fora da malha pesada</h3><p>A decisão de movimento passou a usar observações recentes e limites de tempo, sem esperar toda identificação facial.</p></div>
+        <div class="card"><span class="tag">Movimento</span><h3>Curvas progressivas</h3><p>No Modo 2, o robô recentraliza uma pessoa lateralmente e pode avançar em curva quando ela também se afasta.</p></div>
+        <div class="card"><span class="tag">Segurança</span><h3>Falhar parado</h3><p>ESTOP no início, timeout de comando e bloqueio quando sensor ou protocolo não são confirmados.</p></div>
+        <div class="card"><span class="tag">Diagnóstico</span><h3>Protocolo verificável</h3><p>O painel mostra TX, RX, estado e erro real. A gravação final foi confirmada por leitura da memória e resposta serial.</p></div>
+      </div>
+      <div class="terminal">USB 9600 baud
+→ HELLO
+← QT:READY:V7
+← QT|MODE:1|DIST:25.4|CMD:PARAR|STATE:ESTOP</div>
+      <div class="footer-nav"><a href="#erros">← O que deu errado</a><a href="#acertos">O que deu certo →</a></div>
+    </section>
+
+    <section class="slide" id="acertos">
+      <div><span class="eyebrow">Resultados confirmados</span><span class="count">08 / 09</span></div>
+      <h2>O que deu certo</h2>
+      <div class="grid three">
+        <div class="card"><span class="tag good">Site</span><h3>Interface integrada</h3><p>Câmera, modos, diagnóstico, simulador, voz, firmware e apresentação ficam no mesmo projeto.</p></div>
+        <div class="card"><span class="tag good">Comunicação</span><h3>Firmware V7 reconhecido</h3><p>O Arduino respondeu ao handshake oficial e permaneceu em ESTOP durante a verificação.</p></div>
+        <div class="card"><span class="tag good">Segurança</span><h3>Movimento bloqueado em falhas</h3><p>Porta errada, protocolo incompatível, sensor sem eco e comando vencido resultam em PARAR.</p></div>
+        <div class="card"><span class="tag good">Visão</span><h3>Detecção local</h3><p>Os modelos rodam no navegador, sem enviar cada quadro para uma API externa.</p></div>
+        <div class="card"><span class="tag good">Simulador</span><h3>Quatro modos praticáveis</h3><p>O cenário permite demonstrar decisões sem movimentar o robô físico.</p></div>
+        <div class="card"><span class="tag good">Publicação</span><h3>Acesso pelo GitHub</h3><p>O site e esta apresentação ficam disponíveis mesmo com o servidor local desligado.</p></div>
+      </div>
+      <p class="caption">A confirmação serial prova a comunicação e o estado lógico. O movimento físico ainda deve ser observado com rodas suspensas antes de testes no chão.</p>
+      <div class="footer-nav"><a href="#correcoes">← Como corrigimos</a><a href="#resultado">Resultado →</a></div>
+    </section>
+
+    <section class="slide" id="resultado">
+      <div><span class="eyebrow">Conclusão</span><span class="count">09 / 09</span></div>
+      <h2>Mais que fazer andar: aprender a provar</h2>
+      <p class="lead">O FECART mostrou que um robô confiável depende de hardware, software e testes trabalhando juntos. Cada falha ajudou a separar suposição de evidência e tornou o sistema mais claro para operar e apresentar.</p>
+      <div class="grid">
+        <div class="card"><span class="status">Confirmado</span><h3>Site, protocolo e firmware</h3><p>A cópia 3 está publicada; o firmware gravado respondeu <code>QT:READY:V7</code> e iniciou em ESTOP.</p></div>
+        <div class="card"><span class="tag warn">Próxima validação</span><h3>Movimento físico completo</h3><p>Testar os quatro modos com rodas suspensas e depois em uma área controlada, registrando o comportamento real.</p></div>
+      </div>
+      <div class="actions"><a class="primary" href="./">Abrir o Quantum Tracker ↗</a><a href="#inicio">Voltar ao início ↑</a></div>
+      <p class="caption">João Lorenzo · Renato · Rafael · Gustavo</p>
+    </section>
+  </main>
+  <script>
+    const sections=[...document.querySelectorAll('.slide')];
+    const links=[...document.querySelectorAll('.rail nav a')];
+    const bar=document.getElementById('progressBar');
+    const update=()=>{const max=document.documentElement.scrollHeight-innerHeight;bar.style.width=(max>0?Math.min(100,Math.max(0,scrollY/max*100)):100)+'%';let current=sections[0];for(const section of sections){if(section.getBoundingClientRect().top<innerHeight*.46)current=section}links.forEach(link=>{const active=link.hash==='#'+current.id;link.classList.toggle('active',active);active?link.setAttribute('aria-current','location'):link.removeAttribute('aria-current')})};
+    addEventListener('scroll',update,{passive:true});addEventListener('resize',update);update();
+    addEventListener('keydown',event=>{if(event.target.closest('button,input,textarea,[contenteditable]'))return;const active=sections.findIndex(section=>section.getBoundingClientRect().bottom>innerHeight*.45);if(event.key==='ArrowDown'||event.key==='PageDown'){event.preventDefault();sections[Math.min(sections.length-1,active+1)].scrollIntoView()}if(event.key==='ArrowUp'||event.key==='PageUp'){event.preventDefault();sections[Math.max(0,active-1)].scrollIntoView()}});
+    document.getElementById('fullScreen').addEventListener('click',()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen?.());
+  </script>
+</body>
+</html>

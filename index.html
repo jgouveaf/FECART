@@ -1,7 +1,8 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" translate="no">
 <head>
   <meta charset="utf-8">
+  <meta name="google" content="notranslate">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#17324d">
   <meta name="application-version" content="2.1.0">
@@ -10,14 +11,11 @@
   <title>Quantum Tracker — Painel Web</title>
   <script>
     (() => {
-      const publicSiteUrl = "https://jgouveaf.github.io/FECART/copia3/";
+      const publicSiteUrl = "https://jgouveaf.github.io/FECART/";
       const runningFromFile = window.location.protocol === "file:";
       window.QuantumRuntime = Object.freeze({ publicSiteUrl, runningFromFile });
-      const runningOnFormerPublicRoot = window.location.hostname === "jgouveaf.github.io"
-        && window.location.pathname.replace(/\/+$/, "") === "/FECART";
-      if (runningFromFile || runningOnFormerPublicRoot) {
+      if (runningFromFile) {
         const destination = new URL(publicSiteUrl);
-        destination.search = window.location.search;
         destination.hash = window.location.hash;
         window.location.replace(destination.href);
       }
@@ -35,11 +33,14 @@
       // Sem localStorage disponível: libera o painel em vez de travar o acesso.
     }
   </script>
-  <link rel="stylesheet" href="web/styles.css?v=22">
-  <link rel="stylesheet" href="web/person-follow.css?v=4">
+  <link rel="stylesheet" href="web/styles.css?v=23">
+  <link rel="stylesheet" href="web/person-follow.css?v=5">
   <link rel="stylesheet" href="web/interface-tools.css?v=2">
   <link rel="stylesheet" href="web/operation-layout.css?v=1">
   <link rel="stylesheet" href="web/simulator-3d.css?v=3">
+  <link rel="stylesheet" href="web/jarvis-panel.css?v=1">
+  <link rel="stylesheet" href="web/voice-control.css?v=3">
+  <link rel="stylesheet" href="web/visual-refresh.css?v=1">
   <script src="web/interface-tools.js?v=2" defer></script>
 </head>
 <body>
@@ -55,6 +56,8 @@
         <span class="nav-group-label">Operação</span>
         <a class="nav-link active" href="#camera-gestos" data-section="camera-gestos"><span aria-hidden="true">◉</span> Controle do carrinho</a>
         <a class="nav-link" href="#simulador" data-section="simulador"><span aria-hidden="true">◇</span> Simulador e testes</a>
+        <a class="nav-link" href="#voz" data-section="voz"><span aria-hidden="true">◉</span> Comandos de voz</a>
+        <a class="nav-link" href="#jarvis" data-section="jarvis"><span aria-hidden="true">◉</span> Conversar com JARVIS</a>
         <span class="nav-group-label">Preparação</span>
         <a class="nav-link" href="#guia" data-section="guia"><span aria-hidden="true">?</span> Guia rápido</a>
         <a class="nav-link" href="#codigos" data-section="codigos"><span aria-hidden="true">⌘</span> Firmware e código</a>
@@ -74,11 +77,12 @@
       <header class="topbar">
         <button class="menu-button" id="menuButton" aria-label="Abrir menu" aria-controls="sidebarNavigation" aria-expanded="false">☰</button>
         <div>
-          <p class="eyebrow">FECART · TESTE 1.0</p>
+          <p class="eyebrow">FECART · Robótica aplicada</p>
           <h1>Centro de controle</h1>
         </div>
         <div class="top-actions">
           <span class="pill mission-pill" role="status" aria-live="polite"><span class="status-dot idle"></span><span id="overallModeStatus">AUTÔNOMO</span></span>
+          <a class="icon-button" href="apresentacao.html?v=3" target="_blank" rel="noopener" aria-label="Abrir apresentação do projeto" title="Apresentação do projeto">▣</a>
           <a class="icon-button" href="https://github.com/jgouveaf/FECART" target="_blank" rel="noreferrer" aria-label="Abrir código no GitHub">↗</a>
         </div>
       </header>
@@ -88,14 +92,13 @@
         <article class="hero-card">
           <div>
             <span class="section-tag">Projeto FECART</span>
-            <h2>Operação, testes e controle do robô.</h2>
-            <p>Um ambiente único para preparar o Arduino, testar a lógica e acompanhar câmera, sensor e comandos durante a operação.</p>
+            <h2>Acompanhe o robô em tempo real.</h2>
+            <p>Conecte o Arduino, escolha um modo e acompanhe câmera, sensor e comandos no mesmo painel.</p>
           </div>
           <div class="hero-actions">
             <a class="primary-button" href="#camera-gestos">Abrir controle <span>→</span></a>
             <a class="secondary-button" href="#codigos">Preparar Arduino</a>
           </div>
-          <div class="orb" aria-hidden="true"><span></span><span></span><span></span></div>
         </article>
 
       </section>
@@ -124,6 +127,7 @@
             <button class="robot-mode active" data-robot-mode="1" role="radio" aria-checked="true"><b>1</b><span><strong>Autônomo</strong><small>Anda sempre e desvia pelo HC-SR04.</small></span></button>
             <button class="robot-mode" data-robot-mode="2" role="radio" aria-checked="false"><b>2</b><span><strong>Seguir pessoa</strong><small>Segue o rosto visível; sem imagem, para.</small></span></button>
             <button class="robot-mode" data-robot-mode="3" role="radio" aria-checked="false"><b>3</b><span><strong>Gestos</strong><small>1 frente · 2 direita · 3 esquerda · 4 ré · 5 gira. Sem gesto: para.</small></span></button>
+            <button class="robot-mode" data-robot-mode="4" role="radio" aria-checked="false"><b>4</b><span><strong>Voz</strong><small>Diga frente, trás, direita, esquerda, girar ou parar. Cada ação dura 0,8 s.</small></span></button>
           </div>
           <div class="robot-telemetry" aria-live="polite">
             <div><small>Modo</small><strong id="robotModeStatus">AUTÔNOMO</strong></div>
@@ -135,7 +139,7 @@
             <div><small>Modo operacional</small><strong id="missionModeStatus">AUTÔNOMO</strong></div>
             <div><small>Alvo atual</small><strong id="overallTargetStatus">NENHUM</strong></div>
             <div><small>Obstáculo</small><strong id="overallObstacleStatus">DESCONHECIDO</strong></div>
-            <div><small>Prioridade</small><strong>EMERGÊNCIA › SENSOR › MODO</strong></div>
+            <div><small>Prioridade</small><strong>EMERGÊNCIA › SEGURANÇA › MODO</strong></div>
           </div>
         </div>
         <div class="system-status-grid" aria-label="Estado geral da operação">
@@ -191,7 +195,7 @@
               <div data-fingers="2"><b>2</b><span>Direita</span></div>
               <div data-fingers="3"><b>3</b><span>Esquerda</span></div>
               <div data-fingers="4"><b>4</b><span>Ré</span></div>
-              <div data-fingers="5"><b>5</b><span>Girar</span></div>
+              <div data-fingers="5"><b>5</b><span>Parar</span></div>
             </div>
             <p class="section-description">Retire a mão ou feche os dedos para parar. A ré não tem sensor traseiro: mantenha o caminho livre.</p>
             <div class="finger-diagnostics" aria-label="Diagnóstico individual dos dedos">
@@ -354,7 +358,7 @@
 
       <section id="simulador" class="page-section panel simulator-panel">
         <div class="section-heading">
-          <div><span class="section-tag">Explore pelo olhar do robô</span><h2>Laboratório 3D</h2><p>Um cenário fixo com pessoas, obstáculos e os três modos. Entre no robô ou acompanhe o trajeto por fora.</p></div>
+          <div><span class="section-tag">Explore pelo olhar do robô</span><h2>Laboratório 3D</h2><p>Um cenário fixo com pessoas, obstáculos e quatro modos. Entre no robô ou acompanhe o trajeto por fora.</p></div>
           <div class="controls">
             <button class="secondary-button" id="toggleSimulation" type="button">Pausar</button>
             <button class="primary-button compact" id="resetSimulation" type="button">Reiniciar</button>
@@ -368,19 +372,20 @@
               <button class="test-target" id="testTargetArduino" type="button" aria-pressed="false">Arduino real</button>
               <button class="secondary-button compact" id="testConnectArduino" type="button" hidden>Conectar Arduino</button>
             </div>
-            <small id="testTargetStatus" role="status" aria-live="polite">Somente a prévia virtual receberá os comandos.</small>
+            <small id="testTargetStatus" role="status" aria-live="polite">SIMULADOR selecionado: os botões deste teste não enviam comandos aos motores reais.</small>
           </div>
           <div class="simulator-mode-switch" role="group" aria-label="Modo do teste">
             <button class="simulator-mode active" id="simAutonomousMode" type="button" aria-pressed="true">Autônomo</button>
             <button class="simulator-mode" id="simFollowMode" type="button" aria-pressed="false">Seguir pessoa</button>
             <button class="simulator-mode" id="simGestureMode" type="button" aria-pressed="false">Testar gestos</button>
+            <button class="simulator-mode" id="simVoiceMode" type="button" aria-pressed="false">Testar voz</button>
           </div>
           <div class="simulator-command-pad" role="group" aria-label="Comandos de teste">
             <button type="button" data-simulator-command="FRENTE">1 · Frente</button>
             <button type="button" data-simulator-command="DIREITA">2 · Direita</button>
             <button type="button" data-simulator-command="ESQUERDA">3 · Esquerda</button>
             <button type="button" data-simulator-command="TRAS">4 · Ré</button>
-            <button type="button" data-simulator-command="GIRAR">5 · Girar</button>
+            <button type="button" data-simulator-command="PARAR">5 · Parar</button>
             <button type="button" data-simulator-command="PARAR">Parar · Espaço</button>
           </div>
           <small id="simulatorHint" role="status" aria-live="polite">Autônomo ativo · o sensor virtual desvia dos obstáculos. Teclado: 1–5 ou setas.</small>
@@ -423,7 +428,7 @@
 
       <section id="codigos" class="page-section panel code-panel">
         <div class="section-heading">
-          <div><span class="section-tag">Arduino UNO · teste temporário</span><h2>Firmware · teste de potência</h2><p>Potências iguais: 200/200 nos modos 1 e 3; 170/170 no seguimento, mantendo os fios atuais e os jumpers ENA/ENB. Ao ligar ou reiniciar, aguarda a liberação da emergência. Ainda requer teste no carrinho.</p></div>
+          <div><span class="section-tag">Arduino UNO · terceira cópia</span><h2>Firmware · quatro modos</h2><p>Potência base 200 em cada roda nos quatro modos, com curva suave no Modo 2 e comando de voz no Modo 4. Mantém os fios atuais e os jumpers ENA/ENB. Ao ligar ou reiniciar, aguarda a liberação da emergência. A nova potência ainda precisa de teste físico.</p></div>
         </div>
         <div class="firmware-workflow" aria-label="Como preparar e conectar o Arduino">
           <article><b>01</b><div><strong>Conectar o UNO</strong><small>Use Chrome ou Edge e feche o Arduino IDE.</small></div></article>
@@ -433,13 +438,13 @@
         </div>
         <div class="firmware-assurance" role="note">
           <span aria-hidden="true">✓</span>
-          <div><strong>O firmware oficial pode ser instalado diretamente pelo site.</strong><small>O gravador usa o bootloader STK500v1 do Arduino UNO. Depois, mantenha o site e o cabo USB conectados para operar os três modos.</small></div>
+          <div><strong>O firmware oficial pode ser instalado diretamente pelo site.</strong><small>O gravador usa o bootloader STK500v1 do Arduino UNO. Depois, mantenha o site e o cabo USB conectados para operar os quatro modos.</small></div>
         </div>
         <div class="firmware-flasher" id="firmwareFlasher">
           <div class="firmware-flasher-copy">
             <span class="section-tag">Instalação USB direta</span>
             <h3>Gravar teste de potência no Arduino UNO</h3>
-            <p>Instala potência 200/200 e seguimento lento 170/170 na V7. Não remova os jumpers ENA/ENB e não conecte D9/D10. Desligue a alimentação dos motores durante a gravação e feche o Arduino IDE. Depois, teste primeiro com as rodas suspensas.</p>
+            <p>Instala potência 200/200 nos quatro modos da V7. Não remova os jumpers ENA/ENB e não conecte D9/D10. Desligue a alimentação dos motores durante a gravação e feche o Arduino IDE. Depois, teste primeiro com as rodas suspensas.</p>
             <p>Se o teste piorar o movimento, <a href="firmware/backup_antes_pwm/backup_antes_pwm.ino" download>baixe o código anterior</a> e grave novamente pela IDE do Arduino. A ligação continua igual.</p>
           </div>
           <button class="primary-button" id="flashOfficialFirmware" type="button">Gravar no Arduino UNO</button>
@@ -512,7 +517,7 @@
             <div class="config-field" data-finger="2"><label for="gestureMap2">2 dedos</label><select id="gestureMap2"></select></div>
             <div class="config-field" data-finger="3"><label for="gestureMap3">3 dedos</label><select id="gestureMap3"></select></div>
             <div class="config-field" data-finger="4"><label for="gestureMap4">4 dedos</label><select id="gestureMap4"></select></div>
-            <div class="config-field" data-finger="5"><label for="gestureMap5">5 dedos</label><select id="gestureMap5"></select></div>
+            <div class="config-field" data-finger="5"><label for="gestureMap5">5 dedos · parada fixa</label><select id="gestureMap5" disabled><option value="PARAR">PARAR</option></select></div>
           </div>
           <div class="config-card">
             <h4>Detecção de gestos</h4>
@@ -526,6 +531,46 @@
           <button class="primary-button compact" id="saveConfig">Salvar configurações</button>
         </div>
         <p class="config-status" id="configStatus" role="status" aria-live="polite">Usando valores padrão.</p>
+      </section>
+
+      <section id="voz" class="page-section panel voice-panel" aria-labelledby="voiceTitle">
+        <div class="section-heading">
+          <div><span class="section-tag">Modo 4 · comando por fala</span><h2 id="voiceTitle">Controle por voz</h2>
+            <p>Para o robô real, selecione o Modo 4, conecte o Arduino e libere a emergência. Para praticar sem motores, escolha “Testar voz” no simulador. Inicie a escuta e diga um comando de cada vez. Cada movimento dura no máximo 0,8 s; “parar” interrompe imediatamente.</p></div>
+        </div>
+        <div class="voice-actions">
+          <label for="voiceMicSelect">Entrada de áudio
+            <select id="voiceMicSelect" aria-label="Microfone para comandos de voz">
+              <option value="">Microfone padrão do navegador</option>
+            </select>
+          </label>
+          <button id="voiceStart" type="button">Iniciar escuta</button>
+          <button id="voiceStop" type="button" disabled>Desligar escuta e parar</button>
+        </div>
+        <div class="voice-readout" aria-live="polite">
+          <div><small>Microfone</small><strong id="voiceStatus">Inicie a escuta para testar o microfone.</strong></div>
+          <div><small>Sinal de áudio</small><strong id="voiceAudio">Aguardando início da escuta.</strong></div>
+          <div><small>Ouvindo agora</small><strong id="voiceInterim">—</strong></div>
+          <div><small>Última frase completa</small><strong id="voiceTranscript">—</strong></div>
+          <div><small>Comando interpretado</small><strong id="voiceCommand">PARAR</strong></div>
+          <div><small>Destino</small><strong id="voiceTarget">—</strong></div>
+          <div><small>Entrega</small><strong id="voiceDelivery">Nenhum comando enviado.</strong></div>
+        </div>
+        <p>No site online, o Modo 4 usa o reconhecimento de fala do navegador, quando disponível. Autorize o microfone e use Chrome ou Edge. Para a transcrição Vosk local, abra a cópia instalada no PC. Se o sinal ficar em 0,0%, confira a entrada de áudio selecionada.</p>
+      </section>
+
+      <section id="jarvis" class="page-section panel jarvis-panel" aria-labelledby="jarvisTitle">
+        <div class="section-heading">
+          <div><span class="section-tag">Assistente local</span><h2 id="jarvisTitle">Conversar com JARVIS</h2>
+            <p>O JARVIS é um aplicativo do computador. Para conversar com ele, abra a integração da cópia local pelo link abaixo. O site online continua disponível com o computador desligado.</p></div>
+        </div>
+        <div class="jarvis-actions">
+          <button id="jarvisConnect" type="button">Verificando JARVIS…</button>
+          <a id="jarvisExternal" href="http://127.0.0.1:8002/login" target="_blank" rel="noopener noreferrer" hidden>Abrir JARVIS em outra aba</a>
+        </div>
+        <p id="jarvisStatus" role="status" aria-live="polite">Verificando o JARVIS local…</p>
+        <p id="jarvisHint">Inicie o aplicativo JARVIS e ative “Remote Control” nele. Use a chave temporária exibida no aplicativo para entrar.</p>
+        <iframe id="jarvisFrame" title="Conversa com o JARVIS" allow="microphone" referrerpolicy="no-referrer"></iframe>
       </section>
 
       <section id="diagnostico" class="page-section panel diagnostic-panel">
@@ -556,18 +601,21 @@
       </div>
     </main>
   </div>
-  <script src="web/user-config.js?v=4" defer></script>
+  <script src="web/user-config.js?v=5" defer></script>
   <script src="web/auth-gate.js?v=2" defer></script>
-  <script src="web/control-state.js?v=1" defer></script>
-  <script src="web/arduino-codes.js?v=20" defer></script>
-  <script src="web/simulator-controller.js?v=3" defer></script>
-  <script src="web/simulator-world.js?v=7" defer></script>
+  <script src="web/control-state.js?v=2" defer></script>
+  <script src="web/arduino-codes.js?v=26" defer></script>
+  <script src="web/simulator-controller.js?v=4" defer></script>
+  <script src="web/simulator-world.js?v=8" defer></script>
   <script src="web/simulator-3d.js?v=7" defer></script>
   <script src="web/code-editor-utils.js?v=1" defer></script>
-  <script src="web/app.js?v=21" defer></script>
-  <script type="module" src="web/arduino-flasher.js?v=14"></script>
-  <script src="web/camera-controller.js?v=2" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
-  <script src="web/robot-control.js?v=25" defer></script>
+  <script src="web/app.js?v=25" defer></script>
+  <script type="module" src="web/arduino-flasher.js?v=20"></script>
+  <script src="web/camera-controller.js?v=3" defer onerror="document.getElementById('cameraStatus').textContent='FALHA AO CARREGAR CONTROLE';document.getElementById('cameraPlaceholderTitle').textContent='Controle da câmera não carregou';document.getElementById('cameraPlaceholderHint').textContent='Atualize a página com Ctrl+F5 ou abra o link no Chrome/Edge.'"></script>
+  <script src="web/robot-control.js?v=31" defer></script>
+  <script src="web/voice-command-math.js?v=1" defer></script>
+  <script src="web/voice-local.js?v=4" defer></script>
+  <script src="web/voice-control.js?v=4" defer></script>
   <script src="web/face-quality.js?v=1" defer></script>
   <script src="web/face-processing.js?v=5" defer></script>
   <script src="web/vision-scheduler.js?v=1" defer></script>
@@ -579,9 +627,10 @@
   <script src="web/gesture-math.js?v=8" defer></script>
   <script src="web/gesture-calibration.js?v=1" defer></script>
   <script src="web/person-appearance.js?v=2" defer></script>
-  <script src="web/person-follow-math.js?v=12" defer></script>
-  <script src="web/person-follow.js?v=14" defer></script>
-  <script src="web/face-identities.js?v=26" defer></script>
-  <script src="web/camera-gestures.js?v=19" defer></script>
+  <script src="web/person-follow-math.js?v=15" defer></script>
+  <script src="web/person-follow.js?v=15" defer></script>
+  <script src="web/jarvis-panel.js?v=pages1" defer></script>
+  <script src="web/face-identities.js?v=27" defer></script>
+  <script src="web/camera-gestures.js?v=20" defer></script>
 </body>
 </html>

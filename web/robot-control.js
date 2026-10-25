@@ -26,8 +26,9 @@
     return;
   }
 
-  const MODE_NAMES = Object.freeze({ 1: "AUTÔNOMO", 2: "SEGUIR PESSOA", 3: "GESTOS" });
-  const VALID_COMMANDS = new Set(["FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]);
+  const MODE_NAMES = Object.freeze({ 1: "AUTÔNOMO", 2: "SEGUIR PESSOA", 3: "GESTOS", 4: "VOZ" });
+  const VALID_COMMANDS = new Set(["FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR", "GIRAR",
+    "FRENTE_DIREITA", "FRENTE_ESQUERDA"]);
   const COMMAND_HEARTBEAT_MS = Number(testConfig.commandHeartbeatMs) || 500;
   const INPUT_TIMEOUT_MS = Number(testConfig.inputTimeoutMs) || 900;
   const SERIAL_SILENCE_TIMEOUT_MS = Number(testConfig.serialSilenceTimeoutMs) || 2200;
@@ -40,6 +41,7 @@
   const MAX_RECOVERABLE_READ_ERRORS = Number(testConfig.maxRecoverableReadErrors) || 2;
   const OBSTACLE_DISTANCE_CM = 5;
   const REQUIRED_FIRMWARE_READY = "QT:READY:V7";
+  const matchesOfficialPwm = (line) => /^QT:PWM\|L:200\|R:200\|/.test(String(line || ""));
 
   let port = null;
   let reader = null;
@@ -330,7 +332,7 @@
     const firmwareMode = Number(values.MODE);
     const distance = values.DIST === "ERR" ? null : Number(values.DIST);
     const firmwareState = values.STATE?.replaceAll("_", " ") || "SEM ESTADO";
-    if (Number.isInteger(firmwareMode) && firmwareMode >= 1 && firmwareMode <= 3) {
+    if (Number.isInteger(firmwareMode) && firmwareMode >= 1 && firmwareMode <= 4) {
       if (modeStatus && !modeTransitioning) modeStatus.textContent = MODE_NAMES[firmwareMode];
       if (connected && !modeTransitioning && firmwareMode !== activeMode) {
         confirmedMode = firmwareMode;
@@ -340,6 +342,13 @@
       }
     }
     if (distanceStatus) distanceStatus.textContent = distance === null || !Number.isFinite(distance) ? "SEM ECO" : `${distance.toFixed(1)} cm`;
+    if (connected && connectionHint) {
+      if (firmwareMode === 1 && distance === null) {
+        connectionHint.textContent = "HC-SR04 sem eco: o Modo 1 não avança até receber distância válida. Modos 2, 3 e 4 não dependem desse sensor.";
+      } else if (connectionHint.textContent.startsWith("HC-SR04 sem eco:")) {
+        connectionHint.textContent = `Arduino em ${MODE_NAMES[firmwareMode] || "modo desconhecido"}; comandos confirmados por ACK, movimento físico não medido.`;
+      }
+    }
     if (values.CMD && commandStatus) commandStatus.textContent = values.CMD;
     if (stateStatus) stateStatus.textContent = firmwareState;
     if (values.STATE === "ESTOP") setEmergencyUi(true, "ESTOP", emergencyOwner || "firmware");
@@ -478,6 +487,14 @@
       await transact("CMD:PARAR", (line) => line === "OK:CMD:PARAR", { connectionToken, operationToken });
       desiredMode = Number(control?.state?.mode?.id) || activeMode;
       await transact(`MODE:${desiredMode}`, (line) => line === `OK:MODE:${desiredMode}`, { connectionToken, operationToken });
+      const pwmLine = await transact("DIAG", (line) => line.startsWith("QT:PWM|"), {
+        connectionToken, operationToken, label: "potência do firmware",
+      });
+      if (!matchesOfficialPwm(pwmLine)) {
+        throw Object.assign(new Error(`Potência inesperada: ${pwmLine}`), {
+          code: "FIRMWARE_POWER_MISMATCH", receivedLine: pwmLine,
+        });
+      }
     } catch (error) {
       if (error.code === "SERIAL_RESPONSE_TIMEOUT") error.code = "FIRMWARE_ACK_TIMEOUT";
       throw error;
@@ -502,6 +519,10 @@
     const name = String(error?.name || "");
     const message = String(error?.message || "");
     const normalized = message.toLowerCase();
+    if (error?.code === "FIRMWARE_POWER_MISMATCH") {
+      return { label: "FIRMWARE DE TESTE DETECTADO", status: "ERROR", firmwareRecovery: true,
+        hint: `O Arduino usa potências diferentes da terceira cópia (${error.receivedLine || "DIAG"}). Motores mantidos em ESTOP. Após o teste físico, desligue a alimentação dos motores e grave o firmware desta cópia pela aba Códigos.` };
+    }
     if (error?.code === "STANDALONE_FIRMWARE") {
       return { label: "CÓDIGO AUTÔNOMO SEPARADO", status: "ERROR", firmwareRecovery: true,
         hint: "O UNO respondeu com o código autônomo de teste, que não recebe os gestos deste painel. Desligue a alimentação dos motores e instale o firmware oficial na aba Códigos; depois reconecte. Não conte com a parada deste painel nessa versão." };
@@ -747,6 +768,7 @@
   }
 
   let lastInputBlock = "";
+  let lastInputReason = "";
   function mayAcceptInput(expectedMode, detail) {
     const centralMode = control?.state?.mode;
     const reason = !connected ? "Arduino desconectado"
@@ -756,7 +778,8 @@
       : activeMode !== expectedMode ? `selecione o Modo ${expectedMode}`
       : confirmedMode !== expectedMode ? "modo não confirmado pelo Arduino"
       : centralMode && (centralMode.phase !== "ACTIVE" || Number(centralMode.id) !== expectedMode) ? "modo do painel não sincronizado"
-      : !eventIsFresh(detail) ? "leitura da câmera antiga ou de uma operação anterior" : "";
+      : !eventIsFresh(detail) ? "comando antigo ou de uma operação anterior" : "";
+    lastInputReason = reason;
     if (reason && detail?.command && detail.command !== "PARAR") {
       const key = `${expectedMode}:${reason}`;
       if (lastInputBlock !== key) log("WARNING", "ENVIO", `${detail.command} reconhecido, mas não enviado: ${reason}`);
@@ -791,11 +814,17 @@
       lastAcknowledgedCommand = command;
       if (commandStatus) commandStatus.textContent = command;
       if (activeMode === 3) updateDeliveryHint();
+      if (activeMode === 4) window.dispatchEvent(new CustomEvent("quantum:voice-delivery", {
+        detail: { command, text: `${command}: recebido pelo Arduino (ACK). Movimento físico não medido.` },
+      }));
       return true;
     }).catch((error) => {
       if (error?.name === "AbortError") return false;
       consecutiveMotionFailures += 1;
       reportError(`Arduino não confirmou CMD:${command} (${consecutiveMotionFailures}/2)`, error);
+      if (activeMode === 4) window.dispatchEvent(new CustomEvent("quantum:voice-delivery", {
+        detail: { command, text: `${command}: Arduino não confirmou o recebimento. Motores bloqueados por segurança.` },
+      }));
       if (consecutiveMotionFailures >= 2) failClosed("Dois comandos de movimento ficaram sem confirmação do Arduino.");
       return false;
     }).finally(() => {
@@ -876,7 +905,7 @@
         setEmergencyUi(false, MODE_NAMES[activeMode]);
         lastIntent = activeMode === 1 ? "FRENTE" : "PARAR";
         consecutiveMotionFailures = 0;
-        setConnection("CONECTADO", "ONLINE", `${MODE_NAMES[activeMode]} liberado pelo operador. O HC-SR04 continua soberano.`);
+        setConnection("CONECTADO", "ONLINE", `${MODE_NAMES[activeMode]} liberado pelo operador. ${activeMode === 1 ? "O HC-SR04 protege o autônomo." : "Comandos remotos exigem entrada recente."}`);
         log("WARNING", "SEGURANÇA", "Parada de emergência liberada explicitamente pelo operador");
       }
     } catch (error) {
@@ -979,11 +1008,32 @@
     acceptIntent(command, "gesture", { fresh: true });
   });
 
+  window.addEventListener("quantum:voice-command", (event) => {
+    const detail = event.detail || {};
+    if (detail.simulatorOnly === true) return;
+    const command = String(detail.command || "PARAR").toUpperCase();
+    if (!mayAcceptInput(4, detail)) {
+      window.dispatchEvent(new CustomEvent("quantum:voice-delivery", {
+        detail: { command, text: `${command}: bloqueado — ${lastInputReason}.` },
+      }));
+      return;
+    }
+    if (!VALID_COMMANDS.has(command)) return;
+    const accepted = acceptIntent(command, "voice", { fresh: true });
+    window.dispatchEvent(new CustomEvent("quantum:voice-delivery", {
+      detail: { command, text: accepted ? `${command}: envio solicitado; aguardando ACK do Arduino.`
+        : `${command}: bloqueado — conexão ou emergência indisponível.` },
+    }));
+  });
+
   window.addEventListener("quantum:person-tracking", (event) => {
     const detail = event.detail || {};
     if (!mayAcceptInput(2, detail)) return;
     if (detail.visible && Number.isFinite(Number(detail.confidence)) && Number(detail.confidence) < 0.45) return;
-    acceptIntent(detail.visible ? detail.command : "PARAR", "face", { fresh: true });
+    // Somente o Modo 2 pode receber a busca lateral limitada do PersonFollower.
+    // Qualquer outra perda de imagem continua obrigando PARAR.
+    const directionalSearch = detail.searching === true && ["ESQUERDA", "DIREITA"].includes(detail.command);
+    acceptIntent(detail.visible || directionalSearch ? detail.command : "PARAR", "face", { fresh: true });
   });
 
   const heartbeatTimer = window.setInterval(watchdogTick, COMMAND_HEARTBEAT_MS);
@@ -1019,7 +1069,7 @@
     ++modeGeneration;
     lastIntent = "PARAR";
     lastFreshInputAt = 0;
-    // Fechar a página não cancela o autônomo local. Modos 2 e 3 dependem do
+    // Fechar a página não cancela o autônomo local. Modos 2, 3 e 4 dependem do
     // computador e continuam entrando em ESTOP quando a página é encerrada.
     if (activeMode !== 1 && transportOpen && writer) writer.write(new TextEncoder().encode("ESTOP\n")).catch(() => {});
     window.clearInterval(heartbeatTimer);
@@ -1244,6 +1294,7 @@
       watchdogTick,
       parseTelemetry,
       describeConnectionError,
+      matchesOfficialPwm,
       eventIsFresh,
       get lastFreshInputAt() { return lastFreshInputAt; },
       get lastSerialRxAt() { return lastSerialRxAt; },

@@ -1382,3 +1382,14 @@ h2 {
   .hero-card { min-height: 0; padding: 26px 22px; }
   .panel { padding: 17px; border-radius: 6px; }
 }
+
+.test-target-row > #testTargetStatus {
+  display: block;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0b1b2b;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}

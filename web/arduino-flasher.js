@@ -6,9 +6,9 @@ const button = document.getElementById("flashOfficialFirmware");
 const panel = document.getElementById("firmwareFlasher");
 const progress = document.getElementById("firmwareFlashProgress");
 const status = document.getElementById("firmwareFlashStatus");
-const FIRMWARE_URL = new URL("../firmware/compiled/quantum_tracker_arduino.ino.hex", import.meta.url);
+const FIRMWARE_URL = new URL("../firmware/compiled/quantum_tracker_arduino.ino.hex?v=mode2-pivot-3", import.meta.url);
 // Hash do conteúdo servido pelo GitHub Pages (Git normaliza o Intel HEX para LF).
-const FIRMWARE_SHA256 = "3b647b5c9174f26a2867d44f7a7e2532064c2f2b8d9598d3874c4cec06b3e3fa";
+const FIRMWARE_SHA256 = "d4660738a9051f8df16164ee1e4768b9d29eaf4d11ee670d53bc4dd4d6354894";
 let busy = false;
 
 function setStatus(state, title, detail, percentage = progress.value) {
@@ -58,7 +58,7 @@ async function flashOfficialFirmware() {
     setStatus("error", "ABRA O SITE HTTPS", "A gravação USB exige o endereço HTTPS oficial do site.", 0);
     return;
   }
-  if (!window.confirm("A alimentação dos motores está desligada e as rodas estão suspensas? Será gravado o TESTE DE POTÊNCIA: 200/200 nos modos 1 e 3; 170/170 no Modo 2. Mantenha os fios atuais e os jumpers ENA/ENB instalados.")) return;
+  if (!window.confirm("A alimentação dos motores está desligada e as rodas estão suspensas? Será gravado o firmware de QUATRO modos: potência base 200/200, curva suave no Modo 2 e voz no Modo 4. Mantenha os fios atuais e os jumpers ENA/ENB instalados.")) return;
 
   busy = true;
   button.disabled = true;

@@ -5,6 +5,7 @@
     1: Object.freeze({ id: 1, key: "AUTONOMOUS", label: "AUTÔNOMO" }),
     2: Object.freeze({ id: 2, key: "PERSON_FOLLOW", label: "SEGUIR PESSOA" }),
     3: Object.freeze({ id: 3, key: "GESTURE_CONTROL", label: "GESTOS" }),
+    4: Object.freeze({ id: 4, key: "VOICE_CONTROL", label: "VOZ" }),
   });
   const MAX_LOGS = 120;
   const listeners = new Set();

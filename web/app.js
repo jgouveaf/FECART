@@ -18,6 +18,7 @@
   const autonomousModeButton = document.getElementById("simAutonomousMode");
   const followModeButton = document.getElementById("simFollowMode");
   const gestureModeButton = document.getElementById("simGestureMode");
+  const voiceModeButton = document.getElementById("simVoiceMode");
   const simulatorCommandButtons = [...document.querySelectorAll("[data-simulator-command]")];
   const testTargetSimulatorButton = document.getElementById("testTargetSimulator");
   const testTargetArduinoButton = document.getElementById("testTargetArduino");
@@ -40,7 +41,10 @@
   let lastSimulatorUiSignature = "";
   let testTarget = "simulator";
 
-  const ROBOT_MODE_BY_SIMULATOR_MODE = Object.freeze({ AUTONOMO: 1, SEGUIR: 2, GESTOS: 3 });
+  const ROBOT_MODE_BY_SIMULATOR_MODE = Object.freeze({ AUTONOMO: 1, SEGUIR: 2, GESTOS: 3, VOZ: 4 });
+  window.QuantumSimulatorVoice = Object.freeze({
+    get active() { return simulatorCommands.snapshot().mode === "VOZ" && testTarget === "simulator"; },
+  });
 
   function robotTestState() {
     const robot = window.quantumRobot;
@@ -63,12 +67,14 @@
     testConnectArduinoButton.hidden = !physical || robotState.connected;
     testEnvironmentValue.textContent = physical ? (robotState.connected ? "ARDUINO USB" : "ARDUINO OFFLINE") : "VIRTUAL";
     testCanvasBadge.textContent = physical ? "PRÉVIA + ARDUINO" : "SIMULAÇÃO ATIVA";
-    if (!physical) testTargetStatus.textContent = "Somente a prévia virtual receberá os comandos.";
+    if (!physical) testTargetStatus.textContent = "SIMULADOR selecionado: os botões deste teste não enviam comandos aos motores reais.";
     else if (!robotState.available) testTargetStatus.textContent = "Controle USB ainda não carregou. Atualize a página.";
     else if (!robotState.connected) testTargetStatus.textContent = "Arduino desconectado. Clique em “Conectar Arduino”.";
     else if (robotState.transitioning) testTargetStatus.textContent = "Arduino conectado · aguardando confirmação da troca de modo.";
     else if (robotState.emergency) testTargetStatus.textContent = "Arduino conectado, mas bloqueado por segurança. Confira as rodas e libere o ESTOP no painel abaixo.";
-    else testTargetStatus.textContent = "Arduino conectado · os botões e o teclado enviam comandos reais por cerca de 1 segundo.";
+    else if (simulatorCommands.snapshot().mode === "AUTONOMO")
+      testTargetStatus.textContent = "ARDUINO REAL selecionado · escolha Autônomo explicitamente e confira o ESTOP antes de mover.";
+    else testTargetStatus.textContent = "ARDUINO REAL selecionado · os botões e o teclado pedem movimento físico por cerca de 1 segundo.";
   }
 
   function setTestTarget(target) {
@@ -77,6 +83,11 @@
     lastSimulatorUiSignature = "";
     renderTestTarget();
     renderSimulatorControls();
+    window.dispatchEvent(new CustomEvent("quantum:simulator-mode-changed", {
+      detail: { mode: simulatorCommands.snapshot().mode, target: testTarget },
+    }));
+    if (target === "arduino" && window.quantumRobot?.connected && simulatorCommands.snapshot().mode !== "AUTONOMO")
+      sendModeToArduino(simulatorCommands.snapshot().mode);
     return true;
   }
 
@@ -95,7 +106,7 @@
   }
 
   function sendCommandToArduino(command, source) {
-    if (testTarget !== "arduino" || source === "GESTO") return true;
+    if (testTarget !== "arduino" || source === "GESTO" || source === "VOZ") return true;
     const robot = window.quantumRobot;
     if (!robot?.connected) {
       renderTestTarget();
@@ -103,8 +114,8 @@
     }
     const accepted = robot.send(command);
     testTargetStatus.textContent = accepted
-      ? `${command} enviado ao Arduino · o comando expira automaticamente se não for repetido.`
-      : `${command} não foi enviado. Confira conexão, modo, sensor e ESTOP.`;
+      ? `${command} solicitado ao Arduino · aguarde o ACK no diagnóstico; o movimento físico não é medido.`
+      : `${command} bloqueado. Confira conexão, confirmação do modo e ESTOP.`;
     return accepted;
   }
 
@@ -117,9 +128,11 @@
     autonomousModeButton.classList.toggle("active", state.mode === "AUTONOMO");
     followModeButton.classList.toggle("active", state.mode === "SEGUIR");
     gestureModeButton.classList.toggle("active", state.mode === "GESTOS");
+    voiceModeButton.classList.toggle("active", state.mode === "VOZ");
     autonomousModeButton.setAttribute("aria-pressed", String(state.mode === "AUTONOMO"));
     followModeButton.setAttribute("aria-pressed", String(state.mode === "SEGUIR"));
     gestureModeButton.setAttribute("aria-pressed", String(state.mode === "GESTOS"));
+    voiceModeButton.setAttribute("aria-pressed", String(state.mode === "VOZ"));
     simulatorCommandButtons.forEach((button) => {
       button.classList.toggle("active", state.mode === "GESTOS" && button.dataset.simulatorCommand === state.command);
       button.disabled = state.mode !== "GESTOS";
@@ -131,6 +144,8 @@
       : state.mode === "SEGUIR"
         ? testTarget === 'simulator' ? 'Segue a pessoa escolhida neste cenário. Se ela sair de vista ou ficar atrás de um obstáculo, para.'
           : "Seguir pessoa · recebe a direção da câmera; sem alvo reconhecido, para."
+      : state.mode === "VOZ"
+        ? `Voz · ${state.command}. Abra “Comandos de voz”, inicie a escuta e diga um comando; cada pulso dura 0,8 s.`
       : state.source === "GESTO"
         ? `Gesto recebido · ${state.command}. Sem gesto novo por 0,9 s, o simulador para.`
         : `${state.source === "TECLADO" ? "Teclado" : "Teste manual"} · ${state.command}. Os gestos da câmera também controlam esta arena.`;
@@ -143,6 +158,7 @@
     renderSimulatorControls();
     scheduleAnimation();
     sendModeToArduino(mode);
+    window.dispatchEvent(new CustomEvent("quantum:simulator-mode-changed", { detail: { mode, target: testTarget } }));
   }
 
   function setSimulatorCommand(command, source = "TESTE") {
@@ -307,6 +323,7 @@
   autonomousModeButton.addEventListener("click", () => setSimulatorMode("AUTONOMO"));
   followModeButton.addEventListener("click", () => setSimulatorMode("SEGUIR"));
   gestureModeButton.addEventListener("click", () => setSimulatorMode("GESTOS"));
+  voiceModeButton.addEventListener("click", () => setSimulatorMode("VOZ"));
   simulatorCommandButtons.forEach((button) => button.addEventListener("click", () => {
     setSimulatorCommand(button.dataset.simulatorCommand, "TESTE");
   }));
@@ -316,7 +333,7 @@
     "3": "ESQUERDA", ArrowLeft: "ESQUERDA", a: "ESQUERDA", A: "ESQUERDA",
     "4": "TRAS", ArrowDown: "TRAS",
     s: "PARAR", S: "PARAR", " ": "PARAR",
-    "5": "GIRAR", g: "GIRAR", G: "GIRAR",
+    "5": "PARAR", g: "GIRAR", G: "GIRAR",
   });
   for (const keyboardArea of [simulatorCommandPanel, document.getElementById('simulationViewport')]) keyboardArea.addEventListener("keydown", (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
@@ -333,13 +350,22 @@
     if (!detail.command || (detail.command !== "PARAR" && detail.stable !== true)) return;
     setSimulatorCommand(detail.command, "GESTO");
   });
+  window.addEventListener("quantum:voice-command", (event) => {
+    if (simulatorCommands.snapshot().mode !== "VOZ") return;
+    setSimulatorCommand(event.detail?.command || "PARAR", "VOZ");
+  });
   window.addEventListener("quantum:person-tracking", (event) => {
     if (testTarget !== 'arduino' || simulatorCommands.snapshot().mode !== "SEGUIR") return;
     const detail = event.detail || {};
     simulatorCommands.setCommand(detail.visible ? detail.command : "PARAR", "ROSTO");
     renderSimulatorControls();
   });
-  window.addEventListener("quantum:state-changed", () => {
+  window.addEventListener("quantum:state-changed", (event) => {
+    if (event.detail?.section === "robot" && !event.detail.previous?.connected
+        && event.detail.current?.robot?.connected && testTarget === "arduino"
+        && simulatorCommands.snapshot().mode !== "AUTONOMO") {
+      queueMicrotask(() => sendModeToArduino(simulatorCommands.snapshot().mode));
+    }
     lastSimulatorUiSignature = "";
     renderTestTarget();
     renderSimulatorControls();
@@ -676,7 +702,7 @@
     if (!saveConfigButton || !resetConfigButton) return;
 
     fingerSelects.forEach((select) => {
-      if (!select) return;
+      if (!select || select.disabled) return;
       configApi.validCommands.forEach((command) => {
         const option = document.createElement("option");
         option.value = command;

@@ -8,10 +8,10 @@
   "use strict";
 
   const STORAGE_KEY = "quantumUserConfig:v1";
-  const VALID_COMMANDS = Object.freeze(["FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR", "GIRAR"]);
+  const VALID_COMMANDS = Object.freeze(["FRENTE", "TRAS", "DIREITA", "ESQUERDA", "PARAR"]);
 
   const DEFAULTS = Object.freeze({
-    gestureMap: Object.freeze({ 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "TRAS", 5: "GIRAR" }),
+    gestureMap: Object.freeze({ 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "TRAS", 5: "PARAR" }),
     minConfidence: 0.65,
     commandCooldownMs: 300,
     unstableStopMs: 500,
@@ -33,6 +33,9 @@
         }
       }
     }
+    // A mão aberta é sempre PARAR. Ignora mapas antigos que enviavam GIRAR
+    // (ou outro movimento) com cinco dedos, inclusive os salvos no navegador.
+    gestureMap[5] = "PARAR";
     return Object.freeze({
       mappingVersion: 2,
       gestureMap: Object.freeze(gestureMap),

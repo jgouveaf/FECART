@@ -2,15 +2,17 @@
   Quantum Tracker - controle integrado
   Arduino UNO + L298N + HC-SR04 + USB Serial
   TESTE TEMPORARIO: PWM por Timer1 nos pinos existentes, sem mudar a ligacao.
-  Potencia 200/200; seguimento lento 170/170. ENA/ENB continuam com jumpers.
+  Potencia base 200/200 nos quatro modos.
+  ENA/ENB continuam com jumpers.
 
   MODOS:
   1 - AUTONOMO: anda sempre e desvia com o HC-SR04.
   2 - SEGUIR: recebe direcao da camera; nesta revisão de teste não usa HC-SR04.
   3 - GESTOS: recebe os gestos; nesta revisão de teste não usa HC-SR04.
+  4 - VOZ: recebe comandos curtos de fala pelo site; não usa HC-SR04.
 
   PROTOCOLO SERIAL (9600 baud, uma linha por comando):
-  MODE:1 | MODE:2 | MODE:3
+  MODE:1 | MODE:2 | MODE:3 | MODE:4
   CMD:FRENTE | CMD:TRAS | CMD:DIREITA | CMD:ESQUERDA | CMD:PARAR | CMD:GIRAR
   HELLO | ESTOP | RESET_ESTOP | PING | STATUS
 
@@ -18,7 +20,7 @@
   - boot/reset fica em ESTOP ate RESET_ESTOP explicito;
   - PARAR no AUTONOMO permanece parado ate RESET_ESTOP;
   - depois de liberado, AUTONOMO funciona localmente, mesmo sem site ou cabo USB;
-  - SEGUIR e GESTOS param se nenhum novo CMD:* chegar por 1,5 s;
+  - SEGUIR, GESTOS e VOZ param se nenhum novo CMD:* chegar por 1,5 s;
   - PING testa o enlace, mas nao renova um comando de movimento antigo;
   - Modo 1 usa a sequencia aprovada em bancada: parar, re e curva suave;
   - curvas de desvio mantem uma roda para frente e a outra parada;
@@ -67,8 +69,9 @@ const unsigned int TEMPO_RE_MS = 400;
 const unsigned int TEMPO_CURVA_MS = 650;
 const byte LEITURAS_CONFIRMACAO = 2;
 
-enum ModoRobo { MODO_AUTONOMO = 1, MODO_SEGUIR = 2, MODO_GESTOS = 3 };
-enum ComandoMovimento { CMD_PARAR, CMD_FRENTE, CMD_TRAS, CMD_DIREITA, CMD_ESQUERDA, CMD_GIRAR };
+enum ModoRobo { MODO_AUTONOMO = 1, MODO_SEGUIR = 2, MODO_GESTOS = 3, MODO_VOZ = 4 };
+enum ComandoMovimento { CMD_PARAR, CMD_FRENTE, CMD_TRAS, CMD_DIREITA, CMD_ESQUERDA, CMD_GIRAR,
+  CMD_FRENTE_DIREITA, CMD_FRENTE_ESQUERDA };
 enum EstadoDesvio {
   DESVIO_INATIVO,
   DESVIO_PAUSA_INICIAL,
@@ -113,16 +116,16 @@ byte saidaIn1 = 255, saidaIn2 = 255, saidaIn3 = 255, saidaIn4 = 255;
 // Somente os quatro bits dos motores sao escritos. Sensor e Serial preservados.
 ISR(TIMER1_OVF_vect) {
   PORTD = (PORTD & ~(MASCARA_ESQUERDA | MASCARA_DIREITA))
-      | (POTENCIA_MOTOR_ESQUERDO ? direcaoPwmEsquerda : 0)
-      | (POTENCIA_MOTOR_DIREITO ? direcaoPwmDireita : 0);
+      | (OCR1A ? direcaoPwmEsquerda : 0)
+      | (OCR1B ? direcaoPwmDireita : 0);
 }
 
 ISR(TIMER1_COMPA_vect) {
-  if (POTENCIA_MOTOR_ESQUERDO < 255) PORTD &= ~MASCARA_ESQUERDA;
+  if (OCR1A < 255) PORTD &= ~MASCARA_ESQUERDA;
 }
 
 ISR(TIMER1_COMPB_vect) {
-  if (POTENCIA_MOTOR_DIREITO < 255) PORTD &= ~MASCARA_DIREITA;
+  if (OCR1B < 255) PORTD &= ~MASCARA_DIREITA;
 }
 
 void iniciarControlePotencia() {
@@ -151,15 +154,14 @@ void atualizarPotenciasMotores() {
   PORTD = (PORTD & ~(MASCARA_ESQUERDA | MASCARA_DIREITA)) | ativos;
 }
 
-void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
-  byte potenciaEsquerda = POTENCIA_MOTOR_ESQUERDO;
-  byte potenciaDireita = POTENCIA_MOTOR_DIREITO;
+void aplicarMotoresComPotencia(bool in1, bool in2, bool in3, bool in4,
+    byte potenciaEsquerda, byte potenciaDireita) {
   if (modo == MODO_SEGUIR) {
-    potenciaEsquerda = 170;
-    potenciaDireita = 170;
-    // Curvas do seguimento mantem ambas as rodas para frente.
-    if (!in1 && in2 && !in3 && !in4) { in4 = HIGH; potenciaDireita = 136; }
-    else if (!in1 && !in2 && !in3 && in4) { in2 = HIGH; potenciaEsquerda = 136; }
+    // Apenas no Modo 2: virar sem avancar quando o alvo sai do centro.
+    // As rodas giram em sentidos opostos; Modos 1 e 3 preservam a curva
+    // original com uma roda parada.
+    if (!in1 && in2 && !in3 && !in4) in3 = HIGH;       // direita
+    else if (!in1 && !in2 && !in3 && in4) in1 = HIGH;  // esquerda
   }
   if (saidaIn1 == in1 && saidaIn2 == in2 && saidaIn3 == in3 && saidaIn4 == in4
       && OCR1A == potenciaEsquerda && OCR1B == potenciaDireita) return;
@@ -185,6 +187,11 @@ void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
   SREG = interrupcoes;
 }
 
+void aplicarMotores(bool in1, bool in2, bool in3, bool in4) {
+  aplicarMotoresComPotencia(in1, in2, in3, in4,
+    POTENCIA_MOTOR_ESQUERDO, POTENCIA_MOTOR_DIREITO);
+}
+
 void pararMotores() {
   aplicarMotores(LOW, LOW, LOW, LOW);
   comandoAplicado = CMD_PARAR;
@@ -193,6 +200,17 @@ void pararMotores() {
 void andarParaFrente() {
   aplicarMotores(LOW, HIGH, LOW, HIGH);
   comandoAplicado = CMD_FRENTE;
+}
+
+void avancarEmCurvaDireita() {
+  // Modo 2: as duas rodas avancam; a roda interna recebe 75% da potencia.
+  aplicarMotoresComPotencia(LOW, HIGH, LOW, HIGH, POTENCIA_MOTOR_ESQUERDO, 150);
+  comandoAplicado = CMD_FRENTE_DIREITA;
+}
+
+void avancarEmCurvaEsquerda() {
+  aplicarMotoresComPotencia(LOW, HIGH, LOW, HIGH, 150, POTENCIA_MOTOR_DIREITO);
+  comandoAplicado = CMD_FRENTE_ESQUERDA;
 }
 
 void andarParaTras() {
@@ -224,6 +242,8 @@ void aplicarComando(ComandoMovimento comando) {
   if (comando == comandoAplicado) return;
   switch (comando) {
     case CMD_FRENTE: andarParaFrente(); break;
+    case CMD_FRENTE_DIREITA: avancarEmCurvaDireita(); break;
+    case CMD_FRENTE_ESQUERDA: avancarEmCurvaEsquerda(); break;
     case CMD_TRAS: andarParaTras(); break;
     case CMD_DIREITA: girarDireita(); break;
     case CMD_ESQUERDA: girarEsquerda(); break;
@@ -298,6 +318,8 @@ bool sensorPronto() {
 
 bool comandoExigeFrenteLivre(ComandoMovimento comando) {
   return comando == CMD_FRENTE
+      || comando == CMD_FRENTE_DIREITA
+      || comando == CMD_FRENTE_ESQUERDA
       || comando == CMD_DIREITA
       || comando == CMD_ESQUERDA
       || comando == CMD_GIRAR;
@@ -393,12 +415,15 @@ void atualizarDesvio(unsigned long agora) {
 const __FlashStringHelper* nomeModo() {
   if (modo == MODO_AUTONOMO) return F("AUTONOMO");
   if (modo == MODO_SEGUIR) return F("SEGUIR");
+  if (modo == MODO_VOZ) return F("VOZ");
   return F("GESTOS");
 }
 
 const __FlashStringHelper* nomeComando(ComandoMovimento comando) {
   switch (comando) {
     case CMD_FRENTE: return F("FRENTE");
+    case CMD_FRENTE_DIREITA: return F("FRENTE_DIREITA");
+    case CMD_FRENTE_ESQUERDA: return F("FRENTE_ESQUERDA");
     case CMD_TRAS: return F("TRAS");
     case CMD_DIREITA: return F("DIREITA");
     case CMD_ESQUERDA: return F("ESQUERDA");
@@ -425,8 +450,32 @@ void enviarStatus(unsigned long agora, bool forcar = false) {
   Serial.println();
 }
 
+// Leitura sob demanda; nao libera emergencia nem renova comando de movimento.
+void enviarDiagnosticoMotores() {
+  const byte interrupcoes = SREG;
+  cli();
+  const byte timerA = TCCR1A, timerB = TCCR1B, timerIrq = TIMSK1;
+  const byte fase = TCNT1, portas = DDRD, niveis = PIND;
+  const byte direcaoE = direcaoPwmEsquerda, direcaoD = direcaoPwmDireita;
+  const unsigned int pwmE = OCR1A, pwmD = OCR1B;
+  SREG = interrupcoes;
+  Serial.print(F("QT:DRIVE:1|MODE:")); Serial.print((byte)modo);
+  Serial.print(F("|CMD:")); Serial.print(nomeComando(comandoAplicado));
+  Serial.print(F("|ESTOP:")); Serial.println(paradaEmergencia ? 1 : 0);
+  Serial.print(F("QT:PWM|L:")); Serial.print(pwmE);
+  Serial.print(F("|R:")); Serial.print(pwmD);
+  Serial.print(F("|DIRL:")); Serial.print(direcaoE);
+  Serial.print(F("|DIRR:")); Serial.println(direcaoD);
+  Serial.print(F("QT:TIMER|A:")); Serial.print(timerA);
+  Serial.print(F("|B:")); Serial.print(timerB);
+  Serial.print(F("|IRQ:")); Serial.print(timerIrq);
+  Serial.print(F("|COUNT:")); Serial.println(fase);
+  Serial.print(F("QT:PINS|DDR:")); Serial.print(portas);
+  Serial.print(F("|LEVEL:")); Serial.println(niveis);
+}
+
 void selecionarModo(byte numero, unsigned long agora) {
-  if (numero < 1 || numero > 3) return;
+  if (numero < 1 || numero > 4) return;
   modo = (ModoRobo)numero;
   comandoRecebido = modo == MODO_AUTONOMO ? CMD_FRENTE : CMD_PARAR;
   ultimoComandoEm = agora;
@@ -437,18 +486,23 @@ void selecionarModo(byte numero, unsigned long agora) {
 
 ComandoMovimento comandoDesejadoPeloModo() {
   // Um unico sketch executa os tres modos. O Arduino sempre resolve o modo
-  // localmente. Apenas SEGUIR e GESTOS exigem concessão viva pela porta USB.
+  // localmente. Os modos 2, 3 e 4 exigem concessao viva pela porta USB.
   switch (modo) {
     case MODO_AUTONOMO:
       return CMD_FRENTE;
     case MODO_SEGUIR:
     case MODO_GESTOS:
+    case MODO_VOZ:
     default:
       return comandoRecebido;
   }
 }
 
 void receberComando(ComandoMovimento comando, unsigned long agora) {
+  if (modo != MODO_SEGUIR && (comando == CMD_FRENTE_DIREITA || comando == CMD_FRENTE_ESQUERDA)) {
+    Serial.println(F("ERRO:CURVA_EXCLUSIVA_MODO_2"));
+    return;
+  }
   comandoRecebido = comando;
   ultimoComandoEm = agora;
   controleUsbAtivo = true;
@@ -467,7 +521,10 @@ void processarLinha(char* linha, unsigned long agora) {
   if (strcmp(linha, "MODE:1") == 0) selecionarModo(1, agora);
   else if (strcmp(linha, "MODE:2") == 0) selecionarModo(2, agora);
   else if (strcmp(linha, "MODE:3") == 0) selecionarModo(3, agora);
+  else if (strcmp(linha, "MODE:4") == 0) selecionarModo(4, agora);
   else if (strcmp(linha, "CMD:FRENTE") == 0) receberComando(CMD_FRENTE, agora);
+  else if (strcmp(linha, "CMD:FRENTE_DIREITA") == 0) receberComando(CMD_FRENTE_DIREITA, agora);
+  else if (strcmp(linha, "CMD:FRENTE_ESQUERDA") == 0) receberComando(CMD_FRENTE_ESQUERDA, agora);
   else if (strcmp(linha, "CMD:TRAS") == 0) receberComando(CMD_TRAS, agora);
   else if (strcmp(linha, "CMD:DIREITA") == 0) receberComando(CMD_DIREITA, agora);
   else if (strcmp(linha, "CMD:ESQUERDA") == 0) receberComando(CMD_ESQUERDA, agora);
@@ -493,6 +550,7 @@ void processarLinha(char* linha, unsigned long agora) {
     // PING confirma apenas o enlace. So CMD:* renova a validade do movimento.
     Serial.println(F("PONG"));
   } else if (strcmp(linha, "STATUS") == 0) enviarStatus(agora, true);
+  else if (strcmp(linha, "DIAG") == 0) enviarDiagnosticoMotores();
   else Serial.println(F("ERRO:COMANDO_INVALIDO"));
 }
 
@@ -567,7 +625,7 @@ void loop() {
     return;
   }
 
-  const bool modoRemoto = modo == MODO_SEGUIR || modo == MODO_GESTOS;
+  const bool modoRemoto = modo == MODO_SEGUIR || modo == MODO_GESTOS || modo == MODO_VOZ;
   if (modoRemoto && (!controleUsbAtivo || agora - ultimoComandoEm > TIMEOUT_COMANDO_MS)) {
     controleUsbAtivo = false;
     comandoRecebido = CMD_PARAR;
@@ -578,7 +636,7 @@ void loop() {
 
   const ComandoMovimento desejado = comandoDesejadoPeloModo();
 
-  // Nos Modos 2 e 3, a câmera é a origem do comando. O HC-SR04 só protege o
+  // Nos Modos 2, 3 e 4, o site é a origem do comando. O HC-SR04 só protege o
   // Modo 1 autônomo e não pode bloquear nem atrasar a condução remota.
   const bool usarSensorNoModo = modo == MODO_AUTONOMO;
   if (usarSensorNoModo && estadoDesvio != DESVIO_INATIVO && !sensorPronto()) {

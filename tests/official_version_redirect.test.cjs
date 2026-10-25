@@ -4,26 +4,17 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const vm = require("node:vm");
 
-test("the public root opens copy 3 as the official version and preserves navigation", () => {
-  const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
-  const source = html.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1];
-  assert.ok(source, "startup redirect script must exist");
+test("the public root contains copy 3 as the official version without redirecting", () => {
+  const root = path.join(__dirname, "..");
+  const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-  let redirectedTo = "";
-  const window = {
-    location: {
-      protocol: "https:",
-      hostname: "jgouveaf.github.io",
-      pathname: "/FECART/",
-      search: "?release=test",
-      hash: "#voz",
-      replace(url) { redirectedTo = url; },
-    },
-  };
-
-  vm.runInNewContext(source, { window, URL });
-  assert.equal(redirectedTo, "https://jgouveaf.github.io/FECART/copia3/?release=test#voz");
-  assert.equal(window.QuantumRuntime.publicSiteUrl, "https://jgouveaf.github.io/FECART/copia3/");
+  assert.match(index, /const publicSiteUrl = "https:\/\/jgouveaf\.github\.io\/FECART\/"/);
+  assert.doesNotMatch(index, /runningOnFormerPublicRoot|location\.replace\([^)]*copia3/);
+  assert.match(index, /Modo 4 · comando por fala/);
+  assert.match(index, /web\/voice-control\.js/);
+  assert.match(index, /web\/jarvis-panel\.js/);
+  assert.ok(fs.existsSync(path.join(root, "web", "voice-control.js")));
+  assert.ok(fs.existsSync(path.join(root, "web", "jarvis-panel.js")));
+  assert.ok(fs.existsSync(path.join(root, "apresentacao.html")));
 });

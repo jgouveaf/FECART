@@ -4,7 +4,7 @@
   'use strict';
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const wrap=v=>Math.atan2(Math.sin(v),Math.cos(v));
-  const NAMES={PARAR:'PARADO',FRENTE:'AVANÇANDO',TRAS:'RECUANDO',DIREITA:'CURVA À DIREITA',ESQUERDA:'CURVA À ESQUERDA',GIRAR:'GIRANDO'};
+  const NAMES={PARAR:'PARADO',FRENTE:'AVANÇANDO',TRAS:'RECUANDO',DIREITA:'CURVA À DIREITA',ESQUERDA:'CURVA À ESQUERDA',GIRAR:'GIRANDO',FRENTE_DIREITA:'AVANÇANDO À DIREITA',FRENTE_ESQUERDA:'AVANÇANDO À ESQUERDA'};
   function rayBox(x,y,dx,dy,box,max=400) {
     let near=0,far=max;
     for(const [p,d,low,high] of [[x,dx,box.x,box.x+box.w],[y,dy,box.y,box.y+box.h]]) {
@@ -147,7 +147,7 @@
     collides(x,y) { return Boolean(this.collisionAt(x,y)); }
     move(command,dt) {
       const r=this.robot,v=r.speed;
-      [r.left,r.right]=({FRENTE:[v,v],TRAS:[-v,-v],DIREITA:[v,0],ESQUERDA:[0,v],GIRAR:[v,-v]})[command]||[0,0];
+      [r.left,r.right]=({FRENTE:[v,v],TRAS:[-v,-v],DIREITA:[v,0],ESQUERDA:[0,v],GIRAR:[v,-v],FRENTE_DIREITA:[v,.75*v],FRENTE_ESQUERDA:[.75*v,v]})[command]||[0,0];
       const linear=(r.left+r.right)/2,omega=(r.left-r.right)/28;
       // Sweep the chassis rather than testing just its final point. It avoids
       // visible tunnelling and leaves the robot outside the colliding object.

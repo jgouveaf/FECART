@@ -24,7 +24,7 @@
   const clearSamplesButton = document.getElementById("clearGestureSamples");
   const calibrationStatus = document.getElementById("gestureCalibrationStatus");
 
-  const defaultCommands = { 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "TRAS", 5: "GIRAR" };
+  const defaultCommands = { 1: "FRENTE", 2: "DIREITA", 3: "ESQUERDA", 4: "TRAS", 5: "PARAR" };
   let userConfig = window.QuantumUserConfig?.get() || null;
   let COMMANDS = Object.freeze(userConfig ? { ...userConfig.gestureMap } : defaultCommands);
   const CONNECTIONS = Object.freeze([

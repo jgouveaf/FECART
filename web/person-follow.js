@@ -10,6 +10,9 @@
     FOLLOWING: "Pessoa identificada", BODY_TRACKING: "Acompanhando o corpo · FaceID sendo atualizado",
     NEAREST_TRACKING: "Teste ativo · seguindo a pessoa mais próxima sem FaceID",
     APPEARANCE_TRACKING: "Alvo mantido pelo corpo e roupa · rosto fora de vista",
+    SEARCHING_LEFT: "Alvo saiu à esquerda · procurando nesse lado",
+    SEARCHING_RIGHT: "Alvo saiu à direita · procurando nesse lado",
+    SEARCH_TIMEOUT: "Busca lateral concluída sem reencontro · robô parado",
     AMBIGUOUS: "Pessoas sobrepostas · confirme o rosto", REIDENTIFY: "Mostre o rosto para confirmar o alvo",
     TARGET_LOST: "Alvo perdido · parado", PREDICTED_STOP: "Posição estimada · robô parado",
     KEEP_DISTANCE: "Distância de parada atingida", SENSOR_WAIT: "Aguardando leitura atual do sensor",
@@ -65,6 +68,7 @@
   // deliberately do not decide movement: the controller and the firmware
   // remain the only authorities for motors and HC-SR04 safety.
   function targetLockState(result) {
+    if (result.searching) return 'TARGET_SEARCHING';
     if (result.prediction || result.dropout) return 'TARGET_TEMPORARILY_LOST';
     return result.visible === true ? 'TARGET_VISIBLE' : 'TARGET_LOST';
   }
@@ -203,7 +207,8 @@
     window.dispatchEvent(new CustomEvent("quantum:person-tracking", { detail: {
       ...output, tracking: result.state, emittedAt: now, modeGeneration: window.quantumRobot?.modeGeneration,
       // Prediction is NEVER presented as visible to the existing USB controller.
-      visible: result.visible === true && !result.prediction, registered: Boolean(follower.id) && !follower.anonymous,
+      visible: result.visible === true && !result.prediction, searching: result.searching === true,
+      registered: Boolean(follower.id) && !follower.anonymous,
     } }));
   }
   function stopped(state) { publish(follower.stop(state)); }

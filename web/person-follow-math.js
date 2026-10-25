@@ -6,6 +6,10 @@
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   const MAX_FRAME_AGE_MS = 600;
   const FACE_DROPOUT_GRACE_MS = 450;
+  // Sem encoder ou IMU, este limite é uma aproximação de uma volta completa,
+  // nunca uma medição física de 360 graus.
+  const SEARCH_LOSS_GRACE_MS = 450;
+  const SEARCH_360_LIMIT_MS = 5000;
   const center = box => box.x + box.width / 2;
   function validBox(b) {
     return b && [b.x, b.y, b.width, b.height].every(Number.isFinite)
@@ -57,6 +61,7 @@
       this.lastSampleAt = -Infinity;
       this.lastFaceSampleAt = -Infinity;
       this.confirmedFrames = 0;
+      this.faceOnlyConfirmed = false;
       this.confirmedSince = null;
       this.confirmedFaceSamples = 0;
       this.confirmedFaceAt = -Infinity;
@@ -65,6 +70,12 @@
       this.command = "PARAR";
       this.steering = 'FRENTE';
       this.turnCycleAt = null;
+      this.depthHeight = null;
+      this.depthAt = null;
+      this.depthSource = null;
+      this.depthDeclines = 0;
+      this.recedingUntil = -Infinity;
+      this.wasAdvancingSide = false;
       this.holdDistance = false;
       this.holdSize = false;
       this.holdFaceSize = false;
@@ -73,11 +84,34 @@
       this.appearanceSamples = 0;
       this.appearanceFaceAt = -Infinity;
       this.reidentifyAfter = -Infinity;
+      this.searchDirection = null;
+      this.searchStartedAt = null;
+      this.searchTimedOut = false;
+      this.searchPending = false;
     }
-    stop(state, extra = {}) {
+    clearSearch() {
+      this.searchDirection = null;
+      this.searchStartedAt = null;
+      this.searchTimedOut = false;
+      this.searchPending = false;
+    }
+    rememberExitSide(value) {
+      if (!Number.isFinite(value)) return;
+      if (value <= .35) this.searchDirection = 'ESQUERDA';
+      else if (value >= .65) this.searchDirection = 'DIREITA';
+      else this.searchDirection = null;
+    }
+    stop(state, extra = {}, preserveSearch = false) {
+      if (!preserveSearch) this.clearSearch();
+      this.faceOnlyConfirmed = false;
       this.command = "PARAR";
       this.steering = 'FRENTE';
       this.turnCycleAt = null;
+      this.depthHeight = null;
+      this.depthAt = null;
+      this.depthDeclines = 0;
+      this.recedingUntil = -Infinity;
+      this.wasAdvancingSide = false;
       return { visible: false, command: "PARAR", state, id: this.id, prediction: null, ...extra };
     }
     invalidate(now, state) {
@@ -85,7 +119,25 @@
       if (Number.isFinite(now)) this.reidentifyAfter = now;
       return this.stop(state);
     }
+    search(now, reason) {
+      const elapsedMs = Math.max(0, now - this.searchStartedAt);
+      if (elapsedMs >= SEARCH_360_LIMIT_MS) {
+        this.searchTimedOut = true;
+        return this.stop('SEARCH_TIMEOUT', { reason, searchDirection: this.searchDirection,
+          searchElapsedMs: elapsedMs, searchLimitMs: SEARCH_360_LIMIT_MS }, true);
+      }
+      this.command = this.searchDirection;
+      return { visible: false, searching: true, command: this.command,
+        state: this.searchDirection === 'ESQUERDA' ? 'SEARCHING_LEFT' : 'SEARCHING_RIGHT',
+        id: this.id, prediction: null, reason, searchDirection: this.searchDirection,
+        searchElapsedMs: elapsedMs, searchLimitMs: SEARCH_360_LIMIT_MS };
+    }
     missing(now, state = "TARGET_LOST", cameraMoving = false) {
+      const hadConfirmedTrack = this.confirmedFrames >= 2 || this.faceOnlyConfirmed;
+      // A primeira imagem vazia chega antes dos 450 ms e zera confirmedFrames.
+      // Guarde somente a elegibilidade de uma perda lateral real e recente.
+      this.searchPending = state === 'TARGET_LOST' && Boolean(this.searchDirection)
+        && (hadConfirmedTrack || this.searchPending || this.searchStartedAt != null);
       this.faceTrack = null;
       this.confirmedFrames = 0;
       this.confirmedSince = null;
@@ -100,7 +152,16 @@
       if (this.identifiedAt != null && Number.isFinite(now)) this.reidentifyAfter = Math.max(this.reidentifyAfter, now);
       this.identifiedAt = null;
       if (age > 500) { this.box = null; this.identifiedAt = null; this.velocity = 0; this.smoothed = null; }
-      return this.stop(prediction ? "PREDICTED_STOP" : state, { prediction, reason: state });
+      // Busca só ocorre para um alvo estabelecido que saiu por uma lateral.
+      // Perda central, imagem atrasada e ambiguidade permanecem em parada.
+      if (this.searchPending && age >= SEARCH_LOSS_GRACE_MS && !this.searchTimedOut) {
+        if (this.searchStartedAt == null) this.searchStartedAt = now;
+        return this.search(now, state);
+      }
+      if (this.searchTimedOut && state === 'TARGET_LOST')
+        return this.stop('SEARCH_TIMEOUT', { reason: state }, true);
+      return this.stop(prediction ? "PREDICTED_STOP" : state,
+        { prediction, reason: state }, this.searchPending);
     }
     holdFaceDropout(now, safety) {
       const track = this.faceTrack;
@@ -176,6 +237,8 @@
           confidence: directFace.confidence, center: track.center, capturedAt: track.at,
           identityAgeMs: now - track.at, appearanceReady: false };
         if (track.samples < 2 || track.at - track.since < 120) return this.stop('CONFIRMING', info);
+        this.seenAt = track.at;
+        this.faceOnlyConfirmed = true;
         return this.decideMotion(info, track.box.height, { requireSensor, distance, sensorAgeMs }, 'FACE_TRACKING');
       }
       // Confidence hysteresis only for an already verified continuous track.
@@ -320,20 +383,54 @@
       return null;
     }
     decideMotion(info, height, safety, state) {
+      // Uma observação válida encerra a busca antes de liberar o seguimento.
+      this.clearSearch();
+      // Use a última posição realmente observada para decidir por qual borda
+      // o alvo saiu; a média suavizada ainda pode indicar a borda anterior.
+      this.rememberExitSide(validBox(info.box || info.faceBox)
+        ? center(info.box || info.faceBox) : info.center);
       const previous = this.steering;
-      if (info.center <= (previous === "ESQUERDA" ? 0.35 : 0.25)) this.steering = "ESQUERDA";
-      else if (info.center >= (previous === "DIREITA" ? 0.65 : 0.75)) this.steering = "DIREITA";
+      if (info.center <= (previous === "ESQUERDA" ? 0.44 : 0.34)) this.steering = "ESQUERDA";
+      else if (info.center >= (previous === "DIREITA" ? 0.56 : 0.66)) this.steering = "DIREITA";
       else this.steering = "FRENTE";
+      // A altura aparente diminui quando o alvo se afasta. Exigimos duas
+      // amostras consecutivas para não confundir oscilações do detector com
+      // movimento. Trocas entre rosto e corpo reiniciam esta estimativa.
+      if (this.depthSource !== state) {
+        this.depthHeight = null;
+        this.depthAt = null;
+        this.depthDeclines = 0;
+        this.recedingUntil = -Infinity;
+        this.depthSource = state;
+      }
+      const depthDt = this.depthAt == null ? 0 : info.capturedAt - this.depthAt;
+      if (this.depthHeight != null && depthDt >= 60 && depthDt <= 500) {
+        const delta = this.depthHeight - height;
+        if (delta >= Math.max(.008, this.depthHeight * .015)) {
+          this.depthDeclines = Math.min(2, this.depthDeclines + 1);
+          if (this.depthDeclines >= 2) this.recedingUntil = info.capturedAt + 700;
+        } else if (delta <= -Math.max(.012, this.depthHeight * .025)) {
+          this.depthDeclines = 0;
+          this.recedingUntil = -Infinity;
+        }
+      } else if (this.depthAt != null && depthDt > 500) {
+        this.depthDeclines = 0;
+        this.recedingUntil = -Infinity;
+      }
+      this.depthHeight = height;
+      this.depthAt = info.capturedAt;
+      const advancingSide = this.steering !== 'FRENTE' && info.capturedAt < this.recedingUntil;
       if (this.steering === 'FRENTE') {
         this.command = 'FRENTE'; this.turnCycleAt = null;
       } else {
-        if (previous !== this.steering || this.turnCycleAt == null) this.turnCycleAt = info.capturedAt;
-        // Pequenas correcoes nas bordas, sem exigir alinhamento perfeito.
-        // O firmware do Modo 2 reduz a roda interna e mantem ambas para frente.
-        const turnMs = 140;
-        const phase = Math.max(0, info.capturedAt - this.turnCycleAt) % 800;
-        this.command = phase < turnMs ? this.steering : 'FRENTE';
+        if (previous !== this.steering || this.turnCycleAt == null || advancingSide !== this.wasAdvancingSide)
+          this.turnCycleAt = info.capturedAt;
+        // Alvo só na lateral: continue virando até voltar à faixa central.
+        // Alvo também se afastando: as duas rodas avançam com velocidades
+        // diferentes, evitando a alternância brusca entre giro e FRENTE.
+        this.command = advancingSide ? `FRENTE_${this.steering}` : this.steering;
       }
+      this.wasAdvancingSide = advancingSide;
       // Preserve what current vision calculated, then apply motor protection.
       // Only command/visible authorize delivery; visualCommand is diagnostic.
       const visual = { ...info, trackingState: state, visualCommand: this.command };
